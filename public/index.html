@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tavern-Link 魔改版 - 控制面板</title>
+    <title>MimirLink - 控制面板</title>
     <style>
         * {
             margin: 0;
@@ -12,50 +12,108 @@
         }
 
         :root {
-            --bg-primary: #fff5f5;
-            --bg-secondary: #ffe4e6;
-            --bg-card: #fecdd3;
-            --text-primary: #4a4a4a;
-            --text-secondary: #9ca3af;
-            --accent: #f472b6;
-            --accent-hover: #ec4899;
-            --success: #86efac;
-            --warning: #fcd34d;
-            --error: #fca5a5;
-            --border: #fda4af;
+            --bg-primary: #f6f3ee;
+            --bg-secondary: #ebe5dc;
+            --bg-card: #ffffff;
+            --text-primary: #2b251f;
+            --text-secondary: #6b6257;
+            --accent: #6a4c2f;
+            --accent-hover: #513821;
+            --button-primary: #7a3f2c;
+            --button-primary-hover: #5f2f20;
+            --button-secondary: #ede4d8;
+            --button-secondary-hover: #dfd1c0;
+            --button-secondary-text: #4d3d2d;
+            --success: #4f7a65;
+            --warning: #c48a3a;
+            --error: #b65a4f;
+            --border: #d7cbbd;
+            --shadow: 0 12px 28px rgba(45, 35, 25, 0.08);
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: var(--bg-primary);
+            font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+            background: linear-gradient(180deg, #f8f6f2 0%, #f1ece4 100%);
             color: var(--text-primary);
             min-height: 100vh;
+            overflow-y: auto;
+        }
+
+        body[data-theme='charcoal'] {
+            --bg-primary: #1b1a18;
+            --bg-secondary: #25221e;
+            --bg-card: #2f2a25;
+            --text-primary: #f4eee6;
+            --text-secondary: #b7ab9a;
+            --accent: #c78f52;
+            --accent-hover: #aa7440;
+            --button-primary: #d07a43;
+            --button-primary-hover: #b9642d;
+            --button-secondary: #3a312a;
+            --button-secondary-hover: #4a3d33;
+            --button-secondary-text: #f0e6da;
+            --success: #6fa082;
+            --warning: #d6a34d;
+            --error: #cc7466;
+            --border: #4e4338;
+            --shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+            background: linear-gradient(180deg, #171614 0%, #221f1b 100%);
+        }
+
+        body[data-theme='rose'] {
+            --bg-primary: #f8eff3;
+            --bg-secondary: #f3e2e9;
+            --bg-card: #fffafb;
+            --text-primary: #35252c;
+            --text-secondary: #7d6670;
+            --accent: #9b4d68;
+            --accent-hover: #7f3d54;
+            --button-primary: #b44f74;
+            --button-primary-hover: #943d5e;
+            --button-secondary: #f2e1e8;
+            --button-secondary-hover: #e4ccd6;
+            --button-secondary-text: #633949;
+            --success: #5f8c74;
+            --warning: #c68d42;
+            --error: #bb5f6d;
+            --border: #dfc4cf;
+            --shadow: 0 12px 28px rgba(83, 42, 57, 0.08);
+            background: linear-gradient(180deg, #fbf4f7 0%, #f6ebf0 100%);
         }
 
         .container {
             max-width: 1400px;
             margin: 0 auto;
-            padding: 20px;
+            padding: 20px 20px 48px;
         }
 
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 0;
+            padding: 20px 4px 24px;
             border-bottom: 1px solid var(--border);
-            margin-bottom: 30px;
+            margin-bottom: 26px;
+            gap: 18px;
+            flex-wrap: wrap;
         }
 
         header h1 {
-            font-size: 1.8rem;
+            font-size: 1.9rem;
             color: var(--accent);
+            letter-spacing: 0.02em;
         }
 
         .status-bar {
             display: flex;
             gap: 20px;
             align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .theme-switcher {
+            min-width: 132px;
+            max-width: 160px;
         }
 
         .status-item {
@@ -81,13 +139,29 @@
             gap: 10px;
             margin-bottom: 20px;
             flex-wrap: wrap;
+            position: sticky;
+            top: 0;
+            z-index: 20;
+            background: rgba(246, 243, 238, 0.86);
+            backdrop-filter: blur(10px);
+            padding: 10px 0 14px;
+            margin-left: -4px;
+            margin-right: -4px;
+        }
+
+        body[data-theme='charcoal'] .tabs {
+            background: rgba(27, 26, 24, 0.86);
+        }
+
+        body[data-theme='rose'] .tabs {
+            background: rgba(248, 239, 243, 0.86);
         }
 
         .tab {
             padding: 10px 20px;
-            background: var(--bg-secondary);
+            background: rgba(255,255,255,0.55);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 999px;
             cursor: pointer;
             transition: all 0.3s;
         }
@@ -99,14 +173,18 @@
         .tab.active {
             background: var(--accent);
             border-color: var(--accent);
+            color: #fff;
         }
 
         .panel {
             display: none;
-            background: var(--bg-secondary);
-            border-radius: 12px;
-            padding: 25px;
+            background: rgba(255,255,255,0.58);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
             border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            overflow: visible;
         }
 
         .panel.active {
@@ -121,9 +199,11 @@
 
         .card {
             background: var(--bg-card);
-            border-radius: 8px;
+            border-radius: 12px;
             padding: 20px;
             margin-bottom: 15px;
+            border: 1px solid rgba(215, 203, 189, 0.8);
+            box-shadow: 0 8px 18px rgba(45, 35, 25, 0.04);
         }
 
         .card h3 {
@@ -164,26 +244,29 @@
 
         button {
             padding: 10px 20px;
-            background: var(--accent);
+            background: var(--button-primary);
             border: none;
             border-radius: 6px;
             color: white;
             cursor: pointer;
             font-size: 0.95rem;
-            transition: background 0.3s;
+            transition: background 0.3s, transform 0.2s;
+            box-shadow: 0 8px 18px rgba(45, 35, 25, 0.12);
         }
 
         button:hover {
-            background: var(--accent-hover);
+            background: var(--button-primary-hover);
         }
 
         button.secondary {
-            background: var(--bg-card);
+            background: var(--button-secondary);
             border: 1px solid var(--border);
+            color: var(--button-secondary-text);
+            box-shadow: none;
         }
 
         button.secondary:hover {
-            background: var(--border);
+            background: var(--button-secondary-hover);
         }
 
         button.success {
@@ -223,6 +306,7 @@
 
         .list-item.selected {
             border-left: 3px solid var(--accent);
+            background: color-mix(in srgb, var(--bg-primary) 72%, var(--accent) 28%);
         }
 
         .list-item .name {
@@ -238,6 +322,233 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
+            align-items: start;
+        }
+
+        .detail-scroll-wrap {
+            display: grid;
+            gap: 15px;
+            overflow: visible;
+            max-height: none;
+        }
+
+        .binding-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--bg-primary);
+            color: var(--text-secondary);
+            font-size: 12px;
+            border: 1px solid var(--border);
+            margin: 0 8px 8px 0;
+        }
+
+        #regex .grid {
+            grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        }
+
+        #regex-list {
+            max-height: calc(100vh - 260px);
+            overflow-y: auto;
+            padding-right: 6px;
+        }
+
+        #regex .card {
+            min-width: 0;
+        }
+
+        #config .grid {
+            grid-template-columns: repeat(2, minmax(320px, 1fr));
+            align-items: stretch;
+        }
+
+        #config .card {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        #config .card--wide {
+            grid-column: 1 / -1;
+        }
+
+        #config .btn-group {
+            gap: 12px;
+        }
+
+        #config .save-row {
+            position: sticky;
+            bottom: 16px;
+            display: flex;
+            justify-content: flex-end;
+            padding-top: 16px;
+            margin-top: 20px;
+            z-index: 5;
+        }
+
+        #config .save-row button {
+            box-shadow: 0 12px 24px rgba(45, 35, 25, 0.18);
+        }
+
+        .save-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.78);
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            box-shadow: 0 8px 20px rgba(45, 35, 25, 0.08);
+        }
+
+        .save-status[data-state='dirty'] {
+            color: var(--warning);
+            border-color: color-mix(in srgb, var(--warning) 55%, var(--border) 45%);
+        }
+
+        .save-status[data-state='saving'] {
+            color: var(--accent);
+            border-color: color-mix(in srgb, var(--accent) 60%, var(--border) 40%);
+        }
+
+        .save-status[data-state='saved'] {
+            color: var(--success);
+            border-color: color-mix(in srgb, var(--success) 55%, var(--border) 45%);
+        }
+
+        .save-status[data-state='error'] {
+            color: var(--error);
+            border-color: color-mix(in srgb, var(--error) 55%, var(--border) 45%);
+        }
+
+        .hint-text {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+
+        .inline-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+
+        .meta-box {
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+            min-height: 72px;
+            white-space: pre-wrap;
+            line-height: 1.55;
+            color: var(--text-secondary);
+            margin-top: 10px;
+        }
+
+        .validation-box {
+            margin-top: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.7);
+            padding: 12px 14px;
+        }
+
+        .validation-box h4 {
+            margin-bottom: 8px;
+            color: var(--accent);
+            font-size: 0.95rem;
+        }
+
+        .validation-box ul {
+            margin-left: 18px;
+            color: var(--text-secondary);
+        }
+
+        .validation-box.error {
+            border-color: color-mix(in srgb, var(--error) 55%, var(--border) 45%);
+        }
+
+        .validation-box.warning {
+            border-color: color-mix(in srgb, var(--warning) 55%, var(--border) 45%);
+        }
+
+        .model-quick-list {
+            margin-top: 10px;
+            display: grid;
+            gap: 8px;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        .model-chip {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            border: 1px solid var(--border);
+            background: var(--bg-card);
+            border-radius: 10px;
+            padding: 10px 12px;
+            cursor: pointer;
+        }
+
+        .model-chip:hover {
+            border-color: var(--accent);
+        }
+
+        .model-chip.active {
+            border-color: var(--accent);
+            background: color-mix(in srgb, var(--bg-card) 78%, var(--accent) 22%);
+        }
+
+        .model-chip .meta {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+        }
+
+        @media (max-width: 900px) {
+            .container {
+                padding: 14px 14px 36px;
+            }
+
+            .panel {
+                padding: 18px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            header h1 {
+                font-size: 1.5rem;
+            }
+        }
+
+        @media (max-width: 1200px) {
+            #regex .grid {
+                grid-template-columns: 1fr;
+            }
+
+            #regex-list {
+                max-height: none;
+            }
+        }
+
+        @media (max-width: 1100px) {
+            #config .grid {
+                grid-template-columns: 1fr;
+            }
+
+            #config .save-row {
+                position: static;
+                padding-top: 0;
+            }
         }
 
         .log-container {
@@ -347,6 +658,52 @@
             border-left-color: var(--error);
         }
 
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            z-index: 3000;
+            padding: 16px;
+            overflow-y: auto;
+        }
+
+        .modal {
+            width: min(520px, calc(100vw - 32px));
+            max-height: calc(100vh - 32px);
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+            margin: auto;
+            overflow-y: auto;
+        }
+
+        .modal h3 {
+            margin-bottom: 10px;
+            color: var(--accent);
+        }
+
+        .modal .option-row {
+            display: flex;
+            gap: 10px;
+            align-items: flex-start;
+            padding: 10px 0;
+            border-top: 1px solid rgba(0,0,0,0.06);
+        }
+
+        .modal .option-row:first-of-type {
+            border-top: none;
+        }
+
+        .modal .option-row input {
+            width: auto;
+            margin-top: 3px;
+        }
+
         @keyframes slideIn {
             from {
                 transform: translateX(100%);
@@ -381,7 +738,7 @@
     <div class="container">
         <header>
             <h1 style="display: flex; align-items: center; gap: 15px;">
-    🤖 Tavern-Link
+    🧠 MimirLink
     <span style="
         font-size: 0.45em;
         padding: 4px 12px;
@@ -391,7 +748,7 @@
         font-weight: 600;
         box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
         letter-spacing: 1px;
-    ">✨ 魔改版</span>
+    ">Lifecycle Runtime</span>
 </h1>
             <div class="status-bar">
                 <div class="status-item">
@@ -401,6 +758,11 @@
                 <div class="status-item">
                     <span id="current-character">未选择角色</span>
                 </div>
+                <select id="theme-switcher" class="theme-switcher" onchange="setTheme(this.value)">
+                    <option value="sand">Sand</option>
+                    <option value="charcoal">Charcoal</option>
+                    <option value="rose">Rose</option>
+                </select>
                 <button onclick="logout()" style="padding: 6px 12px; background: transparent; border: 1px solid var(--border); color: var(--text-secondary); font-size: 0.85rem;">🚪 登出</button>
             </div>
         </header>
@@ -432,7 +794,55 @@
                     <h3>当前配置</h3>
                     <p style="margin-bottom: 8px;">角色: <strong id="dash-character">-</strong></p>
                     <p style="margin-bottom: 8px;">世界书: <strong id="dash-worldbook">-</strong></p>
+                    <p style="margin-bottom: 8px;">记忆库: <strong id="dash-memory-db">-</strong></p>
+                    <p style="margin-bottom: 8px;">访问策略: <strong id="dash-access-mode">-</strong></p>
+                    <p style="margin-bottom: 8px;">管理员 QQ: <strong id="dash-admin-users">-</strong></p>
+                    <p style="margin-bottom: 8px;">记忆作用域: <strong id="dash-memory-scope">-</strong></p>
                     <p>活跃会话: <strong id="dash-sessions">0</strong></p>
+                </div>
+                <div class="card">
+                    <h3>数据库管理</h3>
+                    <div id="memory-db-list" style="max-height: 220px; overflow-y: auto; color: var(--text-secondary);">
+                        <div class="empty-state">加载中...</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>最近召回</h3>
+                    <div id="memory-recall-panel" class="meta-box">暂无召回记录</div>
+                </div>
+                <div class="card">
+                    <h3>安全层状态</h3>
+                    <div id="security-trust-panel" class="meta-box">暂无安全层状态</div>
+                </div>
+                <div class="card">
+                    <h3>记忆迁移</h3>
+                    <div class="form-group">
+                        <label>源数据库路径（留空表示当前活动库）</label>
+                        <input type="text" id="memory-migrate-source" placeholder="例如: ./data/chats/memory-store.sqlite">
+                    </div>
+                    <div class="form-group">
+                        <label>目标数据库路径</label>
+                        <input type="text" id="memory-migrate-target" placeholder="例如: ./data/chats/characters/target.sqlite">
+                    </div>
+                    <div class="form-group">
+                        <label>按 Session ID 迁移（逗号分隔，可选）</label>
+                        <input type="text" id="memory-migrate-session-ids" placeholder="user:123456,group:714121908">
+                    </div>
+                    <div class="form-group">
+                        <label>按 Session 前缀迁移（可选）</label>
+                        <input type="text" id="memory-migrate-prefix" placeholder="例如: user:">
+                    </div>
+                    <div class="form-group">
+                        <label>按用户 QQ 迁移（可选）</label>
+                        <input type="text" id="memory-migrate-user-id" placeholder="例如: 123456">
+                    </div>
+                    <div class="form-group">
+                        <label><input type="checkbox" id="memory-migrate-replace" checked> 覆盖目标数据库现有内容</label>
+                    </div>
+                    <div class="btn-group">
+                        <button onclick="runMemoryMigration()">执行迁移</button>
+                    </div>
+                    <div id="memory-migrate-result" class="meta-box" style="margin-top: 12px;">尚未执行迁移</div>
                 </div>
                 <div class="card">
                     <h3>快速测试</h3>
@@ -450,7 +860,7 @@
             <h2>角色卡管理</h2>
             <div class="btn-group" style="margin-bottom: 20px;">
                 <button onclick="refreshCharacters()">🔄 刷新列表</button>
-                <label class="upload-btn" style="padding: 10px 20px; background: #1a1a1a; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.95rem;">
+                <label class="upload-btn" style="padding: 10px 20px; background: var(--button-primary); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.95rem; box-shadow: 0 8px 18px rgba(45, 35, 25, 0.12);">
                     📤 上传角色卡 (PNG)
                     <input type="file" accept=".png" onchange="uploadCharacter(this)" style="display: none;">
                 </label>
@@ -479,7 +889,7 @@
             <h2>世界书管理</h2>
             <div class="btn-group" style="margin-bottom: 20px;">
                 <button onclick="refreshWorldBooks()">🔄 刷新列表</button>
-                <label class="upload-btn" style="padding: 10px 20px; background: #1a1a1a; border: none; border-radius: 6px; color: white; cursor: pointer; font-size: 0.95rem;">
+                <label class="upload-btn" style="padding: 10px 20px; background: var(--button-primary); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.95rem; box-shadow: 0 8px 18px rgba(45, 35, 25, 0.12);">
                     📤 上传世界书 (JSON)
                     <input type="file" accept=".json" onchange="uploadWorldBook(this)" style="display: none;">
                 </label>
@@ -533,7 +943,7 @@
                     </div>
                 </div>
                 <div class="card">
-                    <h3>添加规则</h3>
+                    <h3 id="regex-editor-title">添加规则</h3>
                     <div class="form-group">
                         <label>规则名称</label>
                         <input type="text" id="regex-name" placeholder="例如: 移除思考标签">
@@ -558,7 +968,8 @@
                         </select>
                     </div>
                     <div class="btn-group">
-                        <button onclick="addRegexRule()">添加规则</button>
+                        <button onclick="saveRegexRule()" id="regex-save-btn">添加规则</button>
+                        <button class="secondary" onclick="resetRegexEditor()">清空编辑器</button>
                         <button class="secondary" onclick="testRegex()">测试规则</button>
                     </div>
                     <div class="form-group" style="margin-top: 15px;">
@@ -592,6 +1003,12 @@
                     <div class="form-group">
                         <label>Access Token</label>
                         <input type="password" id="tts-token" placeholder="豆包控制台的 access_token">
+                    </div>
+                    <div class="form-group">
+                        <label>音色选择</label>
+                        <select id="tts-voice-select" onchange="applySelectedVoice()">
+                            <option value="">手动输入 / 自定义</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label>音色 ID</label>
@@ -650,12 +1067,20 @@
                         <label>Access Token (可选)</label>
                         <input type="password" id="config-onebot-token" placeholder="留空表示无需认证">
                     </div>
+                    <div class="form-group">
+                        <label>Token 发送方式</label>
+                        <select id="config-onebot-token-mode">
+                            <option value="header">Header</option>
+                            <option value="query">Query</option>
+                        </select>
+                    </div>
                 </div>
                 <div class="card">
                     <h3>AI 配置</h3>
                     <div class="form-group">
                         <label>API Base URL</label>
                         <input type="text" id="config-ai-baseurl" placeholder="https://api.openai.com/v1">
+                        <p class="hint-text">填写兼容 OpenAI 的上游地址后，可直接从上游拉取模型并探测输出上限。</p>
                     </div>
                     <div class="form-group">
                         <label>API Key</label>
@@ -663,11 +1088,19 @@
                     </div>
                     <div class="form-group">
                         <label>模型</label>
-                        <input type="text" id="config-ai-model" placeholder="gpt-4">
+                        <input type="text" id="config-ai-model" placeholder="gpt-4" list="config-ai-model-list">
+                        <datalist id="config-ai-model-list"></datalist>
+                        <div class="inline-actions">
+                            <button class="secondary" onclick="fetchAIModels()">拉取模型</button>
+                            <button class="secondary" onclick="probeAIModel()">探测上游元数据</button>
+                            <button class="secondary" onclick="applyDetectedMaxTokens()">应用推荐 Tokens</button>
+                        </div>
+                        <div id="config-ai-model-quick-list" class="model-quick-list"></div>
                     </div>
                     <div class="form-group">
                         <label>最大 Tokens</label>
                         <input type="number" id="config-ai-maxtokens" placeholder="4096">
+                        <p class="hint-text">如果上游返回模型能力元数据，这里可以自动回填推荐输出上限。</p>
                     </div>
                     <div class="form-group">
                         <label>Temperature</label>
@@ -681,44 +1114,278 @@
                             💡 如果聊天记录过大或角色卡复杂，建议改为 120 秒（2 分钟）<br>
                         </p>
                     </div>
+                    <div class="form-group">
+                        <label>上游模型元数据</label>
+                        <div id="config-ai-model-meta" class="meta-box">尚未探测。先填写 Base URL / API Key，再点击“拉取模型”或“探测上游元数据”。</div>
+                        <div id="config-validation-box" class="validation-box" style="display:none"></div>
+                    </div>
                 </div>
                 <div class="card">
                     <h3>聊天设置</h3>
-					<div class="form-group">
-						<label>触发前缀 (留空表示所有消息)</label>
-						<input type="text" id="config-chat-trigger" placeholder="例如: /chat">
-					</div>
-					<div class="form-group">
-						<label>使用最近 N 条历史消息作为上下文</label>
-						<input type="number" id="config-chat-history" placeholder="30">
-						<p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
-							💡 每次发送给 AI 时，从记忆池中提取最近的 N 条消息（historyLimit）
-						</p>
-					</div>
-					<div class="form-group">
-						<label>全局记忆池容量上限</label>
-						<input type="number" id="config-chat-max-global" placeholder="2000">
-						<p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
-							💾 所有会话共享的历史消息存储上限，超过后自动删除最旧的消息（maxGlobalMessages）
-						</p>
-					</div>
-					<div class="form-group">
-						<label>允许的群号 (逗号分隔，留空表示全部)</label>
-						<input type="text" id="config-chat-groups" placeholder="123456,789012">
-					</div>
-
+                    <div class="form-group">
+                        <label>会话模式</label>
+                        <select id="config-chat-session-mode">
+                            <option value="user_persistent">用户长期记忆: 同一 QQ 跨群/跨私聊共享记忆</option>
+                            <option value="group_user">群内用户隔离: 每个群内每个用户各自记忆</option>
+                            <option value="group_shared">群共享记忆: 整个群共用一个记忆池</option>
+                            <option value="global_shared">全局共享记忆: 所有消息进入同一个记忆池</option>
+                        </select>
+                        <p class="hint-text">推荐用“用户长期记忆”。这样同一个 QQ 会在不同会话里延续记忆，同时不同用户仍然彼此隔离。</p>
+                    </div>
+                    <div class="form-group">
+                        <label>触发模式</label>
+                        <select id="config-chat-trigger-mode">
+                            <option value="auto">auto</option>
+                            <option value="always">always</option>
+                            <option value="prefix">prefix</option>
+                            <option value="keyword">keyword</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>触发前缀</label>
+                        <input type="text" id="config-chat-trigger" placeholder="例如: /chat">
+                    </div>
+                    <div class="form-group">
+                        <label>关键词触发 (逗号分隔)</label>
+                        <input type="text" id="config-chat-keywords" placeholder="例如: bot,来点,回答我">
+                    </div>
+                    <div class="form-group">
+                        <label>使用最近 N 条历史消息作为上下文</label>
+                        <input type="number" id="config-chat-history" placeholder="30">
+                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
+                            每次发送给 AI 时，从记忆池中提取最近的 N 条消息
+                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label>全局时间线容量上限</label>
+                        <input type="number" id="config-chat-max-global" placeholder="2000">
+                    </div>
+                    <div class="form-group">
+                        <label>访问控制策略</label>
+                        <select id="config-chat-access-mode" onchange="updateAccessControlLabels(); updateAccessControlSummary();">
+                            <option value="allowlist">白名单模式: 仅允许名单内的群和用户</option>
+                            <option value="blocklist">黑名单模式: 拒绝名单内的群和用户</option>
+                            <option value="disabled">关闭名单控制: 不做黑白名单过滤</option>
+                        </select>
+                        <p class="hint-text">黑名单和白名单不能同时生效。必须明确选一种策略。</p>
+                    </div>
+                    <div class="form-group">
+                        <label>当前生效策略摘要</label>
+                        <div id="config-chat-access-summary" class="meta-box">尚未加载访问控制摘要</div>
+                    </div>
+                    <div class="form-group">
+                        <label id="config-chat-groups-label">允许的群号 (逗号分隔，留空表示全部)</label>
+                        <input type="text" id="config-chat-groups" placeholder="123456,789012">
+                    </div>
+                    <div class="form-group">
+                        <label id="config-chat-blocked-groups-label">群聊黑名单 (逗号分隔)</label>
+                        <input type="text" id="config-chat-blocked-groups" placeholder="拉黑的群号">
+                    </div>
+                    <div class="form-group">
+                        <label id="config-chat-users-label">允许的用户 QQ (逗号分隔，留空表示全部)</label>
+                        <input type="text" id="config-chat-users" placeholder="12345678,87654321">
+                    </div>
+                    <div class="form-group">
+                        <label>管理员 QQ (逗号分隔)</label>
+                        <input type="text" id="config-chat-admin-users" placeholder="例如: 12345678,87654321">
+                        <p class="hint-text">管理员 QQ 作为高信任来源处理，不进入群友注入攻击同一条防线。</p>
+                    </div>
+                    <div class="form-group">
+                        <label id="config-chat-blocked-users-label">用户黑名单 (逗号分隔)</label>
+                        <input type="text" id="config-chat-blocked-users" placeholder="拉黑的用户 QQ">
+                    </div>
+                    <div class="form-group">
+                        <label>缓冲聚合窗口 (毫秒)</label>
+                        <input type="number" id="config-chat-buffer-window" placeholder="1200" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>回复前延迟 (毫秒)</label>
+                        <input type="number" id="config-chat-reply-delay" placeholder="800" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>分段间延迟 (毫秒)</label>
+                        <input type="number" id="config-chat-segment-delay" placeholder="300" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>主动消息间隔 (毫秒)</label>
+                        <input type="number" id="config-chat-proactive-interval" placeholder="1500" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label>去重窗口 (毫秒)</label>
+                        <input type="number" id="config-chat-dedupe-window" placeholder="10000" min="1000">
+                    </div>
+                    <div class="form-group">
+                        <label>最大并发会话数</label>
+                        <input type="number" id="config-chat-max-concurrent" placeholder="2" min="1">
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>聊天行为</h3>
                     <div class="form-group">
                         <label>
                             <input type="checkbox" id="config-chat-split" checked>
-                            📝 消息分段 (双换行分割成多条消息)
+                            消息分段发送
                         </label>
-                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
-                            开启后，AI 回复中的双换行会被分割成多条消息发送
-                        </p>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-chat-require-at" checked>
+                            群聊优先要求艾特触发
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-chat-quote-reply" checked>
+                            首条消息使用引用回复
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-chat-attach-metadata" checked>
+                            附加结构化元数据
+                        </label>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>记忆与数据库</h3>
+                    <div class="form-group">
+                        <label>数据库路径</label>
+                        <input type="text" id="config-memory-db-path" placeholder="./data/chats/memory-store.sqlite">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-memory-summary-enabled" checked>
+                            启用自动摘要
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>摘要触发消息数</label>
+                        <input type="number" id="config-memory-summary-trigger" placeholder="80" min="10">
+                    </div>
+                    <div class="form-group">
+                        <label>摘要后保留最近消息数</label>
+                        <input type="number" id="config-memory-summary-keep" placeholder="30" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>最大摘要条数</label>
+                        <input type="number" id="config-memory-summary-max" placeholder="8" min="1">
+                    </div>
+                    <div class="form-group">
+                        <label>单次摘要最多压缩消息数</label>
+                        <input type="number" id="config-memory-summary-source" placeholder="50" min="10">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-memory-summary-ai" checked>
+                            使用 AI 生成摘要
+                        </label>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>轻量预设</h3>
+                    <div class="btn-group" style="margin-bottom: 12px;">
+                        <button class="secondary" onclick="document.getElementById('preset-import-file').click()">导入预设</button>
+                        <button class="secondary" onclick="exportPreset('native')">导出原生</button>
+                        <button class="secondary" onclick="exportPreset('sillytavern')">导出 ST</button>
+                    </div>
+                    <input type="file" id="preset-import-file" accept="application/json,.json" style="display:none" onchange="importPresetFile(this)">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-preset-enabled">
+                            启用轻量预设层
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>预设名称</label>
+                        <input type="text" id="config-preset-name" placeholder="例如: Tavern Default">
+                    </div>
+                    <div class="form-group">
+                        <label>系统预设</label>
+                        <textarea id="config-preset-system" rows="4" placeholder="额外的系统预设"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>历史后指令</label>
+                        <textarea id="config-preset-post-history" rows="3" placeholder="插入在历史之后"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Jailbreak</label>
+                        <textarea id="config-preset-jailbreak" rows="3" placeholder="额外的 jailbreak 指令"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Assistant Prefill</label>
+                        <textarea id="config-preset-assistant-prefill" rows="2" placeholder="可选的 assistant 预填充"></textarea>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>上下文感知增强</h3>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-context-enabled" checked>
+                            启用上下文感知增强
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-context-session-facts" checked>
+                            注入会话事实
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-context-participants" checked>
+                            注入参与者信息
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-context-reply-reference" checked>
+                            注入回复引用上下文
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-context-recent-intent" checked>
+                            注入最近用户意图
+                        </label>
+                    </div>
+                </div>
+                <div class="card">
+                    <h3>正则</h3>
+                    <div class="btn-group" style="margin-bottom: 12px;">
+                        <button class="secondary" onclick="document.getElementById('regex-import-file').click()">导入规则</button>
+                        <button class="secondary" onclick="exportRegexRules('native')">导出原生</button>
+                        <button class="secondary" onclick="exportRegexRules('sillytavern')">导出 ST</button>
+                    </div>
+                    <input type="file" id="regex-import-file" accept="application/json,.json" style="display:none" onchange="importRegexFile(this)">
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-regex-enabled" checked>
+                            启用正则处理
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="config-regex-preset" checked>
+                            启用内置正则预设
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>导入目标层</label>
+                        <select id="regex-import-target-layer">
+                            <option value="global">全局层</option>
+                            <option value="preset">预设层</option>
+                            <option value="character">角色层</option>
+                        </select>
+                    </div>
+                    <div class="meta-box" id="regex-layer-summary">尚未加载正则分层摘要</div>
+                    <div class="form-group" style="margin-top: 12px;">
+                        <label>全局层 / 预设层 / 角色层</label>
+                        <div id="regex-layered-list"></div>
                     </div>
                 </div>
             </div>
-            <div style="margin-top: 20px;">
+            <div class="save-row">
+                <div id="config-save-status" class="save-status" data-state="idle">尚未修改配置</div>
                 <button class="success" onclick="saveConfig()">💾 保存配置</button>
             </div>
         </div>
@@ -740,6 +1407,29 @@
         // 全局状态
         let currentConfig = {};
         let selectedSession = null;
+        let currentCharacterSelectedFile = null;
+        let currentRegexRules = [];
+        let editingRegexIndex = null;
+        let configDirty = false;
+        let lastConfigSavedAt = null;
+
+        function setTheme(theme) {
+            const normalized = theme || 'sand';
+            if (normalized === 'sand') {
+                document.body.removeAttribute('data-theme');
+            } else {
+                document.body.setAttribute('data-theme', normalized);
+            }
+            localStorage.setItem('tavern-link-theme', normalized);
+            const switcher = document.getElementById('theme-switcher');
+            if (switcher && switcher.value !== normalized) {
+                switcher.value = normalized;
+            }
+        }
+
+        function initTheme() {
+            setTheme(localStorage.getItem('tavern-link-theme') || 'sand');
+        }
 
         // 初始化
         document.addEventListener('DOMContentLoaded', async () => {
@@ -748,6 +1438,7 @@
             if (!authOk) return;
             
             initTabs();
+            initTheme();
             loadStatus();
             loadCharacters();
             loadWorldBooks();
@@ -755,6 +1446,7 @@
             loadRegexRules();
             loadConfig();
             loadTTSConfig();
+            loadMemoryDatabases();
             connectLogWebSocket();
             
             // 定时刷新状态
@@ -817,11 +1509,76 @@
                 document.getElementById('onebot-status').classList.toggle('connected', connected);
                 document.getElementById('onebot-status-2').classList.toggle('connected', connected);
                 document.getElementById('current-character').textContent = data.character || '未选择角色';
+                currentCharacterSelectedFile = data.characterFile || null;
                 document.getElementById('dash-character').textContent = data.character || '-';
                 document.getElementById('dash-worldbook').textContent = data.worldbook || '-';
-                document.getElementById('dash-sessions').textContent = data.sessions;
+                document.getElementById('dash-memory-db').textContent = data.activeMemory?.dbPath || data.globalMemory?.storage?.path || '-';
+                document.getElementById('dash-access-mode').textContent = data.activeMemory?.accessControlMode || currentConfig.chat?.accessControlMode || 'allowlist';
+                document.getElementById('dash-admin-users').textContent = Array.isArray(data.activeMemory?.adminUsers) && data.activeMemory.adminUsers.length > 0 ? data.activeMemory.adminUsers.join(', ') : '-';
+                document.getElementById('dash-memory-scope').textContent = data.activeMemory?.scopeDescription || data.activeMemory?.sessionMode || '-';
+                const routingBox = document.getElementById('memory-migrate-result');
+                if (routingBox && data.lastRouting) {
+                    routingBox.textContent = `最近路由: ${data.lastRouting.sessionLabel || data.lastRouting.sessionKey}\n触发原因: ${data.lastRouting.triggerReason}\n数据库: ${data.lastRouting.dbPath}`;
+                }
+                const recallPanel = document.getElementById('memory-recall-panel');
+                if (recallPanel && data.lastRecall) {
+                    const hits = Array.isArray(data.lastRecall.hits) ? data.lastRecall.hits : [];
+                    recallPanel.textContent = `查询: ${data.lastRecall.query || ''}\n命中数: ${hits.length}\n${hits.slice(0, 5).map((hit) => `- [${hit.sourceKind}/${hit.recallReason}] ${hit.title || '(无标题)'} score=${hit.recallScore}\n  ${hit.preview}`).join('\n')}`;
+                }
+                const trustPanel = document.getElementById('security-trust-panel');
+                if (trustPanel && data.lastInjectionObservation) {
+                    const obs = data.lastInjectionObservation;
+                    const userInputs = Array.isArray(obs.untrusted_user_inputs) ? obs.untrusted_user_inputs : [];
+                    const adminInputs = Array.isArray(obs.trusted_admin_inputs) ? obs.trusted_admin_inputs : [];
+                    trustPanel.textContent = `可信来源: ${(obs.trusted_context?.trustedSources || []).join(', ') || '-'}\n管理员 QQ: ${(obs.trusted_context?.adminUsers || []).join(', ') || '-'}\n最近普通用户输入: ${userInputs.length > 0 ? `${userInputs[0].risk?.level || 'none'} / ${userInputs[0].content.slice(0, 120)}` : '无'}\n最近管理员输入: ${adminInputs.length > 0 ? adminInputs[0].content.slice(0, 120) : '无'}`;
+                }
+                const runtimeInfo = data.runtime
+                    ? ` | 并发:${data.runtime.maxConcurrentSessions} 缓冲:${data.runtime.bufferWindowMs}ms`
+                    : '';
+                const storageInfo = data.globalMemory?.storage?.type ? ` | 存储:${data.globalMemory.storage.type}` : '';
+                document.getElementById('dash-sessions').textContent = `${data.sessions}${runtimeInfo}${storageInfo}`;
             } catch (e) {
                 console.error('加载状态失败', e);
+            }
+        }
+
+        async function loadMemoryDatabases() {
+            try {
+                const res = await fetch('/api/memory/databases');
+                const data = await res.json();
+                const list = document.getElementById('memory-db-list');
+                if (!data.success) {
+                    throw new Error(data.error || '加载失败');
+                }
+
+                if (!Array.isArray(data.databases) || data.databases.length === 0) {
+                    list.innerHTML = '<div class="empty-state">暂无数据库文件</div>';
+                    return;
+                }
+
+                list.innerHTML = data.databases.map((db) => {
+                    const active = data.active?.dbPath === db.path;
+                    const sizeMb = (db.sizeBytes / 1024 / 1024).toFixed(2);
+                    const updatedAt = new Date(db.updatedAt).toLocaleString('zh-CN', { hour12: false });
+                    const bindingText = Array.isArray(db.bindings) && db.bindings.length > 0
+                        ? db.bindings.map((item) => item.type === 'character' ? `角色: ${item.name}` : item.name).join(' / ')
+                        : '未绑定';
+                    const statsText = db.stats
+                        ? `会话 ${db.stats.totalSessions} · 消息 ${db.stats.totalMessages} · 摘要 ${db.stats.totalSummaries}`
+                        : '暂无统计';
+                    return `
+                        <div class="list-item ${active ? 'selected' : ''}">
+                            <div>
+                                <div class="name">${escapeHtml(db.path)}</div>
+                                <div class="meta">${sizeMb} MB · ${updatedAt}</div>
+                                <div class="meta">${escapeHtml(bindingText)}</div>
+                                <div class="meta">${escapeHtml(statsText)}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                document.getElementById('memory-db-list').innerHTML = `<div class="empty-state">加载数据库列表失败: ${escapeHtml(e.message)}</div>`;
             }
         }
 
@@ -838,7 +1595,7 @@
                 }
                 
                 list.innerHTML = characters.map(c => `
-                    <div class="list-item" onclick="selectCharacter('${c.filename}')">
+                    <div class="list-item ${currentCharacterSelectedFile === c.filename ? 'selected' : ''}" onclick="selectCharacter('${c.filename}')">
                         <div>
                             <div class="name">${c.name}</div>
                             <div class="meta">${c.filename}</div>
@@ -854,33 +1611,216 @@
         // 当前选中的角色数据
         let currentCharacterData = null;
         let currentCharacterFilename = null;
+        let currentCharacterMetadataSummary = null;
 
-        async function selectCharacter(filename) {
+        function showImportOptionsModal(title, metadataSummary, importPlan, onConfirm) {
+            const importableRegexCount = metadataSummary?.importableRegexScriptCount || 0;
+            const totalRegexCount = metadataSummary?.regexScriptCount || 0;
+            const skippedRegexCount = Math.max(totalRegexCount - importableRegexCount, 0);
+            const infoNotes = [];
+            if (totalRegexCount > 0 && importableRegexCount === 0) {
+                infoNotes.push('检测到的 regex 主要是 SillyTavern 前端/UI 规则，不适用于当前 QQ Tavern 后端处理链，已全部跳过。');
+            } else if (skippedRegexCount > 0) {
+                infoNotes.push(`部分 regex 属于 SillyTavern 前端/UI 规则，当前后端会自动跳过 ${skippedRegexCount} 条。`);
+            }
+
+            const options = [
+                {
+                    key: 'importWorldBook',
+                    checked: !!importPlan?.importWorldBook,
+                    label: `导入内嵌世界书${metadataSummary?.worldBookEntries ? ` (${metadataSummary.worldBookEntries} 条)` : ''}`,
+                    desc: '把角色卡里的世界书提取并设置为当前世界书。'
+                },
+                {
+                    key: 'importPreset',
+                    checked: !!importPlan?.importPreset,
+                    label: '导入预设相关字段',
+                    desc: '同步 system prompt、post history instructions、assistant prefill。'
+                },
+                {
+                    key: 'importRegex',
+                    checked: !!importPlan?.importRegex && importableRegexCount > 0,
+                    label: `导入可兼容正则${importableRegexCount ? ` (${importableRegexCount} 条)` : ''}`,
+                    desc: skippedRegexCount > 0
+                        ? `检测到 ${totalRegexCount} 条 regex，其中 ${skippedRegexCount} 条属于 SillyTavern 前端/UI 规则，当前后端会自动跳过。`
+                        : '把角色卡附带的可兼容 regex scripts 导入当前规则列表。'
+                }
+            ].filter(item => item.checked);
+
+            if (options.length === 0 && infoNotes.length === 0) {
+                onConfirm({ importWorldBook: false, importPreset: false, importRegex: false });
+                return;
+            }
+
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal">
+                    <h3>${title}</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 14px;">检测到这张角色卡带了酒馆附加信息。勾选你想一起导入的部分。</p>
+                    ${infoNotes.length > 0 ? `
+                        <div style="margin-bottom: 14px; padding: 10px 12px; border-radius: 10px; background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5;">
+                            ${infoNotes.map(note => `<div>${escapeHtml(note)}</div>`).join('')}
+                        </div>
+                    ` : ''}
+                    ${options.map(item => `
+                        <label class="option-row">
+                            <input type="checkbox" data-key="${item.key}" ${item.checked ? 'checked' : ''}>
+                            <div>
+                                <div style="font-weight: 600;">${item.label}</div>
+                                <div style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">${item.desc}</div>
+                            </div>
+                        </label>
+                    `).join('')}
+                    <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
+                        <div style="font-weight: 600; margin-bottom: 8px;">记忆库策略</div>
+                        <label class="option-row">
+                            <input type="radio" name="memory-binding-mode" value="inherit" checked>
+                            <div>沿用全局默认数据库</div>
+                        </label>
+                        <label class="option-row">
+                            <input type="radio" name="memory-binding-mode" value="character">
+                            <div>为这个角色创建独立数据库</div>
+                        </label>
+                        <label class="option-row">
+                            <input type="radio" name="memory-binding-mode" value="custom">
+                            <div>绑定自定义数据库路径</div>
+                        </label>
+                        <input type="text" id="memory-binding-custom-path" placeholder="./data/chats/characters/custom.sqlite" style="margin-top: 8px; width: 100%;">
+                        <label class="option-row" style="margin-top: 8px;">
+                            <input type="checkbox" id="memory-binding-migrate-current">
+                            <div>切换时把当前记忆迁移到新数据库</div>
+                        </label>
+                    </div>
+                    <div class="btn-group" style="margin-top: 16px; justify-content: flex-end;">
+                        <button class="secondary" id="import-cancel-btn">取消</button>
+                        <button id="import-confirm-btn">${options.length > 0 ? '确认导入' : '知道了'}</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            overlay.querySelector('#import-cancel-btn').addEventListener('click', () => overlay.remove());
+            overlay.querySelector('#import-confirm-btn').addEventListener('click', () => {
+                const selected = { importWorldBook: false, importPreset: false, importRegex: false };
+                overlay.querySelectorAll('input[data-key]').forEach((input) => {
+                    selected[input.dataset.key] = input.checked;
+                });
+                const selectedMode = overlay.querySelector('input[name="memory-binding-mode"]:checked')?.value || 'inherit';
+                const customPath = overlay.querySelector('#memory-binding-custom-path')?.value?.trim() || '';
+                const migrateFromCurrent = overlay.querySelector('#memory-binding-migrate-current')?.checked === true;
+                overlay.remove();
+                onConfirm(selected, {
+                    mode: selectedMode,
+                    dbPath: customPath,
+                    migrateFromCurrent
+                });
+            });
+        }
+
+        async function doSelectCharacter(filename, importOptions = {}, memoryBinding = { mode: 'inherit' }) {
             try {
                 const res = await fetch('/api/characters/select', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ filename })
+                    body: JSON.stringify({ filename, importOptions, memoryBinding })
                 });
                 const data = await res.json();
                 
                 if (data.success) {
-                    showToast('角色已选择');
+                    const applied = Array.isArray(data.appliedActions) && data.appliedActions.length > 0
+                        ? `：${data.appliedActions.join('；')}`
+                        : '';
+                    showToast(`角色已选择${applied}`);
                     loadStatus();
+                    loadWorldBooks();
+                    await loadConfig();
                     
                     currentCharacterData = data.character;
                     currentCharacterFilename = filename;
-                    renderCharacterDetail(data.character, filename);
+                    currentCharacterSelectedFile = filename;
+                    currentCharacterMetadataSummary = data.metadataSummary || null;
+                    renderCharacterDetail(data.character, filename, data.metadataSummary || null, data.bindingSummary || null);
+                    loadCharacters();
                 }
             } catch (e) {
                 showToast('选择角色失败', true);
             }
         }
 
-        function renderCharacterDetail(char, filename) {
+        async function selectCharacter(filename) {
+            try {
+                const detailRes = await fetch(`/api/characters/${encodeURIComponent(filename)}/detail`);
+                const detailData = await detailRes.json();
+                if (!detailData.success) {
+                    throw new Error(detailData.error || '读取角色卡信息失败');
+                }
+
+                showImportOptionsModal(
+                    `导入角色卡：${detailData.character?.name || filename}`,
+                    detailData.metadataSummary,
+                    detailData.importPlan || {
+                        importWorldBook: detailData.metadataSummary?.hasEmbeddedWorldBook,
+                        importPreset: detailData.metadataSummary?.hasPostHistoryInstructions || detailData.metadataSummary?.hasSystemPrompt,
+                        importRegex: (detailData.metadataSummary?.importableRegexScriptCount || 0) > 0
+                    },
+                    (selected, memoryBinding) => doSelectCharacter(filename, selected, memoryBinding)
+                );
+            } catch (e) {
+                showToast(`选择角色失败: ${e.message}`, true);
+            }
+        }
+
+        function renderCharacterDetail(char, filename, metadataSummary = null, bindingSummary = null) {
             const detail = document.getElementById('character-detail');
             const hasWorldBook = char.data?.character_book || char.character_book;
             const worldBookEntries = hasWorldBook ? (char.data?.character_book?.entries || char.character_book?.entries || []).length : 0;
+            const totalRegexCount = metadataSummary?.regexScriptCount || 0;
+            const importableRegexCount = metadataSummary?.importableRegexScriptCount || 0;
+            const skippedRegexCount = Math.max(totalRegexCount - importableRegexCount, 0);
+            const presetReady = !!(metadataSummary?.hasPostHistoryInstructions || metadataSummary?.hasSystemPrompt);
+            const tagsHtml = metadataSummary?.tags?.length > 0
+                ? metadataSummary.tags.map(tag => `<span style="display:inline-block;padding:2px 8px;border-radius:999px;background:var(--bg-primary);margin:0 6px 6px 0;font-size:12px;">${escapeHtml(tag)}</span>`).join('')
+                : '<span style="color: var(--text-secondary);">无</span>';
+            const metadataPanel = metadataSummary ? `
+                <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 15px;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">酒馆导入信息</div>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary); display: grid; gap: 6px;">
+                        <div>内嵌世界书: ${metadataSummary.hasEmbeddedWorldBook ? `有 (${metadataSummary.worldBookEntries} 条)` : '无'}</div>
+                        <div>附带正则: ${metadataSummary.regexScriptCount} 条</div>
+                        <div>可导入后端正则: ${metadataSummary.importableRegexScriptCount || 0} 条${(metadataSummary.regexScriptCount || 0) > (metadataSummary.importableRegexScriptCount || 0) ? `，已跳过 ${(metadataSummary.regexScriptCount || 0) - (metadataSummary.importableRegexScriptCount || 0)} 条 ST 前端规则` : ''}</div>
+                        <div>备用开场白: ${metadataSummary.alternateGreetingsCount} 条</div>
+                        <div>后历史指令: ${metadataSummary.hasPostHistoryInstructions ? '有' : '无'}</div>
+                        <div>系统提示词: ${metadataSummary.hasSystemPrompt ? '有' : '无'}</div>
+                        <div>角色卡规范: ${metadataSummary.spec ? `${escapeHtml(metadataSummary.spec)}${metadataSummary.specVersion ? ` (v${escapeHtml(metadataSummary.specVersion)})` : ''}` : '<span style="color: var(--text-secondary);">未知</span>'}</div>
+                        <div>标签: ${tagsHtml}</div>
+                        <div>创作者备注: ${metadataSummary.creatorNotes ? escapeHtml(metadataSummary.creatorNotes) : '<span style="color: var(--text-secondary);">无</span>'}</div>
+                    </div>
+                </div>
+            ` : '';
+            const diagnosticPanel = metadataSummary ? `
+                <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 15px;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">角色卡兼容性诊断</div>
+                    <div style="display: grid; gap: 8px; font-size: 0.92rem; color: var(--text-secondary);">
+                        <div><strong style="color: var(--text-primary);">规范版本</strong>: ${metadataSummary.spec ? `${escapeHtml(metadataSummary.spec)}${metadataSummary.specVersion ? ` (v${escapeHtml(metadataSummary.specVersion)})` : ''}` : '未知'}</div>
+                        <div><strong style="color: var(--text-primary);">世界书</strong>: ${metadataSummary.hasEmbeddedWorldBook ? `可提取，${metadataSummary.worldBookEntries} 条` : '未检测到'}</div>
+                        <div><strong style="color: var(--text-primary);">预设字段</strong>: ${presetReady ? '检测到可导入字段' : '未检测到可导入字段'}${metadataSummary?.hasSystemPrompt ? ' / system prompt' : ''}${metadataSummary?.hasPostHistoryInstructions ? ' / post history' : ''}</div>
+                        <div><strong style="color: var(--text-primary);">正则脚本</strong>: 共 ${totalRegexCount} 条，后端可导入 ${importableRegexCount} 条${skippedRegexCount > 0 ? `，已识别并跳过 ${skippedRegexCount} 条 ST 前端/UI 规则` : ''}</div>
+                        <div><strong style="color: var(--text-primary);">开场与问候</strong>: 首条消息 ${char.first_mes || char.data?.first_mes ? '有' : '无'}，备用开场白 ${metadataSummary.alternateGreetingsCount} 条</div>
+                        <div><strong style="color: var(--text-primary);">综合结论</strong>: ${metadataSummary.hasEmbeddedWorldBook || presetReady || importableRegexCount > 0 ? '该角色卡可部分自动导入，建议优先使用世界书与明确可兼容字段。' : '该角色卡主体可正常使用，但附加导入内容有限。'}${skippedRegexCount > 0 ? ' 这张卡包含面向 SillyTavern 的前端 regex，不会导入当前后端。': ''}</div>
+                    </div>
+                </div>
+            ` : '';
+            const bindingPanel = bindingSummary ? `
+                <div style="background: var(--bg-primary); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 15px;">
+                    <div style="font-weight: 600; margin-bottom: 8px;">当前生效绑定</div>
+                    <div>
+                        <span class="binding-note">世界书: ${bindingSummary.worldbook?.source || 'none'}${bindingSummary.worldbook?.value ? ` / ${escapeHtml(bindingSummary.worldbook.value)}` : ''}</span>
+                        <span class="binding-note">预设: ${bindingSummary.preset?.source || 'none'}${bindingSummary.preset?.value ? ` / ${escapeHtml(bindingSummary.preset.value)}` : ''}</span>
+                        <span class="binding-note">正则: ${bindingSummary.regexRules?.source || 'none'} / ${bindingSummary.regexRules?.count || 0} 条</span>
+                    </div>
+                </div>
+            ` : '';
             
             detail.innerHTML = `
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
@@ -890,8 +1830,11 @@
                         <button onclick="saveCharacter()" style="padding: 5px 10px; background: #1a1a1a; color: white;">💾 保存</button>
                     </div>
                 </div>
+                ${metadataPanel}
+                ${diagnosticPanel}
+                ${bindingPanel}
                 
-                <div style="display: grid; gap: 15px; max-height: 500px; overflow-y: auto;">
+                <div class="detail-scroll-wrap">
                     <!-- 基本信息 -->
                     <div class="form-group">
                         <label>📝 角色名称</label>
@@ -957,6 +1900,13 @@
                 .replace(/>/g, '&gt;')
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
+        }
+
+        function formatRegexStage(stage) {
+            if (Array.isArray(stage)) {
+                return stage.join(',');
+            }
+            return stage || 'output';
         }
 
         async function saveCharacter() {
@@ -1065,8 +2015,26 @@
                 const data = await res.json();
                 
                 if (data.success) {
-                    showToast(`角色卡 "${data.filename}" 上传成功`);
+                    const meta = data.importedMetadata || {};
+                    const metaSummary = data.metadataSummary || {};
+                    const hints = [];
+                    if (meta.hasEmbeddedWorldBook) hints.push(`检测到内嵌世界书 ${meta.worldBookEntries || 0} 条`);
+                    if ((meta.regexScripts || []).length > 0) {
+                        hints.push(`检测到附带正则 ${(meta.regexScripts || []).length} 条，可导入 ${metaSummary.importableRegexScriptCount || 0} 条`);
+                    }
+                    if (meta.postHistoryInstructions || meta.systemPrompt) hints.push('检测到可导入的预设字段');
+                    const detail = hints.length > 0 ? `：${hints.join('；')}` : '';
+                    showToast(`角色卡 "${data.filename}" 上传成功${detail}`);
                     loadCharacters();
+                    currentCharacterMetadataSummary = metaSummary;
+                    if (data.importPlan?.importWorldBook || data.importPlan?.importPreset || data.importPlan?.importRegex) {
+                        showImportOptionsModal(
+                            `是否继续导入 ${data.filename} 附带信息？`,
+                            metaSummary,
+                            data.importPlan,
+                            (selected, memoryBinding) => doSelectCharacter(data.filename, selected, memoryBinding)
+                        );
+                    }
                 } else {
                     showToast('上传失败: ' + data.error, true);
                 }
@@ -1078,21 +2046,68 @@
 
         // 删除角色卡
         async function deleteCharacter(filename) {
-            if (!confirm(`确定要删除角色卡 "${filename}" 吗？`)) return;
-            
-            try {
-                const res = await fetch(`/api/characters/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-                const data = await res.json();
-                
-                if (data.success) {
-                    showToast('角色卡已删除');
-                    loadCharacters();
-                } else {
-                    showToast('删除失败: ' + data.error, true);
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal">
+                    <h3>删除角色卡</h3>
+                    <p style="color: var(--text-secondary); margin-bottom: 14px;">你即将删除角色 <strong>${escapeHtml(filename)}</strong>。请选择数据库处理方式。</p>
+                    <label class="option-row">
+                        <input type="radio" name="delete-memory-mode" value="keep" checked>
+                        <div>
+                            <div style="font-weight: 600;">仅删除角色卡，保留数据库</div>
+                            <div style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">适合暂时下线角色，后续仍可能重新绑定记忆库。</div>
+                        </div>
+                    </label>
+                    <label class="option-row">
+                        <input type="radio" name="delete-memory-mode" value="migrate">
+                        <div>
+                            <div style="font-weight: 600;">删除角色卡，并把记忆迁回默认库</div>
+                            <div style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">会把该角色绑定库中的内容追加导入全局默认数据库。</div>
+                        </div>
+                    </label>
+                    <label class="option-row">
+                        <input type="radio" name="delete-memory-mode" value="delete-db">
+                        <div>
+                            <div style="font-weight: 600;">删除角色卡，并删除专属数据库</div>
+                            <div style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 4px;">危险操作，适合你确认这份角色记忆不再需要时使用。</div>
+                        </div>
+                    </label>
+                    <div class="btn-group" style="margin-top: 16px; justify-content: flex-end;">
+                        <button class="secondary" id="delete-char-cancel-btn">取消</button>
+                        <button class="danger" id="delete-char-confirm-btn">确认删除</button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(overlay);
+            overlay.querySelector('#delete-char-cancel-btn').addEventListener('click', () => overlay.remove());
+            overlay.querySelector('#delete-char-confirm-btn').addEventListener('click', async () => {
+                const mode = overlay.querySelector('input[name="delete-memory-mode"]:checked')?.value || 'keep';
+                overlay.remove();
+
+                try {
+                    const res = await fetch(`/api/characters/${encodeURIComponent(filename)}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            deleteMemoryDb: mode === 'delete-db',
+                            migrateMemoryToDefault: mode === 'migrate'
+                        })
+                    });
+                    const data = await res.json();
+
+                    if (data.success) {
+                        showToast('角色卡已删除');
+                        loadCharacters();
+                        loadMemoryDatabases();
+                    } else {
+                        showToast('删除失败: ' + data.error, true);
+                    }
+                } catch (e) {
+                    showToast('删除失败', true);
                 }
-            } catch (e) {
-                showToast('删除失败', true);
-            }
+            });
         }
 
         // 世界书
@@ -1530,7 +2545,8 @@
                 list.innerHTML = sessions.map(s => `
                     <div class="session-item">
                         <div class="session-info" onclick="viewSession('${s.id}')">
-                            <div class="session-id">${s.id}</div>
+                            <div class="session-id">${s.label || s.id}</div>
+                            <div class="session-meta">${s.id}</div>
                             <div class="session-meta">${s.messageCount} 条消息</div>
                         </div>
                         <button class="danger" onclick="clearSession('${s.id}')">清除</button>
@@ -1583,11 +2599,47 @@
             }
         }
 
+        async function runMemoryMigration() {
+            const payload = {
+                sourcePath: document.getElementById('memory-migrate-source').value.trim() || undefined,
+                targetPath: document.getElementById('memory-migrate-target').value.trim(),
+                sessionIds: document.getElementById('memory-migrate-session-ids').value.split(',').map((v) => v.trim()).filter(Boolean),
+                sessionPrefix: document.getElementById('memory-migrate-prefix').value.trim() || undefined,
+                userId: document.getElementById('memory-migrate-user-id').value.trim() || undefined,
+                replace: document.getElementById('memory-migrate-replace').checked
+            };
+
+            if (!payload.targetPath) {
+                showToast('请先填写目标数据库路径', true);
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/memory/migrate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!data.success) {
+                    throw new Error(data.error || '迁移失败');
+                }
+
+                document.getElementById('memory-migrate-result').textContent = `迁移完成\n源库: ${data.sourcePath}\n目标库: ${data.targetPath}\n会话: ${data.result.importedSessions}\n消息: ${data.result.importedMessages}\n摘要: ${data.result.importedSummaries}`;
+                showToast('记忆迁移已完成');
+                loadMemoryDatabases();
+            } catch (e) {
+                document.getElementById('memory-migrate-result').textContent = `迁移失败: ${e.message}`;
+                showToast(`迁移失败: ${e.message}`, true);
+            }
+        }
+
         // 正则规则
         async function loadRegexRules() {
             try {
                 const res = await fetch('/api/regex');
                 const rules = await res.json();
+                currentRegexRules = rules;
                 
                 const list = document.getElementById('regex-list');
                 if (rules.length === 0) {
@@ -1596,23 +2648,118 @@
                 }
                 
                 list.innerHTML = rules.map((r, i) => `
-                    <div class="regex-rule">
+                    <div class="regex-rule ${editingRegexIndex === i ? 'selected' : ''}" onclick="editRegexRule(${i})" style="cursor:pointer; border:${editingRegexIndex === i ? '1px solid var(--accent)' : '1px solid transparent'};">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <strong>${r.name || '未命名规则'}</strong>
-                            <button class="danger" onclick="deleteRegexRule(${i})" style="padding: 5px 10px;">删除</button>
+                            <strong>${escapeHtml(r.name || '未命名规则')}</strong>
+                            <button class="danger" onclick="event.stopPropagation(); deleteRegexRule(${i})" style="padding: 5px 10px;">删除</button>
                         </div>
-                        <div class="pattern">${r.pattern}</div>
+                        <div class="pattern">${escapeHtml(r.pattern || '')}</div>
                         <div style="font-size: 0.85rem; color: var(--text-secondary);">
-                            替换为: ${r.replacement || '(删除)'} | 阶段: ${r.stage || 'output'}
+                            替换为: ${escapeHtml(r.replacement || '(删除)')} | 阶段: ${escapeHtml(formatRegexStage(r.stage))} | 来源: ${escapeHtml(r.source || 'custom')}
                         </div>
                     </div>
                 `).join('');
+
+                const globalRules = currentConfig.bindings?.global?.regexRules || currentConfig.regex?.rules || [];
+                const presetRules = currentConfig.preset?.regexRules || [];
+                const characterName = currentConfig.chat?.defaultCharacter || '';
+                const characterRules = characterName ? (currentConfig.bindings?.characters?.[characterName]?.regexRules || []) : [];
+                const summary = document.getElementById('regex-layer-summary');
+                const layeredList = document.getElementById('regex-layered-list');
+                if (summary) {
+                    summary.textContent = `全局层: ${globalRules.length} 条\n预设层: ${presetRules.length} 条\n角色层: ${characterRules.length} 条`;
+                }
+                if (layeredList) {
+                    const renderLayer = (title, items, badge) => `
+                        <div class="meta-box" style="margin-top: 10px;">
+                            <strong>${title}</strong> (${items.length})\n${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name || '(未命名)'} :: ${rule.pattern || ''}`).join('\n') : '暂无规则'}
+                        </div>
+                    `;
+                    layeredList.innerHTML = [
+                        renderLayer('全局层', globalRules, 'G'),
+                        renderLayer('预设层', presetRules, 'P'),
+                        renderLayer(`角色层${characterName ? ` (${characterName})` : ''}`, characterRules, 'C')
+                    ].join('');
+                }
             } catch (e) {
                 console.error('加载正则规则失败', e);
             }
         }
 
-        async function addRegexRule() {
+        async function updateCharacterMemoryBinding(payload) {
+            if (!currentCharacterFilename) {
+                showToast('请先选择角色', true);
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/characters/${encodeURIComponent(currentCharacterFilename)}/memory-binding`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '更新失败');
+                }
+
+                if (currentCharacterData) {
+                    renderCharacterDetail(currentCharacterData, currentCharacterFilename, currentCharacterMetadataSummary, data.bindingSummary || null);
+                }
+                await loadConfig();
+                showToast(data.message || '角色记忆库绑定已更新');
+            } catch (e) {
+                showToast(`更新角色记忆库失败: ${e.message}`, true);
+            }
+        }
+
+        async function bindCharacterMemoryToDedicatedDb() {
+            await updateCharacterMemoryBinding({ mode: 'character' });
+        }
+
+        async function bindCharacterMemoryToCustomDb() {
+            const customPath = prompt('输入角色专属数据库路径', './data/chats/characters/custom-character.sqlite');
+            if (!customPath) {
+                return;
+            }
+            await updateCharacterMemoryBinding({ mode: 'custom', dbPath: customPath.trim() });
+        }
+
+        async function unbindCharacterMemoryDb() {
+            if (!confirm('解绑后，这个角色会回退到全局默认数据库。确定继续吗？')) {
+                return;
+            }
+            const migrateToDefault = confirm('是否把当前角色数据库里的记忆追加迁回全局默认数据库？');
+            await updateCharacterMemoryBinding({ mode: 'inherit', migrateToDefault });
+        }
+
+        function editRegexRule(index) {
+            const rule = currentRegexRules[index];
+            if (!rule) return;
+            editingRegexIndex = index;
+            document.getElementById('regex-editor-title').textContent = `编辑规则 #${index + 1}`;
+            document.getElementById('regex-save-btn').textContent = '保存修改';
+            document.getElementById('regex-name').value = rule.name || '';
+            document.getElementById('regex-pattern').value = rule.pattern || '';
+            document.getElementById('regex-flags').value = rule.flags || 'g';
+            document.getElementById('regex-replacement').value = rule.replacement || '';
+            document.getElementById('regex-stage').value = rule.stage || 'output';
+            loadRegexRules();
+        }
+
+        function resetRegexEditor() {
+            editingRegexIndex = null;
+            document.getElementById('regex-editor-title').textContent = '添加规则';
+            document.getElementById('regex-save-btn').textContent = '添加规则';
+            document.getElementById('regex-name').value = '';
+            document.getElementById('regex-pattern').value = '';
+            document.getElementById('regex-flags').value = 'g';
+            document.getElementById('regex-replacement').value = '';
+            document.getElementById('regex-stage').value = 'output';
+            loadRegexRules();
+        }
+
+        async function saveRegexRule() {
             const rule = {
                 name: document.getElementById('regex-name').value,
                 pattern: document.getElementById('regex-pattern').value,
@@ -1627,20 +2774,18 @@
             }
             
             try {
-                await fetch('/api/regex', {
-                    method: 'POST',
+                const method = editingRegexIndex === null ? 'POST' : 'PUT';
+                const url = editingRegexIndex === null ? '/api/regex' : `/api/regex/${editingRegexIndex}`;
+                await fetch(url, {
+                    method,
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(rule)
                 });
                 loadRegexRules();
-                showToast('规则已添加');
-                
-                // 清空表单
-                document.getElementById('regex-name').value = '';
-                document.getElementById('regex-pattern').value = '';
-                document.getElementById('regex-replacement').value = '';
+                showToast(editingRegexIndex === null ? '规则已添加' : '规则已更新');
+                resetRegexEditor();
             } catch (e) {
-                showToast('添加失败', true);
+                showToast(editingRegexIndex === null ? '添加失败' : '更新失败', true);
             }
         }
 
@@ -1693,6 +2838,424 @@
         }
 
         // 配置
+        let availableAIModels = [];
+        let probedAIModelMeta = null;
+
+        function setConfigSaveStatus(state, message) {
+            const node = document.getElementById('config-save-status');
+            if (!node) {
+                return;
+            }
+
+            node.dataset.state = state;
+            node.textContent = message;
+        }
+
+        function markConfigDirty(message = '当前配置有未保存改动') {
+            configDirty = true;
+            setConfigSaveStatus('dirty', message);
+        }
+
+        function markConfigSaved(message = '配置已保存') {
+            configDirty = false;
+            lastConfigSavedAt = new Date();
+            const timeLabel = lastConfigSavedAt.toLocaleTimeString('zh-CN', {
+                hour12: false,
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+            setConfigSaveStatus('saved', `${message} · ${timeLabel}`);
+        }
+
+        function wireConfigDirtyTracking() {
+            const panel = document.getElementById('config');
+            if (!panel || panel.dataset.dirtyTrackingBound === 'true') {
+                return;
+            }
+
+            const handler = () => markConfigDirty();
+            panel.querySelectorAll('input, select, textarea').forEach((element) => {
+                element.addEventListener('input', handler);
+                element.addEventListener('change', handler);
+            });
+
+            panel.dataset.dirtyTrackingBound = 'true';
+        }
+
+        function renderValidationResult(result) {
+            const box = document.getElementById('config-validation-box');
+            if (!box) {
+                return;
+            }
+
+            const errors = result?.errors || [];
+            const warnings = result?.warnings || [];
+
+            if (errors.length === 0 && warnings.length === 0) {
+                box.style.display = 'none';
+                box.className = 'validation-box';
+                box.innerHTML = '';
+                return;
+            }
+
+            box.style.display = 'block';
+            box.className = `validation-box ${errors.length > 0 ? 'error' : 'warning'}`;
+            box.innerHTML = `
+                <h4>${errors.length > 0 ? '保存前检查发现问题' : '保存前提示'}</h4>
+                ${errors.length > 0 ? `<ul>${errors.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+                ${warnings.length > 0 ? `<ul>${warnings.map((item) => `<li>${escapeHtml(item)}</li>`).join('')}</ul>` : ''}
+            `;
+        }
+
+        function getSelectedModelMeta(modelId) {
+            if (!modelId) {
+                return null;
+            }
+
+            return availableAIModels.find((model) => model.id === modelId || model.name === modelId) || null;
+        }
+
+        function renderModelQuickList(models = []) {
+            const container = document.getElementById('config-ai-model-quick-list');
+            if (!container) {
+                return;
+            }
+
+            if (!Array.isArray(models) || models.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const currentModel = document.getElementById('config-ai-model').value.trim();
+            container.innerHTML = models.slice(0, 16).map((model) => {
+                const metaParts = [
+                    model.contextWindow ? `上下文 ${model.contextWindow}` : '',
+                    model.maxOutputTokens ? `输出 ${model.maxOutputTokens}` : '',
+                    model.ownedBy || ''
+                ].filter(Boolean).join(' | ');
+
+                return `
+                    <div class="model-chip ${currentModel === model.id ? 'active' : ''}" onclick="selectModelFromQuickList('${escapeHtml(model.id)}')">
+                        <div>
+                            <div>${escapeHtml(model.id)}</div>
+                            <div class="meta">${escapeHtml(metaParts || '未提供额外元数据')}</div>
+                        </div>
+                        <div class="meta">${model.recommendedMaxTokens ? `推荐 ${model.recommendedMaxTokens}` : ''}</div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function selectModelFromQuickList(modelId) {
+            document.getElementById('config-ai-model').value = modelId;
+            const modelMeta = getSelectedModelMeta(modelId);
+            if (modelMeta) {
+                probedAIModelMeta = modelMeta;
+                renderAIModelMeta(modelMeta);
+            }
+            renderModelQuickList(availableAIModels);
+            markConfigDirty(`已选择模型: ${modelId}`);
+        }
+
+        function validateConfigDraft(draft) {
+            const errors = [];
+            const warnings = [];
+            const selectedModel = getSelectedModelMeta(draft.ai.model);
+
+            if (!draft.onebot.url) {
+                errors.push('OneBot WebSocket URL 不能为空。');
+            }
+
+            if (!draft.ai.baseUrl) {
+                errors.push('AI Base URL 不能为空。');
+            }
+
+            if (!draft.ai.model) {
+                errors.push('AI 模型不能为空。');
+            }
+
+            if (!draft.ai.maxTokens || draft.ai.maxTokens <= 0) {
+                errors.push('最大 Tokens 必须是大于 0 的数字。');
+            }
+
+            if (draft.ai.temperature < 0 || draft.ai.temperature > 2) {
+                errors.push('Temperature 必须在 0 到 2 之间。');
+            }
+
+            if (draft.ai.timeout < 10000) {
+                warnings.push('AI 超时低于 10 秒，复杂角色或长上下文下容易误判为超时。');
+            }
+
+            if (draft.chat.historyLimit > draft.chat.maxGlobalMessages) {
+                errors.push('上下文历史条数不能大于全局时间线容量上限。');
+            }
+
+            if (selectedModel?.maxOutputTokens && draft.ai.maxTokens > selectedModel.maxOutputTokens) {
+                warnings.push(`当前 maxTokens (${draft.ai.maxTokens}) 超过上游声明的最大输出上限 (${selectedModel.maxOutputTokens})。`);
+            }
+
+            if (!selectedModel && availableAIModels.length > 0) {
+                warnings.push('当前填写的模型不在最近一次拉取的模型列表中，可能是手填模型或上游列表已过期。');
+            }
+
+            if (draft.chat.maxConcurrentSessions > 4) {
+                warnings.push('最大并发会话数较高，可能会放大上游速率限制和排队压力。');
+            }
+
+            if (draft.memory.summary.enabled && draft.memory.summary.keepRecent >= draft.memory.summary.triggerMessages) {
+                warnings.push('摘要保留条数已经接近或超过触发阈值，摘要压缩效果会明显变弱。');
+            }
+
+            if (draft.chat.accessControlMode === 'allowlist' && draft.chat.allowedGroups.length === 0 && draft.chat.allowedUsers.length === 0) {
+                warnings.push('当前是白名单模式，但群和用户白名单都为空，这会退化为“全部放行”。');
+            }
+
+            return { errors, warnings };
+        }
+
+        function updateAccessControlLabels() {
+            const mode = document.getElementById('config-chat-access-mode')?.value || 'allowlist';
+            const groupAllowLabel = document.getElementById('config-chat-groups-label');
+            const groupBlockLabel = document.getElementById('config-chat-blocked-groups-label');
+            const userAllowLabel = document.getElementById('config-chat-users-label');
+            const userBlockLabel = document.getElementById('config-chat-blocked-users-label');
+            const groupAllowInput = document.getElementById('config-chat-groups');
+            const groupBlockInput = document.getElementById('config-chat-blocked-groups');
+            const userAllowInput = document.getElementById('config-chat-users');
+            const userBlockInput = document.getElementById('config-chat-blocked-users');
+
+            if (!groupAllowLabel || !groupBlockLabel || !userAllowLabel || !userBlockLabel || !groupAllowInput || !groupBlockInput || !userAllowInput || !userBlockInput) {
+                return;
+            }
+
+            if (mode === 'blocklist') {
+                groupAllowLabel.textContent = '群白名单已停用';
+                userAllowLabel.textContent = '用户白名单已停用';
+                groupBlockLabel.textContent = '群聊黑名单 (逗号分隔)';
+                userBlockLabel.textContent = '用户黑名单 (逗号分隔)';
+                groupAllowInput.disabled = true;
+                userAllowInput.disabled = true;
+                groupBlockInput.disabled = false;
+                userBlockInput.disabled = false;
+                return;
+            }
+
+            if (mode === 'disabled') {
+                groupAllowLabel.textContent = '群白名单已停用';
+                userAllowLabel.textContent = '用户白名单已停用';
+                groupBlockLabel.textContent = '群黑名单已停用';
+                userBlockLabel.textContent = '用户黑名单已停用';
+                groupAllowInput.disabled = true;
+                userAllowInput.disabled = true;
+                groupBlockInput.disabled = true;
+                userBlockInput.disabled = true;
+                return;
+            }
+
+            groupAllowLabel.textContent = '允许的群号 (逗号分隔，留空表示全部)';
+            userAllowLabel.textContent = '允许的用户 QQ (逗号分隔，留空表示全部)';
+            groupBlockLabel.textContent = '群黑名单已停用';
+            userBlockLabel.textContent = '用户黑名单已停用';
+            groupAllowInput.disabled = false;
+            userAllowInput.disabled = false;
+            groupBlockInput.disabled = true;
+            userBlockInput.disabled = true;
+        }
+
+        function updateAccessControlSummary() {
+            const box = document.getElementById('config-chat-access-summary');
+            if (!box) {
+                return;
+            }
+
+            const mode = document.getElementById('config-chat-access-mode')?.value || 'allowlist';
+            const allowedGroups = document.getElementById('config-chat-groups')?.value.split(',').map((v) => v.trim()).filter(Boolean) || [];
+            const blockedGroups = document.getElementById('config-chat-blocked-groups')?.value.split(',').map((v) => v.trim()).filter(Boolean) || [];
+            const allowedUsers = document.getElementById('config-chat-users')?.value.split(',').map((v) => v.trim()).filter(Boolean) || [];
+            const adminUsers = document.getElementById('config-chat-admin-users')?.value.split(',').map((v) => v.trim()).filter(Boolean) || [];
+            const blockedUsers = document.getElementById('config-chat-blocked-users')?.value.split(',').map((v) => v.trim()).filter(Boolean) || [];
+
+            if (mode === 'disabled') {
+                box.textContent = `当前策略：关闭名单控制。不会根据群号或用户 QQ 做准入过滤。管理员 QQ ${adminUsers.length} 个。`;
+                return;
+            }
+
+            if (mode === 'blocklist') {
+                box.textContent = `当前策略：黑名单模式。已屏蔽 ${blockedGroups.length} 个群、${blockedUsers.length} 个用户；其余来源默认允许。管理员 QQ ${adminUsers.length} 个。`;
+                return;
+            }
+
+            box.textContent = `当前策略：白名单模式。允许 ${allowedGroups.length} 个群、${allowedUsers.length} 个用户；不在名单内的来源不会触发。管理员 QQ ${adminUsers.length} 个。`;
+        }
+
+        async function fetchJsonSafe(url, options = {}) {
+            const res = await fetch(url, options);
+            const contentType = res.headers.get('content-type') || '';
+            const text = await res.text();
+
+            if (!contentType.includes('application/json')) {
+                const preview = text.slice(0, 120).replace(/\s+/g, ' ').trim();
+                if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+                    throw new Error(`接口返回了 HTML 页面，通常表示当前登录态失效或页面缓存未刷新，请重新登录并强制刷新页面。片段: ${preview}`);
+                }
+                throw new Error(`接口未返回 JSON，收到内容类型: ${contentType || 'unknown'}，片段: ${preview}`);
+            }
+
+            const data = JSON.parse(text);
+            if (data?.needLogin) {
+                throw new Error('当前登录态已失效，请重新登录');
+            }
+
+            return { res, data };
+        }
+
+        function getAIConfigDraft() {
+            const apiKeyInput = document.getElementById('config-ai-apikey').value.trim();
+            return {
+                baseUrl: document.getElementById('config-ai-baseurl').value.trim(),
+                apiKey: apiKeyInput && apiKeyInput !== '******' ? apiKeyInput : '',
+                model: document.getElementById('config-ai-model').value.trim()
+            };
+        }
+
+        function renderAIModelMeta(meta = null) {
+            const container = document.getElementById('config-ai-model-meta');
+            if (!container) {
+                return;
+            }
+
+            if (!meta) {
+                container.textContent = '尚未探测。先填写 Base URL / API Key，再点击“拉取模型”或“探测上游元数据”。';
+                return;
+            }
+
+            if (meta.summaryText) {
+                container.textContent = meta.summaryText;
+                return;
+            }
+
+            const lines = [
+                `模型: ${meta.name || meta.id || '未知'}`,
+                meta.ownedBy ? `提供方: ${meta.ownedBy}` : '',
+                meta.contextWindow ? `上下文窗口: ${meta.contextWindow}` : '',
+                meta.maxOutputTokens ? `最大输出 Tokens: ${meta.maxOutputTokens}` : '',
+                meta.recommendedMaxTokens ? `推荐填充值: ${meta.recommendedMaxTokens}` : ''
+            ].filter(Boolean);
+
+            container.textContent = lines.join('\n');
+        }
+
+        function summarizeModelList(models = []) {
+            if (!Array.isArray(models) || models.length === 0) {
+                return '未从上游拿到任何模型。请检查 Base URL、API Key，或确认上游是否兼容 `/models`。';
+            }
+
+            const tokenAwareCount = models.filter((model) => model.maxOutputTokens || model.recommendedMaxTokens || model.contextWindow).length;
+            const preview = models.slice(0, 6).map((model) => model.id).join(', ');
+            return `已发现 ${models.length} 个模型，其中 ${tokenAwareCount} 个带有可用元数据。\n预览: ${preview}${models.length > 6 ? ' ...' : ''}`;
+        }
+
+        function syncAIModelList(models = []) {
+            availableAIModels = models;
+            const dataList = document.getElementById('config-ai-model-list');
+            if (!dataList) {
+                return;
+            }
+
+            dataList.innerHTML = models
+                .map((model) => `<option value="${escapeHtml(model.id)}"></option>`)
+                .join('');
+            renderModelQuickList(models);
+        }
+
+        function applyDetectedMaxTokens() {
+            const detected = probedAIModelMeta?.recommendedMaxTokens || probedAIModelMeta?.maxOutputTokens;
+            if (!detected) {
+                showToast('当前没有可应用的上游 Tokens 元数据', true);
+                return;
+            }
+
+            document.getElementById('config-ai-maxtokens').value = detected;
+            showToast(`已应用推荐 Tokens: ${detected}`);
+        }
+
+        async function fetchAIModels() {
+            const draft = getAIConfigDraft();
+            if (!draft.baseUrl) {
+                showToast('请先填写 AI Base URL', true);
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/ai/models', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(draft)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '拉取失败');
+                }
+
+                syncAIModelList(data.models || []);
+                renderAIModelMeta({ summaryText: summarizeModelList(data.models || []) });
+                if ((data.models || []).length > 0 && !draft.model) {
+                    document.getElementById('config-ai-model').value = data.models[0].id;
+                    markConfigDirty('模型列表已加载，已自动填入首个模型');
+                    renderModelQuickList(data.models || []);
+                }
+                showToast(`已拉取 ${(data.models || []).length} 个模型`);
+            } catch (e) {
+                showToast(`拉取模型失败: ${e.message}`, true);
+                setConfigSaveStatus('error', `模型拉取失败: ${e.message}`);
+            }
+        }
+
+        async function probeAIModel() {
+            const draft = getAIConfigDraft();
+            if (!draft.baseUrl) {
+                showToast('请先填写 AI Base URL', true);
+                return;
+            }
+            if (!draft.model) {
+                showToast('请先填写或选择模型', true);
+                return;
+            }
+
+            try {
+                const res = await fetch('/api/ai/probe', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(draft)
+                });
+                const data = await res.json();
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '探测失败');
+                }
+
+                if (Array.isArray(data.availableModels)) {
+                    syncAIModelList(data.availableModels);
+                }
+
+                probedAIModelMeta = data.model || null;
+                renderAIModelMeta(probedAIModelMeta);
+                renderModelQuickList(availableAIModels);
+
+                if (data.autoMaxTokens) {
+                    document.getElementById('config-ai-maxtokens').value = data.autoMaxTokens;
+                    markConfigDirty(`已根据上游元数据填入推荐 Tokens: ${data.autoMaxTokens}`);
+                    showToast(`探测成功，已自动填入推荐 Tokens: ${data.autoMaxTokens}`);
+                } else {
+                    showToast('探测成功，但上游未返回可用的 Tokens 元数据');
+                    setConfigSaveStatus('dirty', '模型已探测，但上游没有返回可自动应用的 Tokens');
+                }
+            } catch (e) {
+                showToast(`探测失败: ${e.message}`, true);
+                setConfigSaveStatus('error', `模型探测失败: ${e.message}`);
+            }
+        }
+
         async function loadConfig() {
             try {
                 const res = await fetch('/api/config');
@@ -1700,26 +3263,182 @@
                 
                 document.getElementById('config-onebot-url').value = currentConfig.onebot?.url || '';
                 document.getElementById('config-onebot-token').value = currentConfig.onebot?.accessToken || '';
+                document.getElementById('config-onebot-token-mode').value = currentConfig.onebot?.tokenMode || 'header';
                 document.getElementById('config-ai-baseurl').value = currentConfig.ai?.baseUrl || '';
                 document.getElementById('config-ai-model').value = currentConfig.ai?.model || '';
                 document.getElementById('config-ai-maxtokens').value = currentConfig.ai?.maxTokens || '';
                 document.getElementById('config-ai-temperature').value = currentConfig.ai?.temperature || '';
+                probedAIModelMeta = null;
+                renderAIModelMeta(null);
 				
-				// ✨ 新增：加载超时配置（转换为秒显示）
+                // ✨ 新增：加载超时配置（转换为秒显示）
                 const timeoutSeconds = (currentConfig.ai?.timeout || 60000) / 1000;
                 document.getElementById('config-ai-timeout').value = timeoutSeconds;
-				
+
+                document.getElementById('config-chat-session-mode').value = currentConfig.chat?.sessionMode || 'user_persistent';
+                document.getElementById('config-chat-trigger-mode').value = currentConfig.chat?.triggerMode || 'auto';
+                document.getElementById('config-chat-access-mode').value = currentConfig.chat?.accessControlMode || 'allowlist';
                 document.getElementById('config-chat-trigger').value = currentConfig.chat?.triggerPrefix || '';
+                document.getElementById('config-chat-keywords').value = (currentConfig.chat?.triggerKeywords || []).join(',');
                 document.getElementById('config-chat-history').value = currentConfig.chat?.historyLimit || '';
-				document.getElementById('config-chat-max-global').value = currentConfig.chat?.maxGlobalMessages || 2000;
+                document.getElementById('config-chat-max-global').value = currentConfig.chat?.maxGlobalMessages || 2000;
                 document.getElementById('config-chat-groups').value = (currentConfig.chat?.allowedGroups || []).join(',');
+                document.getElementById('config-chat-blocked-groups').value = (currentConfig.chat?.blockedGroups || []).join(',');
+                document.getElementById('config-chat-users').value = (currentConfig.chat?.allowedUsers || []).join(',');
+                document.getElementById('config-chat-admin-users').value = (currentConfig.chat?.adminUsers || []).join(',');
+                document.getElementById('config-chat-blocked-users').value = (currentConfig.chat?.blockedUsers || []).join(',');
+                document.getElementById('config-chat-buffer-window').value = currentConfig.chat?.bufferWindowMs ?? 1200;
+                document.getElementById('config-chat-reply-delay').value = currentConfig.chat?.replyDelayMs ?? 800;
+                document.getElementById('config-chat-segment-delay').value = currentConfig.chat?.segmentDelayMs ?? 300;
+                document.getElementById('config-chat-proactive-interval').value = currentConfig.chat?.proactiveMessageIntervalMs ?? 1500;
+                document.getElementById('config-chat-dedupe-window').value = currentConfig.chat?.dedupeWindowMs ?? 10000;
+                document.getElementById('config-chat-max-concurrent').value = currentConfig.chat?.maxConcurrentSessions ?? 2;
                 document.getElementById('config-chat-split').checked = currentConfig.chat?.splitMessage !== false;
+                document.getElementById('config-chat-require-at').checked = currentConfig.chat?.requireAtInGroup !== false;
+                document.getElementById('config-chat-quote-reply').checked = currentConfig.chat?.quoteReplyEnabled !== false;
+                document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
+
+                document.getElementById('config-memory-db-path').value = currentConfig.memory?.storage?.path || './data/chats/memory-store.sqlite';
+                document.getElementById('config-memory-summary-enabled').checked = currentConfig.memory?.summary?.enabled === true;
+                document.getElementById('config-memory-summary-trigger').value = currentConfig.memory?.summary?.triggerMessages ?? 80;
+                document.getElementById('config-memory-summary-keep').value = currentConfig.memory?.summary?.keepRecent ?? 30;
+                document.getElementById('config-memory-summary-max').value = currentConfig.memory?.summary?.maxSummaries ?? 8;
+                document.getElementById('config-memory-summary-source').value = currentConfig.memory?.summary?.maxSourceMessages ?? 50;
+                document.getElementById('config-memory-summary-ai').checked = currentConfig.memory?.summary?.useAI !== false;
+
+                document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
+                document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
+                document.getElementById('config-preset-system').value = currentConfig.preset?.systemPrompt || '';
+                document.getElementById('config-preset-post-history').value = currentConfig.preset?.postHistoryInstructions || '';
+                document.getElementById('config-preset-jailbreak').value = currentConfig.preset?.jailbreak || '';
+                document.getElementById('config-preset-assistant-prefill').value = currentConfig.preset?.assistantPrefill || '';
+
+                document.getElementById('config-context-enabled').checked = currentConfig.context?.enabled !== false;
+                document.getElementById('config-context-session-facts').checked = currentConfig.context?.includeSessionFacts !== false;
+                document.getElementById('config-context-participants').checked = currentConfig.context?.includeParticipants !== false;
+                document.getElementById('config-context-reply-reference').checked = currentConfig.context?.includeReplyReference !== false;
+                document.getElementById('config-context-recent-intent').checked = currentConfig.context?.includeRecentUserIntent !== false;
+
+                document.getElementById('config-regex-enabled').checked = currentConfig.regex?.enabled !== false;
+                document.getElementById('config-regex-preset').checked = currentConfig.regex?.usePresetRules !== false;
+                wireConfigDirtyTracking();
+                renderValidationResult({ errors: [], warnings: [] });
+                renderModelQuickList(availableAIModels);
+                updateAccessControlLabels();
+                updateAccessControlSummary();
+                markConfigSaved('配置已同步到页面');
             } catch (e) {
                 console.error('加载配置失败', e);
+                setConfigSaveStatus('error', '加载配置失败');
+            }
+        }
+
+        async function importRegexFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const payload = JSON.parse(text);
+                payload.targetLayer = document.getElementById('regex-import-target-layer')?.value || 'global';
+                const { res, data } = await fetchJsonSafe('/api/regex/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '导入失败');
+                }
+                loadRegexRules();
+                const names = (data.importedRules || []).slice(0, 3).map(rule => rule.name).filter(Boolean);
+                const detail = names.length > 0 ? `：${names.join(' / ')}${data.count > 3 ? ' ...' : ''}` : '';
+                if (data.diagnostics) {
+                    const warnings = Array.isArray(data.diagnostics.warnings) ? data.diagnostics.warnings.join('\n') : '';
+                    document.getElementById('regex-test-result').innerHTML = `<div class="meta-box">迁移格式: ${escapeHtml(data.diagnostics.detectedFormat || 'unknown')}\n目标层: ${escapeHtml(data.targetLayer || payload.targetLayer)}\n总规则: ${data.diagnostics.totalRules || data.count}\n可导入: ${data.diagnostics.importableRules || data.count}${warnings ? `\n\n迁移提示:\n${escapeHtml(warnings)}` : ''}</div>`;
+                }
+                showToast(`${data.message || '规则已导入'}${detail}`);
+            } catch (e) {
+                showToast(`导入失败: ${e.message}`, true);
+            }
+
+            input.value = '';
+        }
+
+        function downloadJson(filename, payload) {
+            const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.click();
+            URL.revokeObjectURL(url);
+        }
+
+        async function exportRegexRules(format) {
+            try {
+                const res = await fetch(`/api/regex/export?format=${encodeURIComponent(format)}`);
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                const payload = await res.json();
+                downloadJson(`regex-${format}.json`, payload);
+                showToast('正则规则已导出');
+            } catch (e) {
+                showToast(`导出失败: ${e.message}`, true);
+            }
+        }
+
+        async function importPresetFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            try {
+                const text = await file.text();
+                const payload = JSON.parse(text);
+                const { res, data } = await fetchJsonSafe('/api/preset/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '导入失败');
+                }
+                await loadConfig();
+                const detail = Array.isArray(data.importedFields) && data.importedFields.length > 0
+                    ? `：${data.importedFields.join(', ')}`
+                    : '';
+                if (data.diagnostics) {
+                    const warnings = Array.isArray(data.diagnostics.warnings) ? data.diagnostics.warnings.join('\n') : '';
+                    const regexWarnings = Array.isArray(data.regexDiagnostics?.warnings) ? data.regexDiagnostics.warnings.join('\n') : '';
+                    document.getElementById('config-ai-model-meta').textContent = `预设迁移报告\n格式: ${data.diagnostics.detectedFormat || 'unknown'}\n总 prompts: ${data.diagnostics.totalPrompts || 0}\n启用 prompts: ${data.diagnostics.enabledPrompts || 0}\n预设层正则: ${data.importedRegexCount || 0}${warnings ? `\n\n预设迁移提示:\n${warnings}` : ''}${regexWarnings ? `\n\n正则迁移提示:\n${regexWarnings}` : ''}`;
+                }
+                if ((data.importedRegexCount || 0) > 0) {
+                    await loadRegexRules();
+                }
+                showToast(`${data.message || '预设已导入'}${detail}`);
+            } catch (e) {
+                showToast(`导入失败: ${e.message}`, true);
+            }
+
+            input.value = '';
+        }
+
+        async function exportPreset(format) {
+            try {
+                const res = await fetch(`/api/preset/export?format=${encodeURIComponent(format)}`);
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
+                const payload = await res.json();
+                downloadJson(`preset-${format}.json`, payload);
+                showToast('预设已导出');
+            } catch (e) {
+                showToast(`导出失败: ${e.message}`, true);
             }
         }
 
         async function saveConfig() {
+            setConfigSaveStatus('saving', '正在保存配置...');
             // ✨ 读取超时配置（转换为毫秒保存）
             const timeoutSeconds = parseInt(document.getElementById('config-ai-timeout').value) || 60;
             const timeoutMs = timeoutSeconds * 1000;
@@ -1727,38 +3446,130 @@
             const newConfig = {
                 onebot: {
                     url: document.getElementById('config-onebot-url').value,
-                    accessToken: document.getElementById('config-onebot-token').value
+                    accessToken: document.getElementById('config-onebot-token').value,
+                    tokenMode: document.getElementById('config-onebot-token-mode').value
                 },
                 ai: {
                     baseUrl: document.getElementById('config-ai-baseurl').value,
-                    apiKey: document.getElementById('config-ai-apikey').value || currentConfig.ai?.apiKey,
+                    apiKey: (() => {
+                        const value = document.getElementById('config-ai-apikey').value.trim();
+                        return value && value !== '******' ? value : '******';
+                    })(),
                     model: document.getElementById('config-ai-model').value,
                     maxTokens: parseInt(document.getElementById('config-ai-maxtokens').value) || 4096,
                     temperature: parseFloat(document.getElementById('config-ai-temperature').value) || 0.7,
                     timeout: timeoutMs  // ✨ 新增：保存超时配置
                 },
                 chat: {
+                    sessionMode: document.getElementById('config-chat-session-mode').value,
+                    accessControlMode: document.getElementById('config-chat-access-mode').value,
+                    triggerMode: document.getElementById('config-chat-trigger-mode').value,
                     triggerPrefix: document.getElementById('config-chat-trigger').value,
+                    triggerKeywords: document.getElementById('config-chat-keywords').value.split(',').map(v => v.trim()).filter(Boolean),
                     historyLimit: parseInt(document.getElementById('config-chat-history').value) || 20,
-                    maxGlobalMessages: parseInt(document.getElementById('config-chat-max-global').value) || 2000,  // ✅ 添加全局记忆容量
+                    maxGlobalMessages: parseInt(document.getElementById('config-chat-max-global').value) || 2000,
                     allowedGroups: document.getElementById('config-chat-groups').value.split(',').filter(g => g.trim()),
+                    blockedGroups: document.getElementById('config-chat-blocked-groups').value.split(',').filter(g => g.trim()),
+                    allowedUsers: document.getElementById('config-chat-users').value.split(',').filter(g => g.trim()),
+                    adminUsers: document.getElementById('config-chat-admin-users').value.split(',').filter(g => g.trim()),
+                    blockedUsers: document.getElementById('config-chat-blocked-users').value.split(',').filter(g => g.trim()),
+                    bufferWindowMs: parseInt(document.getElementById('config-chat-buffer-window').value) || 1200,
+                    replyDelayMs: parseInt(document.getElementById('config-chat-reply-delay').value) || 800,
+                    segmentDelayMs: parseInt(document.getElementById('config-chat-segment-delay').value) || 300,
+                    proactiveMessageIntervalMs: parseInt(document.getElementById('config-chat-proactive-interval').value) || 1500,
+                    dedupeWindowMs: parseInt(document.getElementById('config-chat-dedupe-window').value) || 10000,
+                    maxConcurrentSessions: parseInt(document.getElementById('config-chat-max-concurrent').value) || 2,
                     splitMessage: document.getElementById('config-chat-split').checked,
+                    requireAtInGroup: document.getElementById('config-chat-require-at').checked,
+                    quoteReplyEnabled: document.getElementById('config-chat-quote-reply').checked,
+                    attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
                     defaultCharacter: currentConfig.chat?.defaultCharacter || ''
+                },
+                memory: {
+                    storage: {
+                        type: 'sqlite',
+                        path: document.getElementById('config-memory-db-path').value || './data/chats/memory-store.sqlite'
+                    },
+                    summary: {
+                        enabled: document.getElementById('config-memory-summary-enabled').checked,
+                        triggerMessages: parseInt(document.getElementById('config-memory-summary-trigger').value) || 80,
+                        keepRecent: parseInt(document.getElementById('config-memory-summary-keep').value) || 30,
+                        maxSummaries: parseInt(document.getElementById('config-memory-summary-max').value) || 8,
+                        maxSourceMessages: parseInt(document.getElementById('config-memory-summary-source').value) || 50,
+                        useAI: document.getElementById('config-memory-summary-ai').checked
+                    }
+                },
+                preset: {
+                    enabled: document.getElementById('config-preset-enabled').checked,
+                    name: document.getElementById('config-preset-name').value,
+                    systemPrompt: document.getElementById('config-preset-system').value,
+                    postHistoryInstructions: document.getElementById('config-preset-post-history').value,
+                    jailbreak: document.getElementById('config-preset-jailbreak').value,
+                    assistantPrefill: document.getElementById('config-preset-assistant-prefill').value,
+                    regexRules: currentConfig.preset?.regexRules || []
+                },
+                context: {
+                    enabled: document.getElementById('config-context-enabled').checked,
+                    includeSessionFacts: document.getElementById('config-context-session-facts').checked,
+                    includeParticipants: document.getElementById('config-context-participants').checked,
+                    includeReplyReference: document.getElementById('config-context-reply-reference').checked,
+                    includeRecentUserIntent: document.getElementById('config-context-recent-intent').checked
+                },
+                regex: {
+                    ...(currentConfig.regex || {}),
+                    enabled: document.getElementById('config-regex-enabled').checked,
+                    usePresetRules: document.getElementById('config-regex-preset').checked,
+                    rules: currentConfig.regex?.rules || []
+                },
+                bindings: {
+                    ...(currentConfig.bindings || {}),
+                    global: {
+                        ...((currentConfig.bindings || {}).global || {}),
+                        regexRules: currentConfig.bindings?.global?.regexRules || currentConfig.regex?.rules || []
+                    },
+                    characters: (currentConfig.bindings || {}).characters || {}
                 }
             };
+
+            const validation = validateConfigDraft(newConfig);
+            renderValidationResult(validation);
+            if (validation.errors.length > 0) {
+                setConfigSaveStatus('error', '配置校验未通过，请先修正错误');
+                showToast('配置校验未通过，请先修正错误', true);
+                return;
+            }
+
+            if (validation.warnings.length > 0) {
+                setConfigSaveStatus('dirty', `存在 ${validation.warnings.length} 条风险提示，已继续保存`);
+            }
             
             try {
-                await fetch('/api/config', {
+                const res = await fetch('/api/config', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(newConfig)
                 });
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}`);
+                }
                 showToast('配置已保存');
-                loadConfig();
+                currentConfig = newConfig;
+                await loadConfig();
+                markConfigSaved('配置已保存并生效');
             } catch (e) {
-                showToast('保存失败', true);
+                showToast(`保存失败: ${e.message}`, true);
+                setConfigSaveStatus('error', `保存失败: ${e.message}`);
             }
         }
+
+        window.addEventListener('beforeunload', (event) => {
+            if (!configDirty) {
+                return;
+            }
+
+            event.preventDefault();
+            event.returnValue = '当前配置还有未保存改动，确定要离开吗？';
+        });
             
         // OneBot 重连
         async function reconnectOneBot() {
@@ -1873,11 +3684,16 @@
                 // 加载配置
                 const configRes = await fetch('/api/tts/config');
                 const config = await configRes.json();
+                const voicesRes = await fetch('/api/tts/voices');
+                const voices = await voicesRes.json();
+                const voiceSelect = document.getElementById('tts-voice-select');
+                voiceSelect.innerHTML = '<option value="">手动输入 / 自定义</option>' + voices.map(v => `<option value="${v.id}">${v.name} (${v.id})</option>`).join('');
                 
                 document.getElementById('tts-enabled').checked = config.enabled || false;
                 document.getElementById('tts-appid').value = config.appid || config.appId || '';
                 document.getElementById('tts-token').value = config.token || config.accessToken || '';
                 document.getElementById('tts-voice').value = config.voiceType || 'BV700_V2_streaming';
+                voiceSelect.value = voices.some(v => v.id === (config.voiceType || 'BV700_V2_streaming')) ? (config.voiceType || 'BV700_V2_streaming') : '';
                 document.getElementById('tts-speed').value = config.speedRatio || config.speed || 1.0;
                 document.getElementById('tts-volume').value = config.volumeRatio || config.volume || 1.0;
                 document.getElementById('tts-pitch').value = config.pitchRatio || config.pitch || 1.0;
@@ -1886,9 +3702,26 @@
                 document.getElementById('tts-speed-value').textContent = config.speedRatio || config.speed || 1.0;
                 document.getElementById('tts-volume-value').textContent = config.volumeRatio || config.volume || 1.0;
                 document.getElementById('tts-pitch-value').textContent = config.pitchRatio || config.pitch || 1.0;
+                toggleTTSFields(config.enabled || false);
             } catch (e) {
                 console.error('加载 TTS 配置失败', e);
             }
+        }
+
+        function applySelectedVoice() {
+            const selected = document.getElementById('tts-voice-select').value;
+            if (selected) {
+                document.getElementById('tts-voice').value = selected;
+            }
+        }
+
+        function toggleTTSFields(enabled) {
+            ['tts-appid', 'tts-token', 'tts-voice-select', 'tts-voice', 'tts-speed', 'tts-volume', 'tts-pitch', 'tts-test-text'].forEach((id) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.disabled = !enabled;
+                }
+            });
         }
 
         // 保存 TTS 配置
@@ -1981,6 +3814,13 @@
             if (pitchSlider) {
                 pitchSlider.addEventListener('input', (e) => {
                     document.getElementById('tts-pitch-value').textContent = e.target.value;
+                });
+            }
+
+            const ttsEnabled = document.getElementById('tts-enabled');
+            if (ttsEnabled) {
+                ttsEnabled.addEventListener('change', (e) => {
+                    toggleTTSFields(e.target.checked);
                 });
             }
         });

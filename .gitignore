@@ -10,6 +10,7 @@ data/character_overrides/
 data/worldbooks/
 data/worlds/
 data/chats/
+data/sessions/
 
 # Keep data directory structure
 !data/.gitkeep
@@ -26,6 +27,11 @@ Thumbs.db
 logs/
 *.log
 npm-debug.log*
+
+# Local workspaces and temporary artifacts
+.worktrees/
+tmp/
+compare-ui/
 
 # Audio files (generated TTS)
 audio/

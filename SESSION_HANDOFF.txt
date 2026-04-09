@@ -1,0 +1,118 @@
+MimirLink session handoff
+Date: 2026-04-09
+
+User requirement
+- Important conversation checkpoints must be written to this file because chat sessions may unexpectedly restart.
+
+Confirmed project path
+- Active project root: D:\project\test\QQ-Tavern\MimirLink
+
+Current trust-layer state already present in code
+- src/security.js
+  - buildObservationEnvelope() returns:
+    - trusted_context
+    - runtime_stats
+    - untrusted_user_inputs
+    - trusted_admin_inputs
+    - system_generated_memory
+- src/index.js
+  - admin QQ users are detected and treated as trusted input
+  - normal users are written to untrusted_user_inputs
+  - admin users are written to trusted_admin_inputs
+  - lastInjectionObservation is built from the split observation envelope
+- src/routes.js
+  - /api/status exposes lastInjectionObservation
+- public/index.html
+  - admin QQ config field exists
+  - access control summary includes admin QQ count
+  - dashboard already contains a security trust panel placeholder/rendering
+
+User-stated completed line of work before this checkpoint
+- Admin QQ has been promoted from configuration into visible trust-layer state.
+- This line was continued without restarting.
+- The main goal is to finish the security-layer panel as a frontend-visible checkpoint.
+
+Design options considered
+1. Minimal enhancement
+   - keep only lastInjectionObservation
+   - improve labels/colors/rules/timestamp
+2. Lightweight history panel
+   - keep current observation schema
+   - wrap each observation in event metadata
+   - add a recent in-memory observation buffer
+   - show summary plus recent records on frontend
+3. Full security subsystem
+   - separate runtime store, counters, audits, admin actions
+
+Accepted direction
+- Use option 2: lightweight history panel.
+
+Accepted backend design direction
+- Preserve the existing observation envelope structure.
+- Add an outer event wrapper with fields such as:
+  - id
+  - timestamp
+  - actorType
+  - summary
+  - observation
+- Keep lastInjectionObservation for compatibility.
+- Add recentInjectionObservations as a fixed-length in-memory buffer.
+- Expose both latest and recent observations to the frontend.
+
+Accepted frontend design direction
+- Keep the dashboard security panel on the homepage.
+- Expand it into two zones:
+  1. Summary zone
+     - trusted sources
+     - admin QQ list
+     - latest normal-user risk
+     - latest admin-input time or preview
+     - recent observation count
+  2. Recent observations zone
+     - time
+     - actor type: normal user / admin
+     - risk level
+     - matched rules
+     - content preview
+     - sessionId
+- Suggested visual labels:
+  - high: red
+  - medium: orange
+  - low: yellow
+  - none: gray or green
+  - trusted-admin source label
+  - untrusted-user source label
+
+Accepted API direction
+- Do not add a new API route yet.
+- Extend /api/status with:
+  - lastInjectionObservation
+  - recentInjectionObservations
+
+Accepted boundary rules
+- No restart for this checkpoint while the line is still being closed.
+- No database persistence for this security observation history yet.
+- Fixed-length in-memory recent buffer only.
+- Admin input must only go into trusted_admin_inputs.
+- Normal user input must only go into untrusted_user_inputs.
+- Empty state should render clearly when no observations exist.
+
+Latest user correction
+- Do not store notes under docs/ for this purpose.
+- Store session continuity notes in:
+  D:\project\test\QQ-Tavern\MimirLink\SESSION_HANDOFF.txt
+
+Spec written in this session
+- Design spec path:
+  D:\project\test\QQ-Tavern\MimirLink\docs\superpowers\specs\2026-04-09-trust-layer-security-panel-design.md
+- Spec covers:
+  - lightweight history panel approach
+  - event wrapper around observation envelopes
+  - recentInjectionObservations in-memory buffer
+  - /api/status extension
+  - dashboard summary + recent observations sections
+  - empty/error states and manual verification targets
+
+Next expected step
+- User reviews the design spec.
+- If approved, move to implementation planning and then code changes.

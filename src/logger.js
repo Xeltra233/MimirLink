@@ -3,6 +3,8 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { dirname } from 'path';
 
+const FILE_ENCODING = 'utf8';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = path.join(__dirname, '..');
@@ -11,6 +13,8 @@ export class Logger {
     constructor() {
         this.listeners = [];
         this.level = 'debug'; // 日志级别：debug, info, warn, error
+        this.recentLogs = [];
+        this.maxRecentLogs = 300;
         
         // 创建日志目录
         this.logDir = path.join(ROOT_DIR, 'logs');
@@ -20,7 +24,7 @@ export class Logger {
         
         // 日志文件路径（按日期命名）
         const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-        this.logFile = path.join(this.logDir, `tavern-link-${today}.log`);
+        this.logFile = path.join(this.logDir, `mimirlink-${today}.log`);
         
         // 初始化日志文件
         this.initLogFile();
@@ -28,7 +32,7 @@ export class Logger {
     
     initLogFile() {
         const header = `\n${'='.repeat(80)}\n日志启动时间: ${new Date().toLocaleString('zh-CN')}\n${'='.repeat(80)}\n`;
-        fs.appendFileSync(this.logFile, header, 'utf8');
+        fs.appendFileSync(this.logFile, header, FILE_ENCODING);
     }
     
     writeToFile(level, message) {
@@ -45,7 +49,7 @@ export class Logger {
         const logLine = `[${timestamp}] [${level.toUpperCase()}] ${message}\n`;
         
         try {
-            fs.appendFileSync(this.logFile, logLine, 'utf8');
+            fs.appendFileSync(this.logFile, logLine, FILE_ENCODING);
         } catch (error) {
             console.error('写入日志文件失败:', error.message);
         }
@@ -63,6 +67,11 @@ export class Logger {
             message,
             data
         };
+
+        this.recentLogs.push(logEntry);
+        if (this.recentLogs.length > this.maxRecentLogs) {
+            this.recentLogs = this.recentLogs.slice(-this.maxRecentLogs);
+        }
         
         // 输出到终端
         const color = {
@@ -114,6 +123,10 @@ export class Logger {
     
     error(message, data) {
         this.log('error', message, data);
+    }
+
+    getRecentLogs(limit = 100) {
+        return this.recentLogs.slice(-limit);
     }
 }
 

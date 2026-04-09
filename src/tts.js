@@ -317,7 +317,7 @@ export class TTSManager {
                         // 发送 StartSession
                         const sessionPayload = {
                             user: {
-                                uid: 'tavern-link-user'
+                                uid: 'mimirlink-user'
                             },
                             event: Events.StartSession,
                             namespace: 'BidirectionalTTS',
@@ -357,7 +357,7 @@ export class TTSManager {
                         // 发送 TaskRequest (文本)
                         const taskPayload = {
                             user: {
-                                uid: 'tavern-link-user'
+                                uid: 'mimirlink-user'
                             },
                             event: Events.TaskRequest,
                             namespace: 'BidirectionalTTS',

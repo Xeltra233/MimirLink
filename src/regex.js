@@ -1,31 +1,42 @@
 /**
  * 正则处理模块
- * 用于对 AI 回复进行后处理（过滤、替换等）
+ * 支持内置预设规则与自定义规则配置。
  */
 
-import logger from './logger.js';
-
 export class RegexProcessor {
-    constructor() {
+    constructor(config = {}, logger = console) {
+        this.logger = logger;
+        this.enabled = true;
         this.rules = [];
+        this.updateConfig(config);
     }
 
-    /**
-     * 加载正则规则
-     * @param {Array} rules - 正则规则数组
-     */
+    updateConfig(config = {}, bindingRules = null, presetBindingRules = null, globalBindingRules = null) {
+        const usePresetRules = config.usePresetRules !== false;
+        const globalRules = Array.isArray(globalBindingRules)
+            ? globalBindingRules
+            : Array.isArray(config.globalRules)
+                ? config.globalRules
+                : Array.isArray(config.rules)
+                    ? config.rules
+                    : [];
+        const presetRulesBound = Array.isArray(presetBindingRules) ? presetBindingRules : (Array.isArray(config.presetRules) ? config.presetRules : []);
+        const characterRules = Array.isArray(bindingRules) ? bindingRules : (Array.isArray(config.characterRules) ? config.characterRules : []);
+        this.enabled = config.enabled !== false;
+        const mergedRules = usePresetRules
+            ? [...presetRules, ...globalRules, ...presetRulesBound, ...characterRules]
+            : [...globalRules, ...presetRulesBound, ...characterRules];
+        this.loadRules(mergedRules);
+    }
+
     loadRules(rules) {
-        this.rules = rules.map(rule => ({
+        this.rules = rules.map((rule) => ({
             ...rule,
             pattern: new RegExp(rule.pattern, rule.flags || 'g')
         }));
-        logger.info(`已加载 ${this.rules.length} 条正则规则`);
+        this.logger.info?.(`[正则] 已加载 ${this.rules.length} 条规则`);
     }
 
-    /**
-     * 添加规则
-     * @param {Object} rule - 正则规则
-     */
     addRule(rule) {
         this.rules.push({
             ...rule,
@@ -33,114 +44,212 @@ export class RegexProcessor {
         });
     }
 
-    /**
-     * 移除规则
-     * @param {number} index - 规则索引
-     */
     removeRule(index) {
         if (index >= 0 && index < this.rules.length) {
             this.rules.splice(index, 1);
         }
     }
 
-    /**
-     * 获取所有规则
-     * @returns {Array} 规则数组
-     */
     getRules() {
-        return this.rules.map(rule => ({
+        return this.rules.map((rule) => ({
             name: rule.name,
             pattern: rule.pattern.source,
             flags: rule.pattern.flags,
             replacement: rule.replacement,
             enabled: rule.enabled !== false,
-            description: rule.description || ''
+            description: rule.description || '',
+            stage: rule.stage || 'output',
+            source: rule.source || 'custom'
         }));
     }
 
-    /**
-     * 处理文本
-     * @param {string} text - 输入文本
-     * @param {string} stage - 处理阶段 ('input' | 'output')
-     * @returns {string} 处理后的文本
-     */
+    static normalizeImportedRule(rule, index = 0) {
+        if (!rule || typeof rule !== 'object') {
+            return null;
+        }
+
+        let pattern = rule.pattern ?? rule.findRegex ?? rule.match ?? '';
+        if (!pattern || typeof pattern !== 'string') {
+            return null;
+        }
+
+        let flags = typeof rule.flags === 'string' ? rule.flags : 'g';
+        const delimitedRegex = pattern.match(/^\/(.*)\/([a-z]*)$/i);
+        if (delimitedRegex) {
+            pattern = delimitedRegex[1];
+            flags = delimitedRegex[2] || flags;
+        }
+
+        const placement = Array.isArray(rule.placement) ? rule.placement : Array.isArray(rule.stage) ? rule.stage : null;
+        const promptOnly = rule.promptOnly === true;
+        const markdownOnly = rule.markdownOnly === true;
+        const placementValue = Array.isArray(placement) ? placement[0] : placement;
+
+        let stage = rule.stage || (promptOnly ? 'input' : 'output');
+        if (typeof placementValue === 'number') {
+            stage = placementValue === 2 ? 'output' : placementValue === 1 ? 'input' : stage;
+        } else if (typeof placementValue === 'string' && placementValue.trim()) {
+            stage = placementValue;
+        }
+
+        return {
+            name: rule.name || rule.scriptName || `Imported Rule ${index + 1}`,
+            pattern,
+            flags,
+            replacement: rule.replacement ?? rule.replaceString ?? '',
+            enabled: rule.enabled !== false && rule.disabled !== true,
+            description: rule.description || rule.comment || '',
+            stage,
+            source: rule.source || 'imported',
+            markdownOnly,
+            promptOnly,
+            minDepth: rule.minDepth ?? null,
+            maxDepth: rule.maxDepth ?? null
+        };
+    }
+
+    static importRules(payload) {
+        const items = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.rules)
+                ? payload.rules
+                : Array.isArray(payload?.regex)
+                    ? payload.regex
+                    : Array.isArray(payload?.regex_scripts)
+                        ? payload.regex_scripts
+                        : Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes)
+                            ? payload.extensions.SPreset.RegexBinding.regexes
+                            : [];
+
+        return items
+            .map((rule, index) => RegexProcessor.normalizeImportedRule(rule, index))
+            .filter(Boolean);
+    }
+
+    static diagnoseImport(payload) {
+        const rawItems = Array.isArray(payload)
+            ? payload
+            : Array.isArray(payload?.rules)
+                ? payload.rules
+                : Array.isArray(payload?.regex)
+                    ? payload.regex
+                    : Array.isArray(payload?.regex_scripts)
+                        ? payload.regex_scripts
+                        : Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes)
+                            ? payload.extensions.SPreset.RegexBinding.regexes
+                            : [];
+
+        const imported = rawItems
+            .map((rule, index) => RegexProcessor.normalizeImportedRule(rule, index))
+            .filter(Boolean);
+
+        const markdownOnlyCount = rawItems.filter((rule) => rule?.markdownOnly === true).length;
+        const promptOnlyCount = rawItems.filter((rule) => rule?.promptOnly === true).length;
+        const runOnEditCount = rawItems.filter((rule) => rule?.runOnEdit === true).length;
+        const depthLimitedCount = rawItems.filter((rule) => rule?.minDepth != null || rule?.maxDepth != null).length;
+
+        const warnings = [];
+        if (markdownOnlyCount > 0) {
+            warnings.push(`检测到 ${markdownOnlyCount} 条 markdownOnly 规则，当前只能按普通文本规则导入。`);
+        }
+        if (runOnEditCount > 0) {
+            warnings.push(`检测到 ${runOnEditCount} 条 runOnEdit 规则，当前不会复刻 ST 编辑态执行时机。`);
+        }
+        if (depthLimitedCount > 0) {
+            warnings.push(`检测到 ${depthLimitedCount} 条深度限制规则，当前仅保留元数据，不会完整复刻 ST 深度执行模型。`);
+        }
+
+        return {
+            detectedFormat: Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes) || Array.isArray(payload?.regex_scripts)
+                ? 'sillytavern-regex'
+                : 'basic-regex',
+            totalRules: rawItems.length,
+            importableRules: imported.length,
+            markdownOnlyCount,
+            promptOnlyCount,
+            runOnEditCount,
+            depthLimitedCount,
+            warnings
+        };
+    }
+
+    static exportRules(rules, format = 'native') {
+        if (format === 'sillytavern') {
+            return {
+                version: 1,
+                type: 'regex',
+                rules: rules.map((rule) => ({
+                    scriptName: rule.name,
+                    findRegex: rule.pattern,
+                    replaceString: rule.replacement || '',
+                    trimStrings: [],
+                    placement: rule.stage || 'output',
+                    disabled: rule.enabled === false,
+                    markdownOnly: false,
+                    promptOnly: rule.stage === 'input'
+                }))
+            };
+        }
+
+        return {
+            version: 1,
+            type: 'regex',
+            rules
+        };
+    }
+
     process(text, stage = 'output') {
-        if (!text || this.rules.length === 0) {
+        if (!this.enabled || !text || this.rules.length === 0) {
             return text;
         }
 
         let result = text;
-        let appliedRules = [];
+        const appliedRules = [];
 
         for (const rule of this.rules) {
-            // 检查规则是否启用
             if (rule.enabled === false) {
                 continue;
             }
-
-            // 检查处理阶段
             if (rule.stage && rule.stage !== stage) {
                 continue;
             }
 
             try {
-                // 重置正则表达式的 lastIndex
                 rule.pattern.lastIndex = 0;
-                
                 const before = result;
                 result = result.replace(rule.pattern, rule.replacement || '');
-                
                 if (before !== result) {
                     appliedRules.push(rule.name || rule.pattern.source);
                 }
             } catch (error) {
-                logger.error(`正则规则执行失败: ${rule.name || rule.pattern.source}`, error);
+                this.logger.error?.(`[正则] 规则执行失败: ${rule.name || rule.pattern.source}`, error);
             }
         }
 
         if (appliedRules.length > 0) {
-            logger.debug(`应用了 ${appliedRules.length} 条正则规则: ${appliedRules.join(', ')}`);
+            this.logger.debug?.(`[正则] 已应用规则: ${appliedRules.join(', ')}`);
         }
 
         return result;
     }
 
-    /**
-     * 处理输入文本（用户消息）
-     * @param {string} text - 输入文本
-     * @returns {string} 处理后的文本
-     */
     processInput(text) {
         return this.process(text, 'input');
     }
 
-    /**
-     * 处理输出文本（AI 回复）
-     * @param {string} text - 输出文本
-     * @returns {string} 处理后的文本
-     */
     processOutput(text) {
         return this.process(text, 'output');
     }
 
-    /**
-     * 测试正则规则
-     * @param {string} pattern - 正则表达式
-     * @param {string} flags - 标志
-     * @param {string} replacement - 替换文本
-     * @param {string} testText - 测试文本
-     * @returns {Object} 测试结果
-     */
     testRule(pattern, flags, replacement, testText) {
         try {
             const regex = new RegExp(pattern, flags || 'g');
             const matches = testText.match(regex);
             const result = testText.replace(regex, replacement || '');
-            
             return {
                 success: true,
                 matches: matches || [],
-                result: result,
+                result,
                 changed: testText !== result
             };
         } catch (error) {
@@ -152,7 +261,6 @@ export class RegexProcessor {
     }
 }
 
-// 预设的常用正则规则
 export const presetRules = [
     {
         name: '移除思考标签',

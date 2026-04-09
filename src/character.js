@@ -201,4 +201,43 @@ export class CharacterManager {
         this.clearCache();
         return this.listCharacters();
     }
+
+    extractSillyTavernMetadata(characterName) {
+        const character = this.readFromPng(characterName);
+        const data = character.data || {};
+        const extensions = character.extensions || data.extensions || {};
+        const characterBook = character.character_book || data.character_book || null;
+        const depthPrompt = extensions.depth_prompt || {};
+        const regexScripts = extensions.regex_scripts || character.regex_scripts || data.regex_scripts || [];
+        const explicitAssistantPrefill = character.assistant_prefill
+            || data.assistant_prefill
+            || extensions.assistant_prefill
+            || '';
+
+        return {
+            character,
+            metadata: {
+                name: character.name || data.name || characterName,
+                spec: character.spec || data.spec || '',
+                specVersion: character.spec_version || data.spec_version || '',
+                hasEmbeddedWorldBook: !!characterBook,
+                worldBookEntries: Array.isArray(characterBook?.entries)
+                    ? characterBook.entries.length
+                    : Object.keys(characterBook?.entries || {}).length,
+                worldBook: characterBook,
+                tags: Array.from(new Set([...(character.tags || []), ...(data.tags || [])])),
+                creatorNotes: character.creator_notes || data.creator_notes || character.creatorcomment || '',
+                alternateGreetings: character.alternate_greetings || data.alternate_greetings || [],
+                postHistoryInstructions: character.post_history_instructions || data.post_history_instructions || '',
+                systemPrompt: character.system_prompt || data.system_prompt || '',
+                preferredPreset: {
+                    name: character.name || data.name || characterName,
+                    systemPrompt: depthPrompt.prompt || character.system_prompt || data.system_prompt || '',
+                    postHistoryInstructions: character.post_history_instructions || data.post_history_instructions || '',
+                    assistantPrefill: explicitAssistantPrefill
+                },
+                regexScripts: Array.isArray(regexScripts) ? regexScripts : []
+            }
+        };
+    }
 }

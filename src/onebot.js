@@ -23,14 +23,11 @@ export class OneBotClient extends EventEmitter {
             this.ws.close();
         }
 
-        const url = this.config.url;
+        const url = this.buildConnectionUrl();
+        const headers = this.buildConnectionHeaders();
         this.logger.info(`正在连接 OneBot: ${url}`);
 
-        this.ws = new WebSocket(url, {
-            headers: this.config.accessToken 
-                ? { Authorization: `Bearer ${this.config.accessToken}` }
-                : {}
-        });
+        this.ws = new WebSocket(url, headers ? { headers } : undefined);
 
         this.ws.on('open', () => {
             this.connected = true;
@@ -63,6 +60,46 @@ export class OneBotClient extends EventEmitter {
         this.ws.on('error', (err) => {
             this.logger.error(`WebSocket 错误: ${err.message}`);
         });
+    }
+
+    getNormalizedToken() {
+        const token = typeof this.config.accessToken === 'string'
+            ? this.config.accessToken.trim()
+            : '';
+        return token || '';
+    }
+
+    buildConnectionHeaders() {
+        const token = this.getNormalizedToken();
+        if (!token) {
+            return null;
+        }
+
+        if (this.config.tokenMode === 'query') {
+            return null;
+        }
+
+        return {
+            Authorization: `Bearer ${token}`
+        };
+    }
+
+    buildConnectionUrl() {
+        const baseUrl = this.config.url;
+        const token = this.getNormalizedToken();
+        if (!token || this.config.tokenMode !== 'query') {
+            return baseUrl;
+        }
+
+        try {
+            const parsed = new URL(baseUrl);
+            if (!parsed.searchParams.has('access_token')) {
+                parsed.searchParams.set('access_token', token);
+            }
+            return parsed.toString();
+        } catch {
+            return baseUrl;
+        }
     }
 
     _handleMessage(msg) {
@@ -130,6 +167,32 @@ export class OneBotClient extends EventEmitter {
             user_id: userId,
             message: typeof message === 'string' ? message : message
         });
+    }
+
+    buildReplyMessage(messageId, content) {
+        if (!messageId) {
+            return content;
+        }
+
+        if (Array.isArray(content)) {
+            return [
+                { type: 'reply', data: { id: String(messageId) } },
+                ...content
+            ];
+        }
+
+        return [
+            { type: 'reply', data: { id: String(messageId) } },
+            { type: 'text', data: { text: String(content) } }
+        ];
+    }
+
+    async sendGroupReply(groupId, messageId, message) {
+        return this.sendGroupMessage(groupId, this.buildReplyMessage(messageId, message));
+    }
+
+    async sendPrivateReply(userId, messageId, message) {
+        return this.sendPrivateMessage(userId, this.buildReplyMessage(messageId, message));
     }
 
     async getGroupList() {

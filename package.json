@@ -1,18 +1,18 @@
 {
-  "name": "tavern-link-modded",
-  "version": "1.0.0-modded",
-  "description": "🍺 Tavern-Link 魔改版 - 全局记忆池 + 智能世界书 + 结构化消息 + Web 控制面板 | 兼容 SillyTavern 格式的轻量级 QQ 聊天引擎",
+  "name": "mimirlink",
+  "version": "1.1.0",
+  "description": "MimirLink - 面向长期记忆与角色生命周期管理的 QQ Tavern Runtime",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "debug": "NODE_ENV=development DEBUG=* node src/index.js",
-    "check": "node -e \"console.log('✅ Node.js 工作正常 - Tavern-Link 魔改版')\"",
+    "check": "node -e \"console.log('✅ Node.js 工作正常 - MimirLink')\"",
     "install-deps": "npm install",
     "clean": "rimraf node_modules package-lock.json && npm install",
     "backup": "node scripts/backup.js",
-    "info": "node -e \"console.log('🍺 Tavern-Link 魔改版 v1.0.0-modded'); console.log('Node:', process.version); console.log('平台:', process.platform);\""
+    "info": "node -e \"console.log('🧠 MimirLink v1.1.0'); console.log('Node:', process.version); console.log('平台:', process.platform);\""
   },
   "keywords": [
     "chatbot",
@@ -21,42 +21,44 @@
     "onebot",
     "memory-pool",
     "worldbook",
-    "tavern-link-modded",
-    "global-memory",
+    "mimirlink",
+    "memory-runtime",
     "structured-message"
   ],
-  "author": "Tavern-Link 魔改版开发组",
+  "author": "MimirLink Runtime Team",
   "contributors": [
     {
       "name": "Original Tavern-Link Team"
     },
     {
-      "name": "Modded Version Contributors"
+      "name": "MimirLink Contributors"
     }
   ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/tavern-link-modded"
+    "url": "https://github.com/your-username/mimirlink"
   },
   "engines": {
     "node": ">=16.0.0",
     "npm": ">=7.0.0"
   },
   "dependencies": {
-    "express": "^4.18.2",
+    "axios": "^1.6.0",
+    "express": "^5.2.1",
     "express-session": "^1.18.2",
-    "multer": "^2.0.2",
+    "multer": "^2.1.1",
+    "session-file-store": "^1.5.0",
     "uuid": "^13.0.0",
-    "ws": "^8.16.0",
-    "axios": "^1.6.0"
+    "ws": "^8.16.0"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "playwright": "^1.59.1"
   },
   "modInfo": {
-    "version": "1.0.0-modded",
-    "codename": "Global Memory Edition",
+    "version": "1.1.0",
+    "codename": "Lifecycle Memory Edition",
     "releaseDate": "2026-01-30",
     "features": [
       "全局记忆池系统",

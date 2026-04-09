@@ -3,15 +3,20 @@
     "enabled": true,
     "username": "admin",
     "password": "your-password-here",
-    "sessionSecret": "your-random-secret-key-change-this"
+    "sessionSecret": "your-random-secret-key-change-this",
+    "sessionDays": 30,
+    "shortSessionHours": 12,
+    "sessionStorePath": "./data/sessions"
   },
   "server": {
     "port": 8001,
-    "host": "0.0.0.0"
+    "host": "0.0.0.0",
+    "healthLogIntervalMs": 60000
   },
   "onebot": {
     "url": "ws://127.0.0.1:3001",
-    "accessToken": ""
+    "accessToken": "",
+    "tokenMode": "header"
   },
   "ai": {
     "baseUrl": "https://api.example.com/v1",
@@ -22,15 +27,67 @@
     "timeout": 60000
   },
   "chat": {
+    "sessionMode": "scoped",
+    "triggerMode": "auto",
+    "requireAtInGroup": true,
     "triggerPrefix": "",
+    "triggerKeywords": [],
     "historyLimit": 100,
     "maxGlobalMessages": 2000,
     "allowedGroups": [],
+    "blockedGroups": [],
+    "allowedUsers": [],
+    "blockedUsers": [],
+    "bufferWindowMs": 1200,
+    "replyDelayMs": 800,
+    "segmentDelayMs": 300,
+    "proactiveMessageIntervalMs": 1500,
+    "dedupeWindowMs": 10000,
+    "maxConcurrentSessions": 2,
+    "quoteReplyEnabled": true,
+    "attachMetadata": true,
     "splitMessage": true,
     "defaultCharacter": "你的角色名"
   },
+  "memory": {
+    "storage": {
+      "type": "sqlite",
+      "path": "./data/chats/memory-store.sqlite"
+    },
+    "summary": {
+      "enabled": true,
+      "triggerMessages": 80,
+      "keepRecent": 30,
+      "maxSummaries": 8,
+      "useAI": true,
+      "maxSourceMessages": 50
+    }
+  },
+  "preset": {
+    "enabled": false,
+    "systemPrompt": "",
+    "postHistoryInstructions": "",
+    "jailbreak": "",
+    "assistantPrefill": ""
+  },
+  "bindings": {
+    "global": {
+      "worldbook": null,
+      "preset": null,
+      "regexRules": null
+    },
+    "characters": {}
+  },
+  "context": {
+    "enabled": true,
+    "includeSessionFacts": true,
+    "includeParticipants": true,
+    "includeReplyReference": true,
+    "includeRecentUserIntent": true
+  },
   "regex": {
     "enabled": true,
+    "usePresetRules": true,
     "rules": []
   },
   "tts": {

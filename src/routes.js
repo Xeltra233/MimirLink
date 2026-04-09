@@ -8,6 +8,9 @@ import path from 'path';
 import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import { RegexProcessor } from './regex.js';
+import { PromptBuilder } from './prompt.js';
+import { inspectMemoryDatabase } from './session.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,7 +21,344 @@ const __dirname = path.dirname(__filename);
  * @param {Object} deps - 依赖注入
  */
 export function setupRoutes(app, config, saveConfig, managers) {
-    const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES } = managers;
+    const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES, runtime, getLastRoutingSnapshot, formatSessionLabel, getLastInjectionObservation, getLastRecallSnapshot } = managers;
+
+    const summarizePayload = (payload, maxLen = 400) => {
+        try {
+            const text = JSON.stringify(payload);
+            if (!text) {
+                return '';
+            }
+            return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text;
+        } catch {
+            return '[unserializable payload]';
+        }
+    };
+
+    app.use('/api', (req, res, next) => {
+        const startedAt = Date.now();
+        const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        req.requestId = requestId;
+
+        logger.info(`[API ${requestId}] ${req.method} ${req.originalUrl} <- request`, {
+            authenticated: !!req.session?.authenticated,
+            contentType: req.headers['content-type'] || '',
+            referer: req.headers.referer || '',
+            bodyPreview: summarizePayload(req.body)
+        });
+
+        res.on('finish', () => {
+            logger.info(`[API ${requestId}] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${Date.now() - startedAt}ms)`);
+        });
+
+        next();
+    });
+
+    const isBackendCompatibleRegexRule = (rule) => {
+        if (!rule || typeof rule !== 'object') {
+            return false;
+        }
+
+        const placement = rule.stage ?? rule.placement;
+        if (Array.isArray(placement)) {
+            return false;
+        }
+
+        if (typeof placement === 'number') {
+            return false;
+        }
+
+        if (rule.markdownOnly || rule.runOnEdit || rule.substituteRegex) {
+            return false;
+        }
+
+        return true;
+    };
+
+    const ensureBindingConfig = () => {
+        if (!config.bindings) {
+            config.bindings = { global: { memoryDbPath: null, worldbook: null, preset: null, regexRules: null }, characters: {} };
+        }
+        if (!config.bindings.global) {
+            config.bindings.global = { memoryDbPath: null, worldbook: null, preset: null, regexRules: null };
+        }
+        if (!config.bindings.characters) {
+            config.bindings.characters = {};
+        }
+    };
+
+    const getCharacterBinding = (characterName) => {
+        ensureBindingConfig();
+        if (!config.bindings.characters[characterName]) {
+            config.bindings.characters[characterName] = {
+                memoryDbPath: null,
+                worldbook: null,
+                preset: null,
+                regexRules: null,
+                importedFromCard: {
+                    worldbook: null,
+                    preset: null,
+                    regexRules: []
+                }
+            };
+        }
+        return config.bindings.characters[characterName];
+    };
+
+    const getBindingSummary = (characterName) => {
+        ensureBindingConfig();
+        const binding = getCharacterBinding(characterName);
+
+        const resolveSource = (explicitValue, importedValue, globalValue, legacyValue) => {
+            if (explicitValue) return 'character';
+            if (importedValue && (Array.isArray(importedValue) ? importedValue.length > 0 : true)) return 'card';
+            if (globalValue && (Array.isArray(globalValue) ? globalValue.length > 0 : true)) return 'global';
+            if (legacyValue && (Array.isArray(legacyValue) ? legacyValue.length > 0 : true)) return 'legacy';
+            return 'none';
+        };
+
+        return {
+            memoryDbPath: {
+                source: binding.memoryDbPath ? 'character' : config.bindings.global.memoryDbPath ? 'global' : 'default',
+                value: binding.memoryDbPath || config.bindings.global.memoryDbPath || config.memory?.storage?.path || null
+            },
+            worldbook: {
+                source: resolveSource(binding.worldbook, binding.importedFromCard?.worldbook, config.bindings.global.worldbook, null),
+                value: binding.worldbook || binding.importedFromCard?.worldbook || config.bindings.global.worldbook || null
+            },
+            preset: {
+                source: resolveSource(binding.preset, binding.importedFromCard?.preset, config.bindings.global.preset, config.preset),
+                value: binding.preset?.name || binding.importedFromCard?.preset?.name || config.bindings.global.preset?.name || config.preset?.name || null
+            },
+            regexRules: {
+                source: resolveSource(binding.regexRules, binding.importedFromCard?.regexRules, config.bindings.global.regexRules, config.regex?.rules),
+                count: (binding.regexRules || binding.importedFromCard?.regexRules || []).length
+            },
+            presetRegexRules: {
+                source: resolveSource(binding.preset?.regexRules, binding.importedFromCard?.preset?.regexRules, config.preset?.regexRules, null),
+                count: (binding.preset?.regexRules || binding.importedFromCard?.preset?.regexRules || config.preset?.regexRules || []).length
+            },
+            globalRegexRules: {
+                source: (config.bindings.global.regexRules || config.regex?.rules || []).length > 0 ? 'global' : 'none',
+                count: (config.bindings.global.regexRules || config.regex?.rules || []).length
+            }
+        };
+    };
+
+    const buildCharacterMetadataPlan = (characterName) => {
+        const { metadata } = characterManager.extractSillyTavernMetadata(characterName);
+        const compatibleRegexScripts = (metadata?.regexScripts || []).filter(isBackendCompatibleRegexRule);
+        const plan = {
+            importWorldBook: !!(metadata?.hasEmbeddedWorldBook && metadata?.worldBook),
+            importPreset: !!(metadata?.postHistoryInstructions || metadata?.systemPrompt || metadata?.preferredPreset?.assistantPrefill),
+            importRegex: compatibleRegexScripts.length > 0
+        };
+
+        return { metadata, plan, compatibleRegexScripts };
+    };
+
+    const applyCharacterMetadata = async (characterName, options = {}) => {
+        const { metadata, plan, compatibleRegexScripts } = buildCharacterMetadataPlan(characterName);
+        const applied = [];
+
+        const finalOptions = {
+            importWorldBook: options.importWorldBook ?? plan.importWorldBook,
+            importPreset: options.importPreset ?? plan.importPreset,
+            importRegex: options.importRegex ?? plan.importRegex
+        };
+
+        if (finalOptions.importWorldBook && metadata.hasEmbeddedWorldBook && metadata.worldBook) {
+            const worldbookFilename = `${metadata.name}'s Lorebook.json`;
+            const worldbookPath = path.join(config.chat.dataDir || './data', 'worlds', worldbookFilename);
+            const worldbook = {
+                name: `${metadata.name} 世界书`,
+                description: `从角色卡 ${metadata.name} 自动提取的世界书`,
+                entries: metadata.worldBook.entries || []
+            };
+
+            await fs.writeFile(worldbookPath, JSON.stringify(worldbook, null, 2), 'utf-8');
+            await worldBookManager.scanWorldBooks();
+            const binding = getCharacterBinding(characterName);
+            binding.importedFromCard.worldbook = worldbookFilename;
+            applied.push(`已自动加载内嵌世界书 (${metadata.worldBookEntries} 条)`);
+        }
+
+        if (finalOptions.importPreset && (metadata.postHistoryInstructions || metadata.systemPrompt || metadata.preferredPreset.assistantPrefill)) {
+            const binding = getCharacterBinding(characterName);
+            binding.importedFromCard.preset = {
+                enabled: true,
+                name: metadata.preferredPreset.name,
+                systemPrompt: metadata.preferredPreset.systemPrompt,
+                postHistoryInstructions: metadata.preferredPreset.postHistoryInstructions,
+                assistantPrefill: metadata.preferredPreset.assistantPrefill,
+                jailbreak: binding.preset?.jailbreak || config.preset?.jailbreak || '',
+                regexRules: []
+            };
+            applied.push('已自动同步角色卡中的预设相关字段');
+        }
+
+        if (finalOptions.importRegex && compatibleRegexScripts.length > 0) {
+            const importedRules = RegexProcessor.importRules({ rules: compatibleRegexScripts });
+            if (!Array.isArray(config.regex.rules)) {
+                config.regex.rules = [];
+            }
+
+            const existingKeys = new Set(config.regex.rules.map((rule) => `${rule.name || ''}|${rule.pattern || ''}|${rule.replacement || ''}`));
+            const nextRules = importedRules.filter((rule) => {
+                const key = `${rule.name || ''}|${rule.pattern || ''}|${rule.replacement || ''}`;
+                if (existingKeys.has(key)) {
+                    return false;
+                }
+                existingKeys.add(key);
+                return true;
+            });
+
+            if (nextRules.length > 0) {
+                const binding = getCharacterBinding(characterName);
+                binding.importedFromCard.regexRules = nextRules;
+                applied.push(`已自动导入 ${nextRules.length} 条角色卡附带正则`);
+            }
+        }
+
+        saveConfig(config);
+        return metadata ? { metadata, applied, plan, options: finalOptions } : { metadata: null, applied, plan, options: finalOptions };
+    };
+
+    const summarizeCharacterMetadata = (metadata) => ({
+        hasEmbeddedWorldBook: !!metadata?.hasEmbeddedWorldBook,
+        worldBookEntries: metadata?.worldBookEntries || 0,
+        regexScriptCount: Array.isArray(metadata?.regexScripts) ? metadata.regexScripts.length : 0,
+        importableRegexScriptCount: Array.isArray(metadata?.regexScripts)
+            ? metadata.regexScripts.filter(isBackendCompatibleRegexRule).length
+            : 0,
+        alternateGreetingsCount: Array.isArray(metadata?.alternateGreetings) ? metadata.alternateGreetings.length : 0,
+        hasPostHistoryInstructions: !!metadata?.postHistoryInstructions,
+        hasSystemPrompt: !!metadata?.systemPrompt,
+        tags: Array.isArray(metadata?.tags) ? metadata.tags : [],
+        creatorNotes: metadata?.creatorNotes || '',
+        spec: metadata?.spec || '',
+        specVersion: metadata?.specVersion || ''
+    });
+
+    const getActiveMemoryInfo = () => {
+        const currentCharacterName = config.chat.defaultCharacter || null;
+        const binding = currentCharacterName ? getBindingSummary(currentCharacterName) : null;
+        return {
+            currentCharacter: currentCharacterName,
+            dbPath: sessionManager.getDbPath(),
+            sessionMode: config.chat?.sessionMode || 'user_persistent',
+            accessControlMode: config.chat?.accessControlMode || 'allowlist',
+            adminUsers: config.chat?.adminUsers || [],
+            scopeDescription: {
+                user_persistent: '同一 QQ 跨群/跨私聊共享长期记忆',
+                group_user: '每个群内每个用户单独记忆',
+                group_shared: '同一群共享一份记忆',
+                global_shared: '所有来源共享一份记忆'
+            }[config.chat?.sessionMode || 'user_persistent'],
+            binding
+        };
+    };
+
+    const listKnownMemoryDatabases = async () => {
+        const dataDir = config.chat.dataDir || './data';
+        const baseDir = path.join(dataDir, 'chats');
+        await fs.mkdir(baseDir, { recursive: true });
+
+        const files = new Map();
+        const rememberFile = async (fullPath) => {
+            const normalizedPath = path.isAbsolute(fullPath) ? fullPath : path.resolve(process.cwd(), fullPath);
+            if (files.has(normalizedPath)) {
+                return files.get(normalizedPath);
+            }
+
+            try {
+                const stat = await fs.stat(normalizedPath);
+                const item = { path: normalizedPath, sizeBytes: stat.size, updatedAt: stat.mtimeMs, bindings: [] };
+                files.set(normalizedPath, item);
+                return item;
+            } catch {
+                const item = { path: normalizedPath, sizeBytes: 0, updatedAt: 0, bindings: [], missing: true };
+                files.set(normalizedPath, item);
+                return item;
+            }
+        };
+
+        const walk = async (dir) => {
+            const entries = await fs.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    await walk(fullPath);
+                    continue;
+                }
+                if (entry.name.endsWith('.sqlite')) {
+                    await rememberFile(fullPath);
+                }
+            }
+        };
+
+        await walk(baseDir);
+
+        const bindDb = async (dbPath, bindingInfo) => {
+            if (!dbPath) {
+                return;
+            }
+            const item = await rememberFile(dbPath);
+            item.bindings.push(bindingInfo);
+        };
+
+        await bindDb(config.bindings?.global?.memoryDbPath || config.memory?.storage?.path, { type: 'global-default', name: '全局默认记忆库' });
+        for (const [characterName, binding] of Object.entries(config.bindings?.characters || {})) {
+            if (binding?.memoryDbPath) {
+                await bindDb(binding.memoryDbPath, { type: 'character', name: characterName });
+            }
+        }
+
+        return Array.from(files.values()).sort((a, b) => b.updatedAt - a.updatedAt);
+    };
+
+    const applyRuntimeConfig = () => {
+        aiClient.updateConfig(config.ai || {});
+        sessionManager.setConfig(config);
+        regexProcessor.updateConfig(config.regex || {});
+        promptBuilder.updateConfig(config);
+        runtime?.updateConfig(config);
+    };
+
+    const mergeConfig = (target, source) => {
+        for (const [key, value] of Object.entries(source || {})) {
+            if (value && typeof value === 'object' && !Array.isArray(value)) {
+                target[key] = target[key] && typeof target[key] === 'object' && !Array.isArray(target[key])
+                    ? target[key]
+                    : {};
+                mergeConfig(target[key], value);
+            } else {
+                target[key] = value;
+            }
+        }
+    };
+
+    const normalizeAccessControlConfig = () => {
+        config.chat = config.chat || {};
+        const mode = config.chat.accessControlMode || 'allowlist';
+
+        if (mode === 'blocklist') {
+            config.chat.allowedGroups = [];
+            config.chat.allowedUsers = [];
+        }
+
+        if (mode === 'allowlist') {
+            config.chat.blockedGroups = [];
+            config.chat.blockedUsers = [];
+        }
+
+        if (mode === 'disabled') {
+            config.chat.allowedGroups = [];
+            config.chat.allowedUsers = [];
+            config.chat.blockedGroups = [];
+            config.chat.blockedUsers = [];
+        }
+    };
 
     // ==================== 认证中间件 ====================
     
@@ -26,15 +366,22 @@ export function setupRoutes(app, config, saveConfig, managers) {
     const requireAuth = (req, res, next) => {
         // 如果认证未启用，直接通过
         if (!config.auth?.enabled) {
+            logger.debug(`[API ${req.requestId || 'no-id'}] auth bypassed (disabled)`);
             return next();
         }
         
         // 检查是否已登录
         if (req.session?.authenticated) {
+            logger.debug(`[API ${req.requestId || 'no-id'}] auth passed`, { username: req.session?.username || null });
             return next();
         }
         
         // 未登录，返回 401
+        logger.warn(`[API ${req.requestId || 'no-id'}] auth failed`, {
+            originalUrl: req.originalUrl,
+            referer: req.headers.referer || '',
+            cookiesPresent: !!req.headers.cookie
+        });
         res.status(401).json({ error: '未登录', needLogin: true });
     };
 
@@ -47,7 +394,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
         res.json({ 
             enabled: true, 
-            authenticated: req.session?.authenticated || false 
+            authenticated: req.session?.authenticated || false,
+            username: req.session?.username || null,
+            expiresAt: req.session?.cookie?.expires || null
         });
     });
 
@@ -57,12 +406,18 @@ export function setupRoutes(app, config, saveConfig, managers) {
             return res.json({ success: true, message: '认证未启用' });
         }
         
-        const { username, password } = req.body;
+        const { username, password, rememberMe } = req.body;
         
         if (username === config.auth.username && password === config.auth.password) {
             req.session.authenticated = true;
+            req.session.username = username;
+            const longDays = config.auth.sessionDays ?? 30;
+            const shortHours = config.auth.shortSessionHours ?? 12;
+            req.session.cookie.maxAge = rememberMe
+                ? longDays * 24 * 60 * 60 * 1000
+                : shortHours * 60 * 60 * 1000;
             logger.info(`用户 ${username} 登录成功`);
-            res.json({ success: true, message: '登录成功' });
+            res.json({ success: true, message: '登录成功', expiresInMs: req.session.cookie.maxAge });
         } else {
             logger.warn(`登录失败: 用户名或密码错误`);
             res.status(401).json({ success: false, error: '用户名或密码错误' });
@@ -135,33 +490,14 @@ export function setupRoutes(app, config, saveConfig, managers) {
 	app.post('/api/config', requireAuth, async (req, res) => {
 		try {
 			const newConfig = req.body;
-			
-			// 合并配置（保留未提供的字段）
-			Object.assign(config, newConfig);
-			
-			// 如果AI配置更新了，同步更新aiClient
-			if (newConfig.ai) {
-				aiClient.updateConfig(config.ai);
-				
-				// ✨ 新增：如果 AI 超时配置更新了，记录日志
-				if (newConfig.ai.timeout !== undefined) {
-					logger.info(`[配置更新] AI 超时时间: ${newConfig.ai.timeout / 1000}秒`);
-				}
+
+			if (newConfig?.ai?.apiKey === '******') {
+				delete newConfig.ai.apiKey;
 			}
-			
-			// ✨ 如果 chat 配置更新了，同步更新 sessionManager
-			if (newConfig.chat) {
-				if (newConfig.chat.historyLimit !== undefined) {
-					sessionManager.maxHistoryLength = newConfig.chat.historyLimit;
-					logger.info(`[配置更新] historyLimit: ${newConfig.chat.historyLimit}`);
-				}
-				if (newConfig.chat.maxGlobalMessages !== undefined) {
-					sessionManager.maxGlobalMessages = newConfig.chat.maxGlobalMessages;
-					logger.info(`[配置更新] maxGlobalMessages: ${newConfig.chat.maxGlobalMessages}`);
-				}
-			}
-			
-			// 保存到文件
+
+			mergeConfig(config, newConfig);
+			normalizeAccessControlConfig();
+			applyRuntimeConfig();
 			saveConfig(config);
 			
 			logger.info('配置已更新');
@@ -213,17 +549,51 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // 选择角色（需要认证）
     app.post('/api/characters/select', requireAuth, async (req, res) => {
         try {
-            const { filename } = req.body;
+            const { filename, importOptions, memoryBinding } = req.body;
             // 移除 .png 扩展名
             const characterName = filename.replace(/\.png$/i, '');
             const character = characterManager.loadCharacter(characterName);
+            const characterMeta = await applyCharacterMetadata(characterName, importOptions || {});
+
+            if (memoryBinding?.mode) {
+                const binding = getCharacterBinding(characterName);
+                if (memoryBinding.mode === 'inherit') {
+                    binding.memoryDbPath = null;
+                } else if (memoryBinding.mode === 'character') {
+                    const normalizedName = characterName.replace(/[\\/:*?"<>|]/g, '_');
+                    binding.memoryDbPath = memoryBinding.dbPath || `./data/chats/characters/${normalizedName}.sqlite`;
+                } else if (memoryBinding.mode === 'custom' && memoryBinding.dbPath) {
+                    binding.memoryDbPath = memoryBinding.dbPath;
+                }
+
+                if (memoryBinding.migrateFromCurrent === true && binding.memoryDbPath) {
+                    const snapshot = sessionManager.exportMemory();
+                    const TargetManagerClass = sessionManager.constructor;
+                    const targetManager = new TargetManagerClass(config.chat.dataDir || './data', config, logger);
+                    targetManager.setConfig(config, { storagePath: binding.memoryDbPath });
+                    targetManager.importMemorySnapshot(snapshot, { replace: true });
+                }
+            }
             
             // 更新配置并保存，确保重启后仍然使用选择的角色
             config.chat.defaultCharacter = characterName;
+            if (memoryBinding?.mode) {
+                const binding = getCharacterBinding(characterName);
+                sessionManager.setConfig(config, { storagePath: binding.memoryDbPath || config.bindings.global.memoryDbPath || config.memory?.storage?.path });
+            }
             saveConfig(config);
             
             logger.info(`已选择角色: ${characterName}`);
-            res.json({ success: true, character });
+            res.json({
+                success: true,
+                character,
+                importedMetadata: characterMeta.metadata,
+                metadataSummary: summarizeCharacterMetadata(characterMeta.metadata),
+                appliedActions: characterMeta.applied,
+                importPlan: characterMeta.plan,
+                importOptions: characterMeta.options,
+                bindingSummary: getBindingSummary(characterName)
+            });
         } catch (error) {
             logger.error('选择角色失败', error);
             res.status(500).json({ success: false, error: error.message });
@@ -252,7 +622,19 @@ export function setupRoutes(app, config, saveConfig, managers) {
             // 刷新角色列表
             await characterManager.scanCharacters();
             const characters = await characterManager.listCharacters();
-            res.json({ success: true, message: '角色卡上传成功', filename: req.file.filename, characters });
+            const characterName = req.file.filename.replace(/\.png$/i, '');
+            const characterMeta = characterManager.extractSillyTavernMetadata(characterName);
+            const plan = buildCharacterMetadataPlan(characterName);
+            res.json({
+                success: true,
+                message: '角色卡上传成功',
+                filename: req.file.filename,
+                characters,
+                importedMetadata: characterMeta.metadata,
+                metadataSummary: summarizeCharacterMetadata(characterMeta.metadata),
+                importPlan: plan.plan,
+                bindingSummary: getBindingSummary(characterName)
+            });
         } catch (error) {
             logger.error('上传角色卡失败', error);
             res.status(500).json({ success: false, error: error.message });
@@ -263,8 +645,39 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.delete('/api/characters/:filename', requireAuth, async (req, res) => {
         try {
             const { filename } = req.params;
+            const { deleteMemoryDb, migrateMemoryToDefault } = req.body || {};
+            const characterName = filename.replace(/\.png$/i, '');
+            const binding = getCharacterBinding(characterName);
+            const boundDbPath = binding.memoryDbPath;
+
+            if (migrateMemoryToDefault === true && boundDbPath) {
+                const TargetManagerClass = sessionManager.constructor;
+                const sourceManager = new TargetManagerClass(config.chat.dataDir || './data', config, logger);
+                sourceManager.setConfig(config, { storagePath: boundDbPath });
+                const snapshot = sourceManager.exportMemory();
+                const defaultPath = config.bindings.global.memoryDbPath || config.memory?.storage?.path;
+                const targetManager = new TargetManagerClass(config.chat.dataDir || './data', config, logger);
+                targetManager.setConfig(config, { storagePath: defaultPath });
+                targetManager.importMemorySnapshot(snapshot, { replace: false });
+            }
+
             const filePath = path.join(config.chat.dataDir || './data', 'characters', filename);
             await fs.unlink(filePath);
+
+            if (deleteMemoryDb === true && boundDbPath) {
+                try {
+                    await fs.unlink(path.isAbsolute(boundDbPath) ? boundDbPath : path.resolve(process.cwd(), boundDbPath));
+                } catch {
+                    // ignore missing db file
+                }
+            }
+
+            delete config.bindings?.characters?.[characterName];
+            if (config.chat.defaultCharacter === characterName) {
+                config.chat.defaultCharacter = '';
+                sessionManager.setConfig(config, { storagePath: config.bindings.global.memoryDbPath || config.memory?.storage?.path });
+            }
+            saveConfig(config);
             await characterManager.scanCharacters();
             logger.info(`角色卡已删除: ${filename}`);
             res.json({ success: true, message: '角色卡已删除' });
@@ -280,7 +693,15 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const { filename } = req.params;
             const characterName = filename.replace(/\.png$/i, '');
             const character = characterManager.readFromPng(characterName);
-            res.json({ success: true, character });
+            const characterMeta = characterManager.extractSillyTavernMetadata(characterName);
+            res.json({
+                success: true,
+                character,
+                importedMetadata: characterMeta.metadata,
+                metadataSummary: summarizeCharacterMetadata(characterMeta.metadata),
+                importPlan: buildCharacterMetadataPlan(characterName).plan,
+                bindingSummary: getBindingSummary(characterName)
+            });
         } catch (error) {
             logger.error('获取角色卡详情失败', error);
             res.status(500).json({ success: false, error: error.message });
@@ -503,7 +924,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     // 获取所有会话（需要认证）
     app.get('/api/sessions', requireAuth, (req, res) => {
-        const sessions = sessionManager.listSessions();
+        const sessions = sessionManager.listSessions().map((session) => ({
+            ...session,
+            label: typeof formatSessionLabel === 'function' ? formatSessionLabel(session.id) : session.id
+        }));
         res.json(sessions);
     });
 
@@ -544,8 +968,110 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     // 获取全局记忆统计（需要认证）
     app.get('/api/memory/stats', requireAuth, (req, res) => {
-        const stats = sessionManager.getStats();
+        const stats = {
+            ...sessionManager.getStats(),
+            runtime: runtime?.getStats?.() || null,
+            activeMemory: getActiveMemoryInfo()
+        };
         res.json(stats);
+    });
+
+    app.post('/api/memory/migrate', requireAuth, (req, res) => {
+        try {
+            const { targetPath, sourcePath, replace, sessionIds, sessionPrefix, userId } = req.body || {};
+            if (!targetPath) {
+                return res.status(400).json({ success: false, error: '目标数据库路径不能为空' });
+            }
+
+            const SourceManagerClass = sessionManager.constructor;
+            const sourceManager = sourcePath
+                ? new SourceManagerClass(config.chat.dataDir || './data', config, logger)
+                : sessionManager;
+
+            if (sourcePath) {
+                sourceManager.setConfig(config, { storagePath: sourcePath });
+            }
+
+            const snapshot = (sessionIds?.length || sessionPrefix || userId)
+                ? sourceManager.exportMemoryByFilter({ sessionIds, sessionPrefix, userId })
+                : sourceManager.exportMemory();
+            const targetManager = new SourceManagerClass(config.chat.dataDir || './data', config, logger);
+            targetManager.setConfig(config, { storagePath: targetPath });
+            const result = targetManager.importMemorySnapshot(snapshot, { replace });
+
+            res.json({
+                success: true,
+                result,
+                sourcePath: sourceManager.getDbPath(),
+                targetPath: targetManager.getDbPath(),
+                message: '记忆迁移完成'
+            });
+        } catch (error) {
+            logger.error('迁移记忆失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/memory/databases', requireAuth, async (req, res) => {
+        try {
+            const databases = await listKnownMemoryDatabases();
+            const enriched = databases.map((db) => ({
+                ...db,
+                stats: inspectMemoryDatabase(db.path)
+            }));
+            res.json({ success: true, databases: enriched, active: getActiveMemoryInfo() });
+        } catch (error) {
+            logger.error('获取数据库列表失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/characters/:filename/memory-binding', requireAuth, async (req, res) => {
+        try {
+            const { filename } = req.params;
+            const { mode, dbPath, migrateToDefault } = req.body || {};
+            const characterName = filename.replace(/\.png$/i, '');
+            const binding = getCharacterBinding(characterName);
+            const currentBindingPath = binding.memoryDbPath;
+
+            if (mode === 'inherit') {
+                if (migrateToDefault === true && currentBindingPath) {
+                    const TargetManagerClass = sessionManager.constructor;
+                    const sourceManager = new TargetManagerClass(config.chat.dataDir || './data', config, logger);
+                    sourceManager.setConfig(config, { storagePath: currentBindingPath });
+                    const snapshot = sourceManager.exportMemory();
+                    const defaultPath = config.bindings.global.memoryDbPath || config.memory?.storage?.path;
+                    const targetManager = new TargetManagerClass(config.chat.dataDir || './data', config, logger);
+                    targetManager.setConfig(config, { storagePath: defaultPath });
+                    targetManager.importMemorySnapshot(snapshot, { replace: false });
+                }
+                binding.memoryDbPath = null;
+            } else if (mode === 'character') {
+                const normalizedName = characterName.replace(/[\\/:*?"<>|]/g, '_');
+                binding.memoryDbPath = dbPath || `./data/chats/characters/${normalizedName}.sqlite`;
+            } else if (mode === 'custom') {
+                if (!dbPath) {
+                    return res.status(400).json({ success: false, error: '自定义数据库路径不能为空' });
+                }
+                binding.memoryDbPath = dbPath;
+            } else {
+                return res.status(400).json({ success: false, error: '未知的绑定模式' });
+            }
+
+            if (config.chat.defaultCharacter === characterName) {
+                sessionManager.setConfig(config, { storagePath: binding.memoryDbPath || config.bindings.global.memoryDbPath || config.memory?.storage?.path });
+            }
+
+            saveConfig(config);
+            res.json({
+                success: true,
+                bindingSummary: getBindingSummary(characterName),
+                message: mode === 'inherit' ? '角色数据库绑定已解绑，已回退到全局默认库' : '角色数据库绑定已更新'
+            });
+        } catch (error) {
+            logger.error('更新角色数据库绑定失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
 
     // 获取全局记忆（需要认证）
@@ -595,7 +1121,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.post('/api/regex', requireAuth, (req, res) => {
         try {
             const rule = req.body;
-            regexProcessor.addRule(rule);
+            if (!Array.isArray(config.regex.rules)) {
+                config.regex.rules = [];
+            }
+            config.regex.rules.push(rule);
+            regexProcessor.updateConfig(config.regex);
+            saveConfig(config);
             res.json({ success: true, message: '规则已添加' });
         } catch (error) {
             logger.error('添加正则规则失败', error);
@@ -606,8 +1137,39 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // 删除正则规则（需要认证）
     app.delete('/api/regex/:index', requireAuth, (req, res) => {
         const index = parseInt(req.params.index);
-        regexProcessor.removeRule(index);
+        if (!Array.isArray(config.regex.rules)) {
+            config.regex.rules = [];
+        }
+        if (index >= 0 && index < config.regex.rules.length) {
+            config.regex.rules.splice(index, 1);
+        }
+        regexProcessor.updateConfig(config.regex);
+        saveConfig(config);
         res.json({ success: true, message: '规则已删除' });
+    });
+
+    // 更新正则规则（需要认证）
+    app.put('/api/regex/:index', requireAuth, (req, res) => {
+        try {
+            const index = parseInt(req.params.index);
+            if (!Array.isArray(config.regex.rules)) {
+                config.regex.rules = [];
+            }
+            if (index < 0 || index >= config.regex.rules.length) {
+                return res.status(404).json({ success: false, error: '规则不存在' });
+            }
+
+            config.regex.rules[index] = {
+                ...config.regex.rules[index],
+                ...req.body
+            };
+            regexProcessor.updateConfig(config.regex);
+            saveConfig(config);
+            res.json({ success: true, message: '规则已更新' });
+        } catch (error) {
+            logger.error('更新正则规则失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
     });
 
     // 测试正则规则（需要认证）
@@ -634,6 +1196,39 @@ export function setupRoutes(app, config, saveConfig, managers) {
             res.json({ success: true, response });
         } catch (error) {
             logger.error('测试 AI 调用失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/ai/models', requireAuth, async (req, res) => {
+        try {
+            const { baseUrl, apiKey } = req.body || {};
+            const models = await aiClient.listModels({
+                baseUrl: baseUrl || config.ai?.baseUrl,
+                apiKey: apiKey || config.ai?.apiKey
+            });
+            res.json({ success: true, models });
+        } catch (error) {
+            logger.error('拉取模型列表失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/ai/probe', requireAuth, async (req, res) => {
+        try {
+            const { baseUrl, apiKey, model } = req.body || {};
+            const result = await aiClient.probeModel(model, {
+                baseUrl: baseUrl || config.ai?.baseUrl,
+                apiKey: apiKey || config.ai?.apiKey
+            });
+            res.json({
+                success: true,
+                model: result.model,
+                availableModels: result.availableModels,
+                autoMaxTokens: result.model?.recommendedMaxTokens || result.model?.maxOutputTokens || null
+            });
+        } catch (error) {
+            logger.error('探测模型元数据失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });
@@ -731,10 +1326,137 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 connected: bot ? bot.isConnected() : false
             },
             character: characterManager.getCurrentCharacter()?.name || '未选择',
+            characterFile: config.chat?.defaultCharacter ? `${config.chat.defaultCharacter}.png` : null,
             worldbook: worldBookManager.getCurrentWorldBook()?.name || '未加载',
             sessions: sessionManager.listSessions().length,
-            globalMemory: sessionManager.getStats()
+            globalMemory: sessionManager.getStats(),
+            runtime: runtime?.getStats?.() || null,
+            activeMemory: getActiveMemoryInfo(),
+            lastRouting: typeof getLastRoutingSnapshot === 'function' ? getLastRoutingSnapshot() : null,
+            lastInjectionObservation: typeof getLastInjectionObservation === 'function' ? getLastInjectionObservation() : null,
+            lastRecall: typeof getLastRecallSnapshot === 'function' ? getLastRecallSnapshot() : null,
+            server: {
+                host: config.server?.host,
+                port: config.server?.port,
+                healthLogIntervalMs: config.server?.healthLogIntervalMs ?? 60000
+            }
         });
+    });
+
+    app.post('/api/regex/import', requireAuth, (req, res) => {
+        try {
+            logger.info(`[API ${req.requestId || 'no-id'}] regex import started`, {
+                bodyPreview: summarizePayload(req.body, 1200)
+            });
+            const importedRules = RegexProcessor.importRules(req.body);
+            const diagnostics = RegexProcessor.diagnoseImport(req.body);
+            const targetLayer = req.body?.targetLayer || 'global';
+            logger.info(`[API ${req.requestId || 'no-id'}] regex import diagnostics`, diagnostics);
+            if (importedRules.length === 0) {
+                logger.warn(`[API ${req.requestId || 'no-id'}] regex import produced zero compatible rules`);
+                return res.status(400).json({ success: false, error: '未识别到可导入的正则规则' });
+            }
+
+            let targetRules = null;
+            if (targetLayer === 'preset') {
+                config.preset = { ...(config.preset || {}), regexRules: Array.isArray(config.preset?.regexRules) ? config.preset.regexRules : [] };
+                targetRules = config.preset.regexRules;
+            } else if (targetLayer === 'character') {
+                const currentCharacterName = config.chat?.defaultCharacter;
+                if (!currentCharacterName) {
+                    return res.status(400).json({ success: false, error: '当前没有选中角色，无法导入到角色层' });
+                }
+                const binding = getCharacterBinding(currentCharacterName);
+                binding.regexRules = Array.isArray(binding.regexRules) ? binding.regexRules : [];
+                targetRules = binding.regexRules;
+            } else {
+                config.bindings.global.regexRules = Array.isArray(config.bindings.global.regexRules) ? config.bindings.global.regexRules : [];
+                targetRules = config.bindings.global.regexRules;
+            }
+
+            const existingKeys = new Set(targetRules.map((rule) => `${rule.name || ''}|${rule.pattern || ''}|${rule.replacement || ''}`));
+            const nextRules = importedRules.filter((rule) => {
+                const key = `${rule.name || ''}|${rule.pattern || ''}|${rule.replacement || ''}`;
+                if (existingKeys.has(key)) {
+                    return false;
+                }
+                existingKeys.add(key);
+                return true;
+            });
+
+            targetRules.push(...nextRules);
+            regexProcessor.updateConfig(config.regex || {}, getCharacterBinding(config.chat?.defaultCharacter || '')?.regexRules || [], config.preset?.regexRules || [], config.bindings.global.regexRules || []);
+            saveConfig(config);
+            res.json({
+                success: true,
+                count: nextRules.length,
+                importedRules: nextRules,
+                diagnostics,
+                targetLayer,
+                message: `已导入 ${nextRules.length} 条规则到${targetLayer === 'preset' ? '预设层' : targetLayer === 'character' ? '角色层' : '全局层'}`
+            });
+        } catch (error) {
+            logger.error(`[API ${req.requestId || 'no-id'}] 导入正则规则失败`, {
+                message: error.message,
+                stack: error.stack,
+                bodyPreview: summarizePayload(req.body, 1200)
+            });
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/regex/export', requireAuth, (req, res) => {
+        const format = req.query.format === 'sillytavern' ? 'sillytavern' : 'native';
+        const payload = RegexProcessor.exportRules(regexProcessor.getRules().filter((rule) => rule.source !== 'preset'), format);
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=regex-${format}-${Date.now()}.json`);
+        res.send(JSON.stringify(payload, null, 2));
+    });
+
+    app.post('/api/preset/import', requireAuth, (req, res) => {
+        try {
+            logger.info(`[API ${req.requestId || 'no-id'}] preset import started`, {
+                bodyPreview: summarizePayload(req.body, 1200)
+            });
+            const preset = PromptBuilder.importPreset(req.body);
+            const diagnostics = PromptBuilder.diagnosePresetImport(req.body);
+            const importedRegexRules = RegexProcessor.importRules(req.body);
+            const regexDiagnostics = RegexProcessor.diagnoseImport(req.body);
+            logger.info(`[API ${req.requestId || 'no-id'}] preset import diagnostics`, diagnostics);
+            logger.info(`[API ${req.requestId || 'no-id'}] preset-linked regex diagnostics`, regexDiagnostics);
+            config.preset = {
+                ...(config.preset || {}),
+                ...preset,
+                regexRules: importedRegexRules
+            };
+            regexProcessor.updateConfig(config.regex || {}, null, config.preset?.regexRules || [], config.bindings?.global?.regexRules || config.regex?.rules || []);
+            promptBuilder.updateConfig(config);
+            saveConfig(config);
+            res.json({
+                success: true,
+                preset: config.preset,
+                diagnostics,
+                regexDiagnostics,
+                importedRegexCount: importedRegexRules.length,
+                importedFields: Object.keys(preset).filter((key) => preset[key] !== '' && preset[key] !== false),
+                message: importedRegexRules.length > 0 ? `预设已导入，并同步导入 ${importedRegexRules.length} 条正则` : '预设已导入'
+            });
+        } catch (error) {
+            logger.error(`[API ${req.requestId || 'no-id'}] 导入预设失败`, {
+                message: error.message,
+                stack: error.stack,
+                bodyPreview: summarizePayload(req.body, 1200)
+            });
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/preset/export', requireAuth, (req, res) => {
+        const format = req.query.format === 'sillytavern' ? 'sillytavern' : 'native';
+        const payload = PromptBuilder.exportPreset(config.preset || {}, format);
+        res.setHeader('Content-Type', 'application/json');
+        res.setHeader('Content-Disposition', `attachment; filename=preset-${format}-${Date.now()}.json`);
+        res.send(JSON.stringify(payload, null, 2));
     });
 
     // OneBot 重连（需要认证）
