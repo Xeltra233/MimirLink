@@ -20,6 +20,10 @@ const AUDIO_DIR = path.join(__dirname, '../audio');
 
 // WebSocket 端点
 const WS_ENDPOINT = 'wss://openspeech.bytedance.com/api/v3/tts/bidirection';
+const MINIMAX_DEFAULT_BASE_URL = 'https://api.minimax.chat';
+const TTS_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
+const TTS_MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000;
+const TTS_MAX_CACHE_FILES = 50;
 
 // 事件类型定义
 const Events = {
@@ -201,307 +205,309 @@ function parseFrame(data) {
  */
 export class TTSManager {
     constructor() {
-        this.config = {
-            appid: '',           // 豆包控制台获取
-            token: '',           // 豆包控制台获取
-            voiceType: 'zh_female_shuangkuaisisi_moon_bigtts',  // 默认使用大模型音色
-            encoding: 'mp3',
-            speedRatio: 1.0,
-            volumeRatio: 1.0,
-            pitchRatio: 1.0,
-            enabled: false
-        };
-        
-        // 确保音频目录存在
+        this.config = normalizeTTSConfig();
+
         if (!fs.existsSync(AUDIO_DIR)) {
             fs.mkdirSync(AUDIO_DIR, { recursive: true });
         }
+
+        this.startCleanupTimer();
     }
-    
-    /**
-     * 获取配置
-     */
+
     getConfig() {
         return { ...this.config };
     }
-    
-    /**
-     * 更新配置
-     */
+
     updateConfig(options) {
-        this.config = { ...this.config, ...options };
-        console.log('[TTS] 配置已更新:', JSON.stringify(this.config, null, 2));
+        this.config = normalizeTTSConfig({ ...this.config, ...options });
+        console.log(`[TTS ${this.config.provider}] 配置已更新:`, JSON.stringify(this.config, null, 2));
     }
-    
-    /**
-     * 调用豆包 TTS V3 WebSocket API (语音合成2.0)
-     * 使用双向流式接口
-     * @param {string} text - 要转换的文本
-     * @returns {Promise<string>} - 音频文件路径
-     */
-    async synthesize(text) {
+
+    startCleanupTimer() {
+        if (this.cleanupTimer) {
+            clearInterval(this.cleanupTimer);
+        }
+
+        this.cleanupTimer = setInterval(() => {
+            try {
+                this.cleanupAudio();
+            } catch (error) {
+                console.warn(`[TTS] 定时清理失败: ${error.message}`);
+            }
+        }, TTS_CLEANUP_INTERVAL_MS);
+    }
+
+    getResolvedBaseUrl() {
+        if (this.config.baseUrl) {
+            return this.config.baseUrl.replace(/\/$/, '').replace(/\/v1$/, '');
+        }
+
+        if (this.config.provider === 'minimax') {
+            return MINIMAX_DEFAULT_BASE_URL;
+        }
+
+        return '';
+    }
+
+    validateConfig() {
         if (!this.config.enabled) {
             throw new Error('TTS 未启用');
         }
-        
-        if (!this.config.appid || !this.config.token) {
-            throw new Error('TTS 配置不完整，请设置 appid 和 token');
+
+        if (this.config.provider === 'minimax') {
+            if (!this.config.apiKey) {
+                throw new Error('TTS 配置不完整：缺少 API Key');
+            }
+            if (!this.config.modelId) {
+                throw new Error('TTS 配置不完整：缺少模型 ID');
+            }
+            if (!this.config.voiceId) {
+                throw new Error('TTS 配置不完整：缺少音色 ID');
+            }
+            return;
         }
-        
-        // 文本长度限制
+
+        if (!this.config.appId) {
+            throw new Error('TTS 配置不完整：缺少 App ID');
+        }
+        if (!this.config.apiKey) {
+            throw new Error('TTS 配置不完整：缺少 API Key');
+        }
+        if (!this.config.voiceId) {
+            throw new Error('TTS 配置不完整：缺少音色 ID');
+        }
+    }
+
+    async synthesize(text) {
+        this.validateConfig();
+
         if (text.length > 1000) {
             text = text.substring(0, 1000);
             console.log('[TTS] 文本过长，已截断至 1000 字符');
         }
-        
-        console.log(`[TTS V3 WS] 音色: ${this.config.voiceType}, 文本: ${text.substring(0, 50)}...`);
-        
+
+        if (this.config.provider === 'minimax') {
+            return this.synthesizeWithMinimax(text);
+        }
+
+        return this.synthesizeWithDoubao(text);
+    }
+
+    async synthesizeWithDoubao(text) {
+        console.log(`[TTS Doubao] 音色: ${this.config.voiceId}, 文本: ${text.substring(0, 50)}...`);
+
         return new Promise((resolve, reject) => {
             const connectId = uuidv4();
             const sessionId = uuidv4();
             const audioChunks = [];
-            let connectionStarted = false;
-            let sessionStarted = false;
-            
-            // 创建 WebSocket 连接
             const ws = new WebSocket(WS_ENDPOINT, {
                 headers: {
-                    'X-Api-App-Key': this.config.appid,
-                    'X-Api-Access-Key': this.config.token,
-                    'X-Api-Resource-Id': 'seed-tts-2.0',  // 语音合成2.0
+                    'X-Api-App-Key': this.config.appId,
+                    'X-Api-Access-Key': this.config.apiKey,
+                    'X-Api-Resource-Id': 'seed-tts-2.0',
                     'X-Api-Connect-Id': connectId
                 }
             });
-            
-            // 超时处理
+
             const timeout = setTimeout(() => {
-                console.error('[TTS V3 WS] 超时');
+                console.error('[TTS Doubao] 超时');
                 ws.close();
                 reject(new Error('TTS 请求超时'));
             }, 30000);
-            
+
             ws.on('open', () => {
-                console.log('[TTS V3 WS] 连接已建立');
-                
-                // 发送 StartConnection
-                const startConnFrame = buildFrame(
-                    0x01,  // Full-client request
-                    0x04,  // with event number
-                    0x01,  // JSON
-                    0x00,  // no compression
-                    Events.StartConnection,
-                    null,
-                    {}
-                );
+                const startConnFrame = buildFrame(0x01, 0x04, 0x01, 0x00, Events.StartConnection, null, {});
                 ws.send(startConnFrame);
             });
-            
+
             ws.on('message', (data) => {
                 const frame = parseFrame(data);
-                
+
                 if (frame.isError) {
-                    console.error('[TTS V3 WS] 错误帧:', frame);
                     clearTimeout(timeout);
                     ws.close();
                     reject(new Error(`TTS 错误: ${frame.payload?.message || frame.errorCode}`));
                     return;
                 }
-                
-                const event = frame.eventNumber;
-                
-                switch (event) {
-                    case Events.ConnectionStarted:
-                        console.log('[TTS V3 WS] ConnectionStarted');
-                        connectionStarted = true;
-                        
-                        // 发送 StartSession
+
+                switch (frame.eventNumber) {
+                    case Events.ConnectionStarted: {
                         const sessionPayload = {
-                            user: {
-                                uid: 'mimirlink-user'
-                            },
+                            user: { uid: 'mimirlink-user' },
                             event: Events.StartSession,
                             namespace: 'BidirectionalTTS',
                             req_params: {
-                                text: '',  // StartSession 时不发送文本
-                                speaker: this.config.voiceType,
+                                text: '',
+                                speaker: this.config.voiceId,
                                 audio_params: {
                                     format: this.config.encoding,
                                     sample_rate: 24000
                                 }
                             }
                         };
-                        
-                        const startSessionFrame = buildFrame(
-                            0x01,  // Full-client request
-                            0x04,  // with event number
-                            0x01,  // JSON
-                            0x00,  // no compression
-                            Events.StartSession,
-                            sessionId,
-                            sessionPayload
-                        );
+
+                        const startSessionFrame = buildFrame(0x01, 0x04, 0x01, 0x00, Events.StartSession, sessionId, sessionPayload);
                         ws.send(startSessionFrame);
                         break;
-                        
+                    }
                     case Events.ConnectionFailed:
-                        console.error('[TTS V3 WS] ConnectionFailed:', frame.payload);
                         clearTimeout(timeout);
                         ws.close();
                         reject(new Error(`TTS 连接失败: ${frame.payload?.message || 'Unknown error'}`));
                         break;
-                        
-                    case Events.SessionStarted:
-                        console.log('[TTS V3 WS] SessionStarted');
-                        sessionStarted = true;
-                        
-                        // 发送 TaskRequest (文本)
+                    case Events.SessionStarted: {
                         const taskPayload = {
-                            user: {
-                                uid: 'mimirlink-user'
-                            },
+                            user: { uid: 'mimirlink-user' },
                             event: Events.TaskRequest,
                             namespace: 'BidirectionalTTS',
                             req_params: {
-                                text: text,
-                                speaker: this.config.voiceType,
+                                text,
+                                speaker: this.config.voiceId,
                                 audio_params: {
                                     format: this.config.encoding,
                                     sample_rate: 24000,
-                                    speech_rate: Math.round((this.config.speedRatio - 1) * 100),
-                                    loudness_rate: Math.round((this.config.volumeRatio - 1) * 100)
+                                    speech_rate: Math.round((this.config.speed - 1) * 100),
+                                    loudness_rate: Math.round((this.config.volume - 1) * 100)
                                 }
                             }
                         };
-                        
-                        const taskFrame = buildFrame(
-                            0x01,  // Full-client request
-                            0x04,  // with event number
-                            0x01,  // JSON
-                            0x00,  // no compression
-                            Events.TaskRequest,
-                            sessionId,
-                            taskPayload
-                        );
-                        ws.send(taskFrame);
-                        
-                        // 发送 FinishSession
-                        const finishSessionFrame = buildFrame(
-                            0x01,  // Full-client request
-                            0x04,  // with event number
-                            0x01,  // JSON
-                            0x00,  // no compression
-                            Events.FinishSession,
-                            sessionId,
-                            {}
-                        );
-                        ws.send(finishSessionFrame);
+
+                        ws.send(buildFrame(0x01, 0x04, 0x01, 0x00, Events.TaskRequest, sessionId, taskPayload));
+                        ws.send(buildFrame(0x01, 0x04, 0x01, 0x00, Events.FinishSession, sessionId, {}));
                         break;
-                        
+                    }
                     case Events.SessionFailed:
-                        console.error('[TTS V3 WS] SessionFailed:', frame.payload);
                         clearTimeout(timeout);
                         ws.close();
                         reject(new Error(`TTS 会话失败: ${frame.payload?.message || 'Unknown error'}`));
                         break;
-                        
-                    case Events.TTSSentenceStart:
-                        console.log('[TTS V3 WS] TTSSentenceStart');
-                        break;
-                        
                     case Events.TTSResponse:
-                        // 收到音频数据
                         if (frame.payload && Buffer.isBuffer(frame.payload)) {
                             audioChunks.push(frame.payload);
-                            console.log(`[TTS V3 WS] 收到音频数据: ${frame.payload.length} bytes`);
                         } else if (frame.payload?.data) {
-                            // 如果是 JSON 格式，data 字段是 base64 编码的音频
-                            const audioBuf = Buffer.from(frame.payload.data, 'base64');
-                            audioChunks.push(audioBuf);
-                            console.log(`[TTS V3 WS] 收到音频数据 (base64): ${audioBuf.length} bytes`);
+                            audioChunks.push(Buffer.from(frame.payload.data, 'base64'));
                         }
                         break;
-                        
-                    case Events.TTSSentenceEnd:
-                        console.log('[TTS V3 WS] TTSSentenceEnd');
-                        break;
-                        
                     case Events.SessionFinished:
-                        console.log('[TTS V3 WS] SessionFinished');
-                        
-                        // 发送 FinishConnection
-                        const finishConnFrame = buildFrame(
-                            0x01,  // Full-client request
-                            0x04,  // with event number
-                            0x01,  // JSON
-                            0x00,  // no compression
-                            Events.FinishConnection,
-                            null,
-                            {}
-                        );
-                        ws.send(finishConnFrame);
+                        ws.send(buildFrame(0x01, 0x04, 0x01, 0x00, Events.FinishConnection, null, {}));
                         break;
-                        
-                    case Events.ConnectionFinished:
-                        console.log('[TTS V3 WS] ConnectionFinished');
+                    case Events.ConnectionFinished: {
                         clearTimeout(timeout);
                         ws.close();
-                        
-                        // 保存音频
-                        if (audioChunks.length > 0) {
-                            const audioBuffer = Buffer.concat(audioChunks);
-                            const filename = `tts_${Date.now()}.${this.config.encoding}`;
-                            const filepath = path.join(AUDIO_DIR, filename);
-                            
-                            fs.writeFileSync(filepath, audioBuffer);
-                            console.log('[TTS V3 WS] 音频已保存:', filepath, `(${audioBuffer.length} bytes)`);
-                            
-                            // 清理旧文件
-                            this.cleanupAudio();
-                            
-                            resolve(filepath);
-                        } else {
+                        if (audioChunks.length === 0) {
                             reject(new Error('TTS 未返回音频数据'));
+                            return;
                         }
+
+                        const audioBuffer = Buffer.concat(audioChunks);
+                        const filename = `tts_${Date.now()}.${this.config.encoding}`;
+                        const filepath = path.join(AUDIO_DIR, filename);
+                        fs.writeFileSync(filepath, audioBuffer);
+                        this.cleanupAudio();
+                        console.log('[TTS Doubao] 音频已保存:', filepath, `(${audioBuffer.length} bytes)`);
+                        resolve(filepath);
                         break;
-                        
+                    }
                     default:
-                        console.log(`[TTS V3 WS] 未知事件: ${event}`, frame);
+                        break;
                 }
             });
-            
+
             ws.on('error', (err) => {
-                console.error('[TTS V3 WS] WebSocket 错误:', err);
                 clearTimeout(timeout);
                 reject(new Error(`TTS WebSocket 错误: ${err.message}`));
             });
-            
-            ws.on('close', (code, reason) => {
-                console.log(`[TTS V3 WS] 连接关闭: ${code} ${reason}`);
+
+            ws.on('close', () => {
                 clearTimeout(timeout);
             });
         });
     }
+
+    async synthesizeWithMinimax(text) {
+        const baseUrl = this.getResolvedBaseUrl();
+        const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${this.config.apiKey}`
+            },
+            body: JSON.stringify({
+                model: this.config.modelId,
+                text,
+                stream: false,
+                output_format: 'hex',
+                voice_setting: {
+                    voice_id: this.config.voiceId,
+                    speed: this.config.speed,
+                    vol: this.config.volume,
+                    pitch: Math.round(this.config.pitch || 0)
+                },
+                audio_setting: {
+                    format: this.config.encoding
+                }
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Minimax TTS 请求失败: HTTP ${response.status} ${errorText}`);
+        }
+
+        const payload = await response.json();
+        if (payload?.base_resp?.status_code && payload.base_resp.status_code !== 0) {
+            throw new Error(`Minimax TTS 请求失败: ${payload.base_resp.status_msg || payload.base_resp.status_code}`);
+        }
+        const audioBase64 = payload?.data?.audio || payload?.audio || payload?.data?.audio_base64;
+        if (!audioBase64) {
+            throw new Error('Minimax TTS 返回中没有音频数据');
+        }
+
+        const audioBuffer = Buffer.from(audioBase64, 'hex');
+        const filename = `tts_${Date.now()}.${this.config.encoding}`;
+        const filepath = path.join(AUDIO_DIR, filename);
+        fs.writeFileSync(filepath, audioBuffer);
+        this.cleanupAudio();
+        console.log('[TTS Minimax] 音频已保存:', filepath, `(${audioBuffer.length} bytes)`);
+        return filepath;
+    }
     
     /**
-     * 清理旧音频文件（保留最近 50 个）
+     * 清理旧音频文件（按过期时间 + 最大数量双重限制）
      */
     cleanupAudio() {
         if (!fs.existsSync(AUDIO_DIR)) return;
-        
+
+        const now = Date.now();
         const files = fs.readdirSync(AUDIO_DIR)
-            .filter(f => f.startsWith('tts_'))
-            .map(f => ({
+            .filter((f) => f.startsWith('tts_'))
+            .map((f) => ({
                 name: f,
                 path: path.join(AUDIO_DIR, f),
                 time: fs.statSync(path.join(AUDIO_DIR, f)).mtime.getTime()
             }))
             .sort((a, b) => b.time - a.time);
-        
-        // 删除超过 50 个的旧文件
-        if (files.length > 50) {
-            files.slice(50).forEach(f => {
-                fs.unlinkSync(f.path);
-                console.log('[TTS] 清理旧音频:', f.name);
+
+        for (const file of files) {
+            if (now - file.time > TTS_MAX_CACHE_AGE_MS) {
+                fs.unlinkSync(file.path);
+                console.log('[TTS] 清理过期音频:', file.name);
+            }
+        }
+
+        const remainingFiles = fs.readdirSync(AUDIO_DIR)
+            .filter((f) => f.startsWith('tts_'))
+            .map((f) => ({
+                name: f,
+                path: path.join(AUDIO_DIR, f),
+                time: fs.statSync(path.join(AUDIO_DIR, f)).mtime.getTime()
+            }))
+            .sort((a, b) => b.time - a.time);
+
+        if (remainingFiles.length > TTS_MAX_CACHE_FILES) {
+            remainingFiles.slice(TTS_MAX_CACHE_FILES).forEach((file) => {
+                fs.unlinkSync(file.path);
+                console.log('[TTS] 清理超量音频:', file.name);
             });
         }
     }
@@ -597,3 +603,19 @@ export const VOICE_TYPES = {
     'jp_female_mai': 'Mai(日文女声)',
     'jp_male_kenta': 'Kenta(日文男声)',
 };
+
+function normalizeTTSConfig(options = {}) {
+    return {
+        enabled: options.enabled === true,
+        provider: options.provider || 'doubao',
+        baseUrl: options.baseUrl || '',
+        apiKey: options.apiKey || options.accessToken || options.token || '',
+        modelId: options.modelId || options.model || '',
+        voiceId: options.voiceId || options.voiceType || 'zh_female_shuangkuaisisi_moon_bigtts',
+        speed: options.speed ?? options.speedRatio ?? 1.0,
+        volume: options.volume ?? options.volumeRatio ?? 1.0,
+        pitch: options.pitch ?? options.pitchRatio ?? 1.0,
+        appId: options.appId || options.appid || '',
+        encoding: options.encoding || 'mp3'
+    };
+}

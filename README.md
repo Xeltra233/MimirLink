@@ -19,6 +19,7 @@ It connects QQ via OneBot, supports SillyTavern-compatible character cards and w
 - Web control panel for operations, diagnostics, and configuration
 - Model discovery and metadata probing from OpenAI-compatible upstreams
 - TTS support
+- Scheduled cleanup for cached TTS audio files
 
 ## Core Product Model
 
@@ -89,6 +90,10 @@ Important runtime areas:
 - `memory.storage.path`: default memory database path
 - `bindings.global.memoryDbPath`: global default database override
 - `bindings.characters.*.memoryDbPath`: per-character memory database
+- TTS audio cache cleanup runs automatically:
+  - scheduled sweep every 10 minutes
+  - files older than 24 hours are removed
+  - only the newest 50 `tts_` files are kept
 
 ## Recommended Defaults
 
