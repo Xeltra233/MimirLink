@@ -36,6 +36,10 @@ compare-ui/
 # Audio files (generated TTS)
 audio/
 
+# Local session notes and implementation process docs
+SESSION_HANDOFF.txt
+docs/superpowers/
+
 # Environment
 .env
 .env.local
