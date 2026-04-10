@@ -42,6 +42,7 @@ import { Logger } from './logger.js';
 import { TTSManager, VOICE_TYPES, parseVoiceTags } from './tts.js';
 import { MessageRuntime } from './runtime.js';
 import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.js';
+import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 
 if (process.stdout?.setDefaultEncoding) {
     process.stdout.setDefaultEncoding('utf8');
@@ -202,6 +203,8 @@ function normalizeConfig(config) {
     if (!Array.isArray(config.chat.adminUsers)) {
         config.chat.adminUsers = [];
     }
+
+    normalizeParticipantProfileConfig(config);
 }
 
 function isAdminUser(config, userId) {
@@ -382,6 +385,19 @@ function buildParticipants(items) {
     return participants;
 }
 
+function buildSpeakerIdentity(event) {
+    if (!event?.user_id) {
+        return null;
+    }
+
+    return {
+        participantId: String(event.user_id),
+        participantName: event.sender?.card || event.sender?.nickname || String(event.user_id),
+        messageType: event.message_type,
+        groupId: event.group_id ? String(event.group_id) : null
+    };
+}
+
 function buildReplyReference(items) {
     const replyIds = Array.from(new Set(
         (items || [])
@@ -557,7 +573,37 @@ let lastProcessedBatchAt = null;
 let healthTicker = null;
 let lastRoutingSnapshot = null;
 let lastInjectionObservation = null;
+let recentInjectionObservations = [];
 let lastRecallSnapshot = null;
+const participantProfileTimers = new Map();
+
+const MAX_RECENT_INJECTION_OBSERVATIONS = 20;
+
+function buildObservationEvent({ observation, adminUser }) {
+    const source = adminUser
+        ? observation?.trusted_admin_inputs?.[0]
+        : observation?.untrusted_user_inputs?.[0];
+
+    return {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        timestamp: Date.now(),
+        actorType: adminUser ? 'admin' : 'user',
+        summary: {
+            sessionId: observation?.runtime_stats?.sessionId || '',
+            messageType: observation?.runtime_stats?.messageType || '',
+            triggerReason: observation?.runtime_stats?.triggerReason || '',
+            riskLevel: source?.risk?.level || 'none',
+            matchedRules: Array.isArray(source?.risk?.matchedRules) ? source.risk.matchedRules : [],
+            contentPreview: String(source?.content || '').slice(0, 160)
+        },
+        observation
+    };
+}
+
+function rememberObservationEvent(event) {
+    recentInjectionObservations = [event, ...recentInjectionObservations]
+        .slice(0, MAX_RECENT_INJECTION_OBSERVATIONS);
+}
 
 function formatAgo(timestamp) {
     if (!timestamp) {
@@ -697,6 +743,93 @@ async function dispatchReply(event, processedReply) {
     }
 }
 
+async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceOptions, speakerIdentity, logger) {
+    if (!speakerIdentity?.participantId) {
+        return null;
+    }
+
+    const participantProfileConfig = getParticipantProfileConfig(config);
+    const source = sessionManager.collectParticipantProfileSource(
+        speakerIdentity.participantId,
+        namespaceOptions,
+        {
+            threshold: participantProfileConfig.threshold,
+            limit: participantProfileConfig.sourceMessageLimit
+        }
+    );
+
+    if (!source.hasEnoughNewInfo) {
+        return source.existing;
+    }
+
+    const priorProfile = source.existing?.content || '无';
+    const messageText = source.messages
+        .map((item) => `[${item.sessionId}] ${item.role}: ${item.content}`)
+        .join('\n');
+
+    const profilePrompt = `请基于以下真实聊天内容增量更新人物档案。已有档案如下：\n${priorProfile}\n\n新增消息如下：\n${messageText}\n\n输出格式：\n稳定画像: ...\n当前状态: ...`;
+    const profileText = await aiClient.chat([{ role: 'user', content: profilePrompt }]);
+
+    const lastProcessedMessageAt = source.messages[source.messages.length - 1]?.timestamp || source.since;
+    sessionManager.upsertParticipantProfile(namespaceOptions, {
+        participantId: speakerIdentity.participantId,
+        title: speakerIdentity.participantName,
+        content: profileText.trim(),
+        tags: sessionManager.buildKeywordsFromText(profileText),
+        metadata: {
+            participantId: speakerIdentity.participantId,
+            participantName: speakerIdentity.participantName,
+            lastProcessedMessageAt,
+            source: 'participant_profile'
+        }
+    });
+
+    logger.info(`[画像] 已更新人物档案: ${speakerIdentity.participantName}(${speakerIdentity.participantId})`);
+    return sessionManager.getParticipantProfile(namespaceOptions, speakerIdentity.participantId);
+}
+
+function getParticipantProfileTimerKey(namespaceOptions, speakerIdentity) {
+    return [
+        speakerIdentity?.participantId || '',
+        namespaceOptions?.scopeType || '',
+        namespaceOptions?.scopeKey || '',
+        namespaceOptions?.characterName || '',
+        namespaceOptions?.presetName || ''
+    ].join('|');
+}
+
+function scheduleParticipantProfileUpdate(sessionManager, aiClient, namespaceOptions, speakerIdentity, logger) {
+    if (!speakerIdentity?.participantId) {
+        return;
+    }
+
+    const participantProfileConfig = getParticipantProfileConfig(config);
+    const timerKey = getParticipantProfileTimerKey(namespaceOptions, speakerIdentity);
+    const existingTimer = participantProfileTimers.get(timerKey);
+    if (existingTimer) {
+        clearTimeout(existingTimer);
+    }
+
+    const timer = setTimeout(async () => {
+        participantProfileTimers.delete(timerKey);
+        try {
+            await maybeBuildParticipantProfile(sessionManager, aiClient, namespaceOptions, speakerIdentity, logger);
+        } catch (error) {
+            logger.warn(`[画像] 空闲建档失败: ${speakerIdentity.participantId} ${error.message}`);
+        }
+    }, participantProfileConfig.idleMs);
+
+    participantProfileTimers.set(timerKey, timer);
+}
+
+function clearParticipantProfileTimers() {
+    for (const timer of participantProfileTimers.values()) {
+        clearTimeout(timer);
+    }
+
+    participantProfileTimers.clear();
+}
+
 async function processBatch(batch) {
     const primary = batch.items[batch.items.length - 1];
     const event = primary.event;
@@ -762,6 +895,10 @@ async function processBatch(batch) {
                 replyReference: buildReplyReference(batch.items),
                 injectionRisk
             };
+            runtimeContext.currentSpeaker = buildSpeakerIdentity(event);
+            runtimeContext.currentSpeakerProfile = runtimeContext.currentSpeaker
+                ? sessionManager.getParticipantProfile(runtimeContext.recallNamespace, runtimeContext.currentSpeaker.participantId)
+                : null;
             runtimeContext.recalledEntries = sessionManager.recallMemory(runtimeContext.recallNamespace, processedInput, {
                 recentLimit: 3,
                 searchLimit: 3,
@@ -814,6 +951,10 @@ async function processBatch(batch) {
                     reason: entry.recallReason
                 }))
             });
+            rememberObservationEvent(buildObservationEvent({
+                observation: lastInjectionObservation,
+                adminUser
+            }));
 
             const userRecord = sessionManager.addMessage(sessionId, 'user', processedInput, {
                 messageType: event.message_type,
@@ -839,7 +980,6 @@ async function processBatch(batch) {
             if (summaryBeforeReply) {
                 sessionManager.upsertSummaryIndexFromSummary(runtimeContext.recallNamespace, summaryBeforeReply, sessionId);
             }
-
             const currentContext = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
             currentContext.recentMessages = currentContext.recentMessages.filter((message) => {
                 return message.metadata?.id !== userRecord.id;
@@ -875,6 +1015,16 @@ async function processBatch(batch) {
 
             logger.info(`回复 [${sessionId}]: ${processedReply.substring(0, 80)}...`);
             await dispatchReply(event, processedReply);
+
+            if (runtimeContext.currentSpeaker) {
+                scheduleParticipantProfileUpdate(
+                    sessionManager,
+                    aiClient,
+                    runtimeContext.recallNamespace,
+                    runtimeContext.currentSpeaker,
+                    logger
+                );
+            }
         } catch (error) {
             let failMessage = '处理消息时出现错误，请稍后重试';
             if (error.message === 'AI_TIMEOUT') {
@@ -911,7 +1061,9 @@ setupRoutes(app, config, saveConfig, {
     getLastRoutingSnapshot,
     formatSessionLabel,
     getLastInjectionObservation,
-    getLastRecallSnapshot
+    getRecentInjectionObservations,
+    getLastRecallSnapshot,
+    clearParticipantProfileTimers
 });
 
 app.use('/api', (error, req, res, next) => {
@@ -1031,6 +1183,10 @@ export function formatSessionLabel(sessionId) {
 
 export function getLastInjectionObservation() {
     return lastInjectionObservation;
+}
+
+export function getRecentInjectionObservations() {
+    return recentInjectionObservations;
 }
 
 export function getLastRecallSnapshot() {

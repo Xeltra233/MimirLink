@@ -176,6 +176,13 @@ export class PromptBuilder {
             sections.push(`【参与者】\n${runtimeContext.participants.join(' | ')}`);
         }
 
+        if (runtimeContext.currentSpeakerProfile?.content) {
+            const profileText = runtimeContext.currentSpeakerProfile.content.trim();
+            if (profileText) {
+                sections.push(`【当前发言人画像】\n${profileText}`);
+            }
+        }
+
         if (this.contextConfig.includeReplyReference && runtimeContext.replyReference) {
             sections.push(`【引用上下文】\n${runtimeContext.replyReference}`);
         }

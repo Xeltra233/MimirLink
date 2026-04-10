@@ -376,6 +376,49 @@ export class SessionManager {
                 ORDER BY updated_at DESC, rowid DESC
                 LIMIT ?
             `),
+            listParticipantProfiles: this.db.prepare(`
+                SELECT
+                    me.id,
+                    me.title,
+                    me.content,
+                    me.metadata_json,
+                    me.created_at,
+                    me.updated_at,
+                    ns.scope_type,
+                    ns.scope_key,
+                    ns.character_name,
+                    ns.preset_name
+                FROM memory_entries me
+                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                WHERE me.entry_type = 'participant_profile'
+                ORDER BY me.updated_at DESC, me.rowid DESC
+                LIMIT ?
+            `),
+            getParticipantProfileByEntryId: this.db.prepare(`
+                SELECT
+                    me.id,
+                    me.title,
+                    me.content,
+                    me.metadata_json,
+                    me.created_at,
+                    me.updated_at,
+                    ns.scope_type,
+                    ns.scope_key,
+                    ns.character_name,
+                    ns.preset_name
+                FROM memory_entries me
+                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                WHERE me.id = ? AND me.entry_type = 'participant_profile'
+                LIMIT 1
+            `),
+            listParticipantMessages: this.db.prepare(`
+                SELECT session_id, role, content, metadata_json, timestamp, date_iso
+                FROM messages
+                WHERE json_extract(metadata_json, '$.userId') = ?
+                  AND timestamp > ?
+                ORDER BY timestamp ASC, rowid ASC
+                LIMIT ?
+            `),
             insertSummaryIndexEntry: this.db.prepare(`
                 INSERT INTO summary_index_entries (id, namespace_id, source_summary_id, source_session_id, outline, keywords_json, metadata_json, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -830,6 +873,116 @@ export class SessionManager {
         }));
     }
 
+    listParticipantMessages(userId, options = {}) {
+        const since = options.since || 0;
+        const limit = options.limit || 50;
+        const rows = this.statements.listParticipantMessages.all(String(userId), since, limit);
+
+        return rows.map((row) => ({
+            sessionId: row.session_id,
+            role: row.role,
+            content: row.content,
+            metadata: parseJson(row.metadata_json, {}),
+            timestamp: row.timestamp,
+            date: row.date_iso
+        }));
+    }
+
+    getParticipantProfile(namespaceOptions, participantId) {
+        return this.listRecentMemoryEntries(namespaceOptions, 20)
+            .find((entry) => entry.entryType === 'participant_profile' && String(entry.metadata?.participantId || '') === String(participantId)) || null;
+    }
+
+    listParticipantProfiles(limit = 50) {
+        return this.statements.listParticipantProfiles.all(limit).map((row) => {
+            const metadata = parseJson(row.metadata_json, {});
+            return {
+                id: row.id,
+                participantId: String(metadata.participantId || ''),
+                participantName: metadata.participantName || row.title || '',
+                title: row.title || metadata.participantName || '',
+                contentPreview: truncate(row.content, 160),
+                content: row.content,
+                scopeType: row.scope_type,
+                scopeKey: row.scope_key,
+                characterName: row.character_name || '',
+                presetName: row.preset_name || '',
+                metadata,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at
+            };
+        });
+    }
+
+    getParticipantProfileByEntryId(entryId) {
+        const row = this.statements.getParticipantProfileByEntryId.get(entryId);
+        if (!row) {
+            return null;
+        }
+
+        const metadata = parseJson(row.metadata_json, {});
+        return {
+            id: row.id,
+            participantId: String(metadata.participantId || ''),
+            participantName: metadata.participantName || row.title || '',
+            title: row.title || metadata.participantName || '',
+            contentPreview: truncate(row.content, 160),
+            content: row.content,
+            scopeType: row.scope_type,
+            scopeKey: row.scope_key,
+            characterName: row.character_name || '',
+            presetName: row.preset_name || '',
+            metadata,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
+    }
+
+    upsertParticipantProfile(namespaceOptions, participantProfile) {
+        const existing = this.getParticipantProfile(namespaceOptions, participantProfile.participantId);
+        const now = Date.now();
+
+        if (existing) {
+            this.db.prepare(`
+                UPDATE memory_entries
+                SET title = ?, content = ?, tags_json = ?, metadata_json = ?, updated_at = ?
+                WHERE id = ?
+            `).run(
+                participantProfile.title,
+                participantProfile.content,
+                JSON.stringify(participantProfile.tags || []),
+                JSON.stringify(participantProfile.metadata || {}),
+                now,
+                existing.id
+            );
+            return { id: existing.id, namespaceId: existing.namespaceId, updated: true };
+        }
+
+        return this.addMemoryEntry(namespaceOptions, {
+            entryType: 'participant_profile',
+            title: participantProfile.title,
+            content: participantProfile.content,
+            tags: participantProfile.tags || [],
+            metadata: participantProfile.metadata || {}
+        });
+    }
+
+    collectParticipantProfileSource(userId, namespaceOptions, options = {}) {
+        const existing = this.getParticipantProfile(namespaceOptions, userId);
+        const since = existing?.metadata?.lastProcessedMessageAt || 0;
+        const messages = this.listParticipantMessages(userId, {
+            since,
+            limit: options.limit || 50
+        });
+
+        return {
+            existing,
+            since,
+            messages,
+            hasEnoughNewInfo: messages.length >= (options.threshold || 8)
+        };
+    }
+
     addSummaryIndexEntry(namespaceOptions, entry = {}) {
         const namespace = this.ensureMemoryNamespace(namespaceOptions);
         const now = Date.now();
@@ -912,11 +1065,14 @@ export class SessionManager {
             if (!dedupe.has(entry.id)) {
                 const keywordHits = queryKeywords.filter((keyword) => entry.content.toLowerCase().includes(keyword)).length;
                 const recencyBoost = matchedEntries.some((item) => item.id === entry.id) ? 50 : 20;
+                const profileBoost = entry.entryType === 'participant_profile' ? 80 : 0;
                 dedupe.set(entry.id, {
                     ...entry,
-                    sourceKind: 'memory_entry',
-                    recallReason: matchedEntries.some((item) => item.id === entry.id) ? 'keyword_match' : 'recent_memory',
-                    recallScore: recencyBoost + keywordHits * 8
+                    sourceKind: entry.entryType === 'participant_profile' ? 'participant_profile' : 'memory_entry',
+                    recallReason: entry.entryType === 'participant_profile'
+                        ? 'participant_profile'
+                        : (matchedEntries.some((item) => item.id === entry.id) ? 'keyword_match' : 'recent_memory'),
+                    recallScore: profileBoost + recencyBoost + keywordHits * 8
                 });
             }
         }

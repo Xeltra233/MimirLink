@@ -451,6 +451,43 @@
             margin-top: 10px;
         }
 
+        .security-observation-list {
+            margin-top: 12px;
+            display: grid;
+            gap: 8px;
+        }
+
+        .security-observation-item {
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px;
+            background: var(--bg-primary);
+        }
+
+        .security-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.78rem;
+            margin-right: 6px;
+        }
+
+        .security-pill.high { background: rgba(220, 53, 69, 0.16); color: #dc3545; }
+        .security-pill.medium { background: rgba(255, 159, 64, 0.18); color: #c96a00; }
+        .security-pill.low { background: rgba(255, 193, 7, 0.18); color: #9a7700; }
+        .security-pill.none { background: rgba(108, 117, 125, 0.14); color: var(--text-secondary); }
+        .security-pill.actor-admin { background: rgba(25, 135, 84, 0.16); color: #198754; }
+        .security-pill.actor-user { background: rgba(13, 110, 253, 0.14); color: #0d6efd; }
+
+        .security-meta-line {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
         .validation-box {
             margin-top: 12px;
             border-radius: 10px;
@@ -732,6 +769,57 @@
 
         .badge.success { background: var(--success); }
         .badge.warning { background: var(--warning); color: #000; }
+
+        .participant-profile-grid {
+            grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+        }
+
+        .section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .meta-inline {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .participant-profile-item {
+            padding: 12px 14px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg-primary);
+            cursor: pointer;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+        }
+
+        .participant-profile-item:hover {
+            transform: translateY(-1px);
+        }
+
+        .participant-profile-item.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px rgba(106, 76, 47, 0.18);
+        }
+
+        .participant-profile-item + .participant-profile-item {
+            margin-top: 10px;
+        }
+
+        .participant-profile-body {
+            white-space: pre-wrap;
+            word-break: break-word;
+            line-height: 1.65;
+        }
+
+        @media (max-width: 960px) {
+            .participant-profile-grid {
+                grid-template-columns: 1fr;
+            }
+        }
     </style>
 </head>
 <body>
@@ -772,6 +860,7 @@
             <div class="tab" data-panel="characters">👤 角色卡</div>
             <div class="tab" data-panel="worldbooks">📚 世界书</div>
             <div class="tab" data-panel="sessions">💬 会话</div>
+            <div class="tab" data-panel="participant-profiles">🪪 人物档案</div>
             <div class="tab" data-panel="regex">🔧 正则规则</div>
             <div class="tab" data-panel="tts">🔊 语音合成</div>
             <div class="tab" data-panel="config">⚙️ 配置</div>
@@ -813,6 +902,9 @@
                 <div class="card">
                     <h3>安全层状态</h3>
                     <div id="security-trust-panel" class="meta-box">暂无安全层状态</div>
+                    <div id="security-trust-history" class="security-observation-list">
+                        <div class="empty-state">暂无最近观察</div>
+                    </div>
                 </div>
                 <div class="card">
                     <h3>记忆迁移</h3>
@@ -932,6 +1024,27 @@
             </div>
         </div>
 
+        <div class="panel" id="participant-profiles">
+            <h2>人物档案</h2>
+            <div class="grid participant-profile-grid">
+                <div class="card participant-profile-list-card">
+                    <div class="section-head">
+                        <h3>档案列表</h3>
+                        <span id="participant-profile-count" class="meta-inline">0 条</span>
+                    </div>
+                    <div id="participant-profile-list" class="list">
+                        <div class="empty-state">加载中...</div>
+                    </div>
+                </div>
+                <div class="card participant-profile-detail-card">
+                    <h3>档案详情</h3>
+                    <div id="participant-profile-detail">
+                        <div class="empty-state">选择一个人物档案查看详情</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- 正则规则 -->
         <div class="panel" id="regex">
             <h2>正则规则</h2>
@@ -997,12 +1110,25 @@
                         </p>
                     </div>
                     <div class="form-group">
-                        <label>App ID</label>
-                        <input type="text" id="tts-appid" placeholder="豆包控制台的 appid">
+                        <label>TTS Provider</label>
+                        <select id="tts-provider" onchange="updateTTSProviderFields()">
+                            <option value="doubao">Doubao</option>
+                            <option value="minimax">Minimax</option>
+                        </select>
                     </div>
                     <div class="form-group">
-                        <label>Access Token</label>
-                        <input type="password" id="tts-token" placeholder="豆包控制台的 access_token">
+                        <label>Base URL</label>
+                        <input type="text" id="tts-baseurl" placeholder="留空使用官方默认地址，或填写第三方兼容地址">
+                    </div>
+                    <div class="form-group">
+                        <label>API Key</label>
+                        <input type="password" id="tts-apikey" placeholder="供应商 API Key">
+                    </div>
+                    <div id="tts-doubao-fields">
+                        <div class="form-group">
+                            <label>App ID</label>
+                            <input type="text" id="tts-appid" placeholder="豆包控制台的 appid">
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>音色选择</label>
@@ -1011,10 +1137,14 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label>音色 ID</label>
-                        <input type="text" id="tts-voice" placeholder="例如: BV700_V2_streaming">
-                        <p style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
-                            💡 直接输入音色 ID，参考 <a href="https://www.volcengine.com/docs/6561/1257544" target="_blank" style="color: var(--accent);">豆包语音合成2.0音色列表</a>
+                        <label>Model ID</label>
+                        <input type="text" id="tts-model" placeholder="例如: speech-02-hd">
+                    </div>
+                    <div class="form-group">
+                        <label>Voice ID</label>
+                        <input type="text" id="tts-voice" placeholder="例如: female-qn-qingse">
+                        <p id="tts-voice-doc-hint" style="font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px;">
+                            💡 Doubao 音色文档：<a href="https://www.volcengine.com/docs/6561/1257544" target="_blank" style="color: var(--accent);">查看官方音色列表</a>
                         </p>
                     </div>
                 </div>
@@ -1275,6 +1405,16 @@
                         <input type="number" id="config-memory-summary-source" placeholder="50" min="10">
                     </div>
                     <div class="form-group">
+                        <label>人物档案触发消息数</label>
+                        <input type="number" id="config-memory-participant-profile-trigger" placeholder="8" min="1">
+                        <p class="hint-text">同一个发言人累计新增消息达到这个数量后，才会在会话空闲时异步增量建档。</p>
+                    </div>
+                    <div class="form-group">
+                        <label>人物档案空闲等待时间 (毫秒)</label>
+                        <input type="number" id="config-memory-participant-profile-idle" placeholder="120000" min="1000">
+                        <p class="hint-text">最后一条消息进入后，等待这段空闲时间再触发建档，避免阻塞主回复链。</p>
+                    </div>
+                    <div class="form-group">
                         <label>
                             <input type="checkbox" id="config-memory-summary-ai" checked>
                             使用 AI 生成摘要
@@ -1412,6 +1552,9 @@
         let editingRegexIndex = null;
         let configDirty = false;
         let lastConfigSavedAt = null;
+        let participantProfiles = [];
+        let selectedParticipantProfileId = null;
+        let participantProfilesLoaded = false;
 
         function setTheme(theme) {
             const normalized = theme || 'sand';
@@ -1495,8 +1638,139 @@
                     document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
                     tab.classList.add('active');
                     document.getElementById(tab.dataset.panel).classList.add('active');
+                    if (tab.dataset.panel === 'participant-profiles') {
+                        loadParticipantProfiles();
+                    }
                 });
             });
+        }
+
+        function formatProfileTime(timestamp) {
+            if (!timestamp) {
+                return '-';
+            }
+
+            return new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
+        }
+
+        function formatParticipantProfileScope(item) {
+            const scope = item.scopeType || '-';
+            const scopeKey = item.scopeKey || '-';
+            const character = item.characterName || '未绑定角色';
+            return `${scope}:${scopeKey} | ${character}`;
+        }
+
+        function renderParticipantProfileList() {
+            const list = document.getElementById('participant-profile-list');
+            const count = document.getElementById('participant-profile-count');
+            if (!list || !count) {
+                return;
+            }
+
+            count.textContent = `${participantProfiles.length} 条`;
+
+            if (participantProfiles.length === 0) {
+                list.innerHTML = '<div class="empty-state">暂无人物档案</div>';
+                return;
+            }
+
+            list.innerHTML = participantProfiles.map((item) => `
+                <div class="participant-profile-item ${selectedParticipantProfileId === item.id ? 'selected' : ''}" onclick="selectParticipantProfile('${escapeHtml(item.id)}')">
+                    <div class="name">${escapeHtml(item.participantName || item.title || item.participantId || '未命名人物')}</div>
+                    <div class="meta">${escapeHtml(item.participantId || '-')}</div>
+                    <div class="meta">${escapeHtml(formatProfileTime(item.updatedAt))}</div>
+                    <div class="meta">${escapeHtml(formatParticipantProfileScope(item))}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderParticipantProfileDetail(item) {
+            const panel = document.getElementById('participant-profile-detail');
+            if (!panel) {
+                return;
+            }
+
+            if (!item) {
+                panel.innerHTML = '<div class="empty-state">选择一个人物档案查看详情</div>';
+                return;
+            }
+
+            panel.innerHTML = `
+                <div class="section-head">
+                    <div>
+                        <div class="name">${escapeHtml(item.participantName || item.title || item.participantId || '未命名人物')}</div>
+                        <div class="meta">${escapeHtml(item.participantId || '-')}</div>
+                    </div>
+                    <div class="meta-inline">${escapeHtml(formatProfileTime(item.updatedAt))}</div>
+                </div>
+                <div class="meta-box">角色: ${escapeHtml(item.characterName || '-')}
+预设: ${escapeHtml(item.presetName || '-')}
+作用域: ${escapeHtml(item.scopeType || '-')} / ${escapeHtml(item.scopeKey || '-')}
+来源: ${escapeHtml(item.metadata?.source || 'participant_profile')}</div>
+                <div class="meta-box participant-profile-body" style="margin-top: 12px;">${escapeHtml(item.content || '')}</div>
+            `;
+        }
+
+        async function loadParticipantProfiles(force = false) {
+            if (participantProfilesLoaded && !force) {
+                renderParticipantProfileList();
+                return;
+            }
+
+            const list = document.getElementById('participant-profile-list');
+            if (list) {
+                list.innerHTML = '<div class="empty-state">加载中...</div>';
+            }
+
+            try {
+                const { res, data } = await fetchJsonSafe('/api/participant-profiles');
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '加载失败');
+                }
+
+                participantProfiles = Array.isArray(data.items) ? data.items : [];
+                participantProfilesLoaded = true;
+
+                if (!selectedParticipantProfileId && participantProfiles.length > 0) {
+                    selectedParticipantProfileId = participantProfiles[0].id;
+                    await selectParticipantProfile(selectedParticipantProfileId);
+                    return;
+                }
+
+                renderParticipantProfileList();
+                if (participantProfiles.length === 0) {
+                    renderParticipantProfileDetail(null);
+                }
+            } catch (e) {
+                participantProfiles = [];
+                participantProfilesLoaded = false;
+                if (list) {
+                    list.innerHTML = `<div class="empty-state">加载失败: ${escapeHtml(e.message)}</div>`;
+                }
+                renderParticipantProfileDetail(null);
+            }
+        }
+
+        async function selectParticipantProfile(id) {
+            selectedParticipantProfileId = id;
+            renderParticipantProfileList();
+
+            const panel = document.getElementById('participant-profile-detail');
+            if (panel) {
+                panel.innerHTML = '<div class="empty-state">正在加载详情...</div>';
+            }
+
+            try {
+                const { res, data } = await fetchJsonSafe(`/api/participant-profiles/${encodeURIComponent(id)}`);
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || '加载详情失败');
+                }
+                renderParticipantProfileDetail(data.item || null);
+            } catch (e) {
+                if (panel) {
+                    panel.innerHTML = `<div class="empty-state">加载详情失败: ${escapeHtml(e.message)}</div>`;
+                }
+            }
         }
 
         // 加载状态
@@ -1526,11 +1800,56 @@
                     recallPanel.textContent = `查询: ${data.lastRecall.query || ''}\n命中数: ${hits.length}\n${hits.slice(0, 5).map((hit) => `- [${hit.sourceKind}/${hit.recallReason}] ${hit.title || '(无标题)'} score=${hit.recallScore}\n  ${hit.preview}`).join('\n')}`;
                 }
                 const trustPanel = document.getElementById('security-trust-panel');
-                if (trustPanel && data.lastInjectionObservation) {
-                    const obs = data.lastInjectionObservation;
-                    const userInputs = Array.isArray(obs.untrusted_user_inputs) ? obs.untrusted_user_inputs : [];
-                    const adminInputs = Array.isArray(obs.trusted_admin_inputs) ? obs.trusted_admin_inputs : [];
-                    trustPanel.textContent = `可信来源: ${(obs.trusted_context?.trustedSources || []).join(', ') || '-'}\n管理员 QQ: ${(obs.trusted_context?.adminUsers || []).join(', ') || '-'}\n最近普通用户输入: ${userInputs.length > 0 ? `${userInputs[0].risk?.level || 'none'} / ${userInputs[0].content.slice(0, 120)}` : '无'}\n最近管理员输入: ${adminInputs.length > 0 ? adminInputs[0].content.slice(0, 120) : '无'}`;
+                const trustHistory = document.getElementById('security-trust-history');
+                const obs = data.lastInjectionObservation;
+                const recentObs = Array.isArray(data.recentInjectionObservations) ? data.recentInjectionObservations : [];
+                if (trustPanel) {
+                    if (!obs) {
+                        trustPanel.textContent = '暂无安全层观察';
+                    } else {
+                        const userInputs = Array.isArray(obs.untrusted_user_inputs) ? obs.untrusted_user_inputs : [];
+                        const adminInputs = Array.isArray(obs.trusted_admin_inputs) ? obs.trusted_admin_inputs : [];
+                        const latestUser = userInputs[0] || null;
+                        const latestAdmin = adminInputs[0] || null;
+                        const adminCount = Array.isArray(obs.trusted_context?.adminUsers) ? obs.trusted_context.adminUsers.length : 0;
+                        const recentUserCount = recentObs.filter((item) => item.actorType === 'user').length;
+                        const recentAdminCount = recentObs.filter((item) => item.actorType === 'admin').length;
+
+                        trustPanel.innerHTML = `
+                            <div><strong>可信来源:</strong> ${escapeHtml((obs.trusted_context?.trustedSources || []).join(', ') || '-')}</div>
+                            <div style="margin-top: 6px;"><strong>管理员 QQ:</strong> ${escapeHtml((obs.trusted_context?.adminUsers || []).join(', ') || '-')} (${adminCount})</div>
+                            <div style="margin-top: 6px;"><strong>最近普通用户风险:</strong> ${escapeHtml(latestUser?.risk?.level || '无')} ${latestUser?.content ? ` / ${escapeHtml(latestUser.content.slice(0, 120))}` : ''}</div>
+                            <div style="margin-top: 6px;"><strong>最近管理员输入:</strong> ${latestAdmin?.content ? escapeHtml(latestAdmin.content.slice(0, 120)) : '无'}</div>
+                            <div style="margin-top: 6px;"><strong>最近观察统计:</strong> 普通用户 ${recentUserCount} / 管理员 ${recentAdminCount}</div>
+                        `;
+                    }
+                }
+
+                if (trustHistory) {
+                    if (recentObs.length === 0) {
+                        trustHistory.innerHTML = '<div class="empty-state">暂无最近观察</div>';
+                    } else {
+                        trustHistory.innerHTML = recentObs.slice(0, 8).map((item) => {
+                            const actorLabel = item.actorType === 'admin' ? '管理员' : '普通用户';
+                            const actorClass = item.actorType === 'admin' ? 'actor-admin' : 'actor-user';
+                            const riskLevel = item.summary?.riskLevel || 'none';
+                            const matchedRules = Array.isArray(item.summary?.matchedRules) && item.summary.matchedRules.length > 0
+                                ? item.summary.matchedRules.join(', ')
+                                : '无命中规则';
+
+                            return `
+                                <div class="security-observation-item">
+                                    <div>
+                                        ${renderSecurityPill(actorLabel, actorClass)}
+                                        ${renderSecurityPill(riskLevel, riskLevel)}
+                                    </div>
+                                    <div class="security-meta-line">${escapeHtml(formatSecurityTimestamp(item.timestamp))} | session=${escapeHtml(item.summary?.sessionId || '-')} | trigger=${escapeHtml(item.summary?.triggerReason || '-')}</div>
+                                    <div class="security-meta-line">规则: ${escapeHtml(matchedRules)}</div>
+                                    <div class="security-meta-line">内容: ${escapeHtml(item.summary?.contentPreview || '')}</div>
+                                </div>
+                            `;
+                        }).join('');
+                    }
                 }
                 const runtimeInfo = data.runtime
                     ? ` | 并发:${data.runtime.maxConcurrentSessions} 缓冲:${data.runtime.bufferWindowMs}ms`
@@ -1902,6 +2221,17 @@
                 .replace(/'/g, '&#039;');
         }
 
+        function formatSecurityTimestamp(timestamp) {
+            if (!timestamp) {
+                return '-';
+            }
+            return new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
+        }
+
+        function renderSecurityPill(text, className) {
+            return `<span class="security-pill ${className}">${escapeHtml(text)}</span>`;
+        }
+
         function formatRegexStage(stage) {
             if (Array.isArray(stage)) {
                 return stage.join(',');
@@ -2159,7 +2489,8 @@
                 if (data.success) {
                     showToast('世界书已加载');
                     loadStatus();
-                    
+                    loadMemoryDatabases();
+                     
                     // 加载世界书内容用于编辑
                     currentWorldBookFilename = filename;
                     await loadWorldBookContent(filename);
@@ -3007,6 +3338,14 @@
                 warnings.push('摘要保留条数已经接近或超过触发阈值，摘要压缩效果会明显变弱。');
             }
 
+            if (draft.memory.participantProfile.triggerMessages < 1) {
+                errors.push('人物档案触发消息数必须是大于 0 的数字。');
+            }
+
+            if (draft.memory.participantProfile.idleMs < 1000) {
+                warnings.push('人物档案空闲等待时间低于 1000ms，容易在连续对话中频繁触发异步建档。');
+            }
+
             if (draft.chat.accessControlMode === 'allowlist' && draft.chat.allowedGroups.length === 0 && draft.chat.allowedUsers.length === 0) {
                 warnings.push('当前是白名单模式，但群和用户白名单都为空，这会退化为“全部放行”。');
             }
@@ -3304,6 +3643,8 @@
                 document.getElementById('config-memory-summary-keep').value = currentConfig.memory?.summary?.keepRecent ?? 30;
                 document.getElementById('config-memory-summary-max').value = currentConfig.memory?.summary?.maxSummaries ?? 8;
                 document.getElementById('config-memory-summary-source').value = currentConfig.memory?.summary?.maxSourceMessages ?? 50;
+                document.getElementById('config-memory-participant-profile-trigger').value = currentConfig.memory?.participantProfile?.triggerMessages ?? 8;
+                document.getElementById('config-memory-participant-profile-idle').value = currentConfig.memory?.participantProfile?.idleMs ?? 120000;
                 document.getElementById('config-memory-summary-ai').checked = currentConfig.memory?.summary?.useAI !== false;
 
                 document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
@@ -3490,6 +3831,11 @@
                         type: 'sqlite',
                         path: document.getElementById('config-memory-db-path').value || './data/chats/memory-store.sqlite'
                     },
+                    participantProfile: {
+                        triggerMessages: parseInt(document.getElementById('config-memory-participant-profile-trigger').value) || 8,
+                        idleMs: parseInt(document.getElementById('config-memory-participant-profile-idle').value) || 120000,
+                        maxSourceMessages: currentConfig.memory?.participantProfile?.maxSourceMessages || 50
+                    },
                     summary: {
                         enabled: document.getElementById('config-memory-summary-enabled').checked,
                         triggerMessages: parseInt(document.getElementById('config-memory-summary-trigger').value) || 80,
@@ -3519,13 +3865,13 @@
                     ...(currentConfig.regex || {}),
                     enabled: document.getElementById('config-regex-enabled').checked,
                     usePresetRules: document.getElementById('config-regex-preset').checked,
-                    rules: currentConfig.regex?.rules || []
+                    rules: currentConfig.bindings?.global?.regexRules || currentConfig.regex?.rules || []
                 },
                 bindings: {
                     ...(currentConfig.bindings || {}),
                     global: {
                         ...((currentConfig.bindings || {}).global || {}),
-                        regexRules: currentConfig.bindings?.global?.regexRules || currentConfig.regex?.rules || []
+                        regexRules: currentConfig.bindings?.global?.regexRules || []
                     },
                     characters: (currentConfig.bindings || {}).characters || {}
                 }
@@ -3681,27 +4027,33 @@
         // 加载 TTS 配置
         async function loadTTSConfig() {
             try {
-                // 加载配置
                 const configRes = await fetch('/api/tts/config');
                 const config = await configRes.json();
                 const voicesRes = await fetch('/api/tts/voices');
                 const voices = await voicesRes.json();
                 const voiceSelect = document.getElementById('tts-voice-select');
                 voiceSelect.innerHTML = '<option value="">手动输入 / 自定义</option>' + voices.map(v => `<option value="${v.id}">${v.name} (${v.id})</option>`).join('');
-                
+
+                const voiceId = config.voiceId || config.voiceType || 'zh_female_shuangkuaisisi_moon_bigtts';
+                const speed = config.speed || config.speedRatio || 1.0;
+                const volume = config.volume || config.volumeRatio || 1.0;
+                const pitch = config.pitch || config.pitchRatio || 1.0;
+
                 document.getElementById('tts-enabled').checked = config.enabled || false;
-                document.getElementById('tts-appid').value = config.appid || config.appId || '';
-                document.getElementById('tts-token').value = config.token || config.accessToken || '';
-                document.getElementById('tts-voice').value = config.voiceType || 'BV700_V2_streaming';
-                voiceSelect.value = voices.some(v => v.id === (config.voiceType || 'BV700_V2_streaming')) ? (config.voiceType || 'BV700_V2_streaming') : '';
-                document.getElementById('tts-speed').value = config.speedRatio || config.speed || 1.0;
-                document.getElementById('tts-volume').value = config.volumeRatio || config.volume || 1.0;
-                document.getElementById('tts-pitch').value = config.pitchRatio || config.pitch || 1.0;
-                
-                // 更新显示值
-                document.getElementById('tts-speed-value').textContent = config.speedRatio || config.speed || 1.0;
-                document.getElementById('tts-volume-value').textContent = config.volumeRatio || config.volume || 1.0;
-                document.getElementById('tts-pitch-value').textContent = config.pitchRatio || config.pitch || 1.0;
+                document.getElementById('tts-provider').value = config.provider || 'doubao';
+                document.getElementById('tts-baseurl').value = config.baseUrl || '';
+                document.getElementById('tts-apikey').value = config.apiKey || config.token || config.accessToken || '';
+                document.getElementById('tts-appid').value = config.appId || config.appid || '';
+                document.getElementById('tts-model').value = config.modelId || config.model || '';
+                document.getElementById('tts-voice').value = voiceId;
+                voiceSelect.value = voices.some(v => v.id === voiceId) ? voiceId : '';
+                document.getElementById('tts-speed').value = speed;
+                document.getElementById('tts-volume').value = volume;
+                document.getElementById('tts-pitch').value = pitch;
+
+                document.getElementById('tts-speed-value').textContent = speed;
+                document.getElementById('tts-volume-value').textContent = volume;
+                document.getElementById('tts-pitch-value').textContent = pitch;
                 toggleTTSFields(config.enabled || false);
             } catch (e) {
                 console.error('加载 TTS 配置失败', e);
@@ -3715,27 +4067,56 @@
             }
         }
 
+        function updateTTSProviderFields() {
+            const provider = document.getElementById('tts-provider')?.value || 'doubao';
+            const doubaoFields = document.getElementById('tts-doubao-fields');
+            const voiceSelect = document.getElementById('tts-voice-select');
+            const voiceDocHint = document.getElementById('tts-voice-doc-hint');
+
+            if (doubaoFields) {
+                doubaoFields.style.display = provider === 'doubao' ? 'block' : 'none';
+            }
+            if (voiceSelect) {
+                voiceSelect.disabled = provider !== 'doubao' || !document.getElementById('tts-enabled')?.checked;
+            }
+            if (voiceDocHint) {
+                if (provider === 'minimax') {
+                    voiceDocHint.innerHTML = '💡 Minimax 音色文档：<a href="https://platform.minimax.io/docs/faq/system-voice-id" target="_blank" style="color: var(--accent);">系统 Voice ID 列表</a> | <a href="https://platform.minimaxi.com/docs/api-reference/voice-management-get" target="_blank" style="color: var(--accent);">查询当前账号可用音色 API</a>。如果你使用第三方兼容源，也可能需要以该上游实际支持的 voice id 为准。';
+                } else {
+                    voiceDocHint.innerHTML = '💡 Doubao 音色文档：<a href="https://www.volcengine.com/docs/6561/1257544" target="_blank" style="color: var(--accent);">查看官方音色列表</a>';
+                }
+            }
+        }
+
+        function getTTSConfigDraft() {
+            return {
+                enabled: document.getElementById('tts-enabled').checked,
+                provider: document.getElementById('tts-provider').value,
+                baseUrl: document.getElementById('tts-baseurl').value,
+                apiKey: document.getElementById('tts-apikey').value,
+                appId: document.getElementById('tts-appid').value,
+                modelId: document.getElementById('tts-model').value,
+                voiceId: document.getElementById('tts-voice').value,
+                speed: parseFloat(document.getElementById('tts-speed').value),
+                volume: parseFloat(document.getElementById('tts-volume').value),
+                pitch: parseFloat(document.getElementById('tts-pitch').value)
+            };
+        }
+
         function toggleTTSFields(enabled) {
-            ['tts-appid', 'tts-token', 'tts-voice-select', 'tts-voice', 'tts-speed', 'tts-volume', 'tts-pitch', 'tts-test-text'].forEach((id) => {
+            ['tts-provider', 'tts-baseurl', 'tts-apikey', 'tts-appid', 'tts-model', 'tts-voice-select', 'tts-voice', 'tts-speed', 'tts-volume', 'tts-pitch', 'tts-test-text'].forEach((id) => {
                 const element = document.getElementById(id);
                 if (element) {
                     element.disabled = !enabled;
                 }
             });
+            updateTTSProviderFields();
         }
 
         // 保存 TTS 配置
         async function saveTTSConfig() {
-            const config = {
-                enabled: document.getElementById('tts-enabled').checked,
-                appId: document.getElementById('tts-appid').value,
-                accessToken: document.getElementById('tts-token').value,
-                voiceType: document.getElementById('tts-voice').value,
-                speed: parseFloat(document.getElementById('tts-speed').value),
-                volume: parseFloat(document.getElementById('tts-volume').value),
-                pitch: parseFloat(document.getElementById('tts-pitch').value)
-            };
-            
+            const config = getTTSConfigDraft();
+
             try {
                 const res = await fetch('/api/tts/config', {
                     method: 'POST',
@@ -3743,7 +4124,7 @@
                     body: JSON.stringify(config)
                 });
                 const data = await res.json();
-                
+
                 if (data.success) {
                     showToast('TTS 配置已保存');
                 } else {
@@ -3766,6 +4147,7 @@
             result.innerHTML = '<div style="color: var(--text-secondary);">正在合成语音...</div>';
             
             try {
+                await saveTTSConfig();
                 const res = await fetch('/api/tts/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3822,6 +4204,11 @@
                 ttsEnabled.addEventListener('change', (e) => {
                     toggleTTSFields(e.target.checked);
                 });
+            }
+
+            const ttsProvider = document.getElementById('tts-provider');
+            if (ttsProvider) {
+                ttsProvider.addEventListener('change', updateTTSProviderFields);
             }
         });
     </script>

@@ -92,6 +92,8 @@ npm start
 - `chat.sessionMode`：记忆作用域策略
 - `chat.accessControlMode`：`allowlist`、`blocklist` 或 `disabled`
 - `memory.storage.path`：默认记忆数据库路径
+- `memory.participantProfile.triggerMessages`：人物档案累计多少条新增消息后才进入异步建档候选
+- `memory.participantProfile.idleMs`：人物档案在会话空闲多久后触发异步增量建档
 - `bindings.global.memoryDbPath`：全局默认数据库覆盖路径
 - `bindings.characters.*.memoryDbPath`：角色级数据库路径
 - TTS 音频缓存会自动清理：
@@ -227,6 +229,8 @@ Important runtime areas:
 - `chat.sessionMode`: memory scope strategy
 - `chat.accessControlMode`: `allowlist`, `blocklist`, or `disabled`
 - `memory.storage.path`: default memory database path
+- `memory.participantProfile.triggerMessages`: how many new messages a participant must accumulate before async profile updates become eligible
+- `memory.participantProfile.idleMs`: how long the session must stay idle before the async participant profile update runs
 - `bindings.global.memoryDbPath`: global default database override
 - `bindings.characters.*.memoryDbPath`: per-character memory database
 - TTS audio cache is cleaned automatically:

@@ -54,6 +54,11 @@
       "type": "sqlite",
       "path": "./data/chats/memory-store.sqlite"
     },
+    "participantProfile": {
+      "triggerMessages": 8,
+      "idleMs": 120000,
+      "maxSourceMessages": 50
+    },
     "summary": {
       "enabled": true,
       "triggerMessages": 80,
@@ -92,11 +97,14 @@
   },
   "tts": {
     "enabled": false,
-    "appId": "your-doubao-app-id",
-    "accessToken": "your-doubao-access-token",
-    "voiceType": "zh_female_wanwanxiaohe_moon_bigtts",
+    "provider": "doubao",
+    "baseUrl": "",
+    "apiKey": "your-api-key",
+    "modelId": "",
+    "voiceId": "zh_female_wanwanxiaohe_moon_bigtts",
     "speed": 1,
     "volume": 1,
-    "pitch": 1
+    "pitch": 1,
+    "appId": "your-doubao-app-id"
   }
 }

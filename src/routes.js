@@ -21,7 +21,7 @@ const __dirname = path.dirname(__filename);
  * @param {Object} deps - 依赖注入
  */
 export function setupRoutes(app, config, saveConfig, managers) {
-    const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES, runtime, getLastRoutingSnapshot, formatSessionLabel, getLastInjectionObservation, getLastRecallSnapshot } = managers;
+    const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES, runtime, getLastRoutingSnapshot, formatSessionLabel, getLastInjectionObservation, getRecentInjectionObservations, getLastRecallSnapshot, clearParticipantProfileTimers } = managers;
 
     const summarizePayload = (payload, maxLen = 400) => {
         try {
@@ -320,9 +320,17 @@ export function setupRoutes(app, config, saveConfig, managers) {
     const applyRuntimeConfig = () => {
         aiClient.updateConfig(config.ai || {});
         sessionManager.setConfig(config);
-        regexProcessor.updateConfig(config.regex || {});
+        const currentCharacter = config.chat?.defaultCharacter || '';
+        const binding = currentCharacter ? getCharacterBinding(currentCharacter) : null;
+        regexProcessor.updateConfig(
+            config.regex || {},
+            binding?.regexRules || binding?.importedFromCard?.regexRules || [],
+            binding?.preset?.regexRules || binding?.importedFromCard?.preset?.regexRules || config.preset?.regexRules || [],
+            config.bindings?.global?.regexRules || config.regex?.rules || []
+        );
         promptBuilder.updateConfig(config);
         runtime?.updateConfig(config);
+        clearParticipantProfileTimers?.();
     };
 
     const mergeConfig = (target, source) => {
@@ -756,6 +764,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
         try {
             const { filename } = req.body;
             const worldbook = await worldBookManager.loadWorldBook(filename);
+            ensureBindingConfig();
+            config.bindings.global.worldbook = filename;
+            saveConfig(config);
             res.json({ success: true, worldbook });
         } catch (error) {
             logger.error('选择世界书失败', error);
@@ -1113,7 +1124,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     // 获取正则规则（需要认证）
     app.get('/api/regex', requireAuth, (req, res) => {
-        const rules = regexProcessor.getRules();
+        ensureBindingConfig();
+        const rules = Array.isArray(config.bindings.global.regexRules) ? config.bindings.global.regexRules : [];
         res.json(rules);
     });
 
@@ -1121,11 +1133,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.post('/api/regex', requireAuth, (req, res) => {
         try {
             const rule = req.body;
-            if (!Array.isArray(config.regex.rules)) {
-                config.regex.rules = [];
+            ensureBindingConfig();
+            if (!Array.isArray(config.bindings.global.regexRules)) {
+                config.bindings.global.regexRules = Array.isArray(config.regex.rules) ? config.regex.rules : [];
             }
-            config.regex.rules.push(rule);
-            regexProcessor.updateConfig(config.regex);
+            config.bindings.global.regexRules.push(rule);
+            applyRuntimeConfig();
             saveConfig(config);
             res.json({ success: true, message: '规则已添加' });
         } catch (error) {
@@ -1137,13 +1150,14 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // 删除正则规则（需要认证）
     app.delete('/api/regex/:index', requireAuth, (req, res) => {
         const index = parseInt(req.params.index);
-        if (!Array.isArray(config.regex.rules)) {
-            config.regex.rules = [];
+        ensureBindingConfig();
+        if (!Array.isArray(config.bindings.global.regexRules)) {
+            config.bindings.global.regexRules = Array.isArray(config.regex.rules) ? config.regex.rules : [];
         }
-        if (index >= 0 && index < config.regex.rules.length) {
-            config.regex.rules.splice(index, 1);
+        if (index >= 0 && index < config.bindings.global.regexRules.length) {
+            config.bindings.global.regexRules.splice(index, 1);
         }
-        regexProcessor.updateConfig(config.regex);
+        applyRuntimeConfig();
         saveConfig(config);
         res.json({ success: true, message: '规则已删除' });
     });
@@ -1152,18 +1166,19 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.put('/api/regex/:index', requireAuth, (req, res) => {
         try {
             const index = parseInt(req.params.index);
-            if (!Array.isArray(config.regex.rules)) {
-                config.regex.rules = [];
+            ensureBindingConfig();
+            if (!Array.isArray(config.bindings.global.regexRules)) {
+                config.bindings.global.regexRules = Array.isArray(config.regex.rules) ? config.regex.rules : [];
             }
-            if (index < 0 || index >= config.regex.rules.length) {
+            if (index < 0 || index >= config.bindings.global.regexRules.length) {
                 return res.status(404).json({ success: false, error: '规则不存在' });
             }
 
-            config.regex.rules[index] = {
-                ...config.regex.rules[index],
+            config.bindings.global.regexRules[index] = {
+                ...config.bindings.global.regexRules[index],
                 ...req.body
             };
-            regexProcessor.updateConfig(config.regex);
+            applyRuntimeConfig();
             saveConfig(config);
             res.json({ success: true, message: '规则已更新' });
         } catch (error) {
@@ -1241,15 +1256,39 @@ export function setupRoutes(app, config, saveConfig, managers) {
         res.json(logs);
     });
 
+    app.get('/api/participant-profiles', requireAuth, (req, res) => {
+        try {
+            const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
+            const items = sessionManager.listParticipantProfiles(limit);
+            res.json({ success: true, items });
+        } catch (error) {
+            logger.error('获取人物档案列表失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.get('/api/participant-profiles/:id', requireAuth, (req, res) => {
+        try {
+            const item = sessionManager.getParticipantProfileByEntryId(req.params.id);
+            if (!item) {
+                return res.status(404).json({ success: false, error: '人物档案不存在' });
+            }
+
+            res.json({ success: true, item });
+        } catch (error) {
+            logger.error('获取人物档案详情失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     // ==================== TTS 语音合成 ====================
 
     // 获取 TTS 配置（需要认证）
     app.get('/api/tts/config', requireAuth, (req, res) => {
         const ttsConfig = ttsManager.getConfig();
-        // 隐藏 token
         res.json({
             ...ttsConfig,
-            token: ttsConfig.token ? '******' : ''
+            apiKey: ttsConfig.apiKey ? '******' : ''
         });
     });
 
@@ -1258,18 +1297,25 @@ export function setupRoutes(app, config, saveConfig, managers) {
         try {
             const newConfig = req.body;
             console.log('[TTS] 收到配置:', JSON.stringify(newConfig, null, 2));
-            // 字段名映射：前端 -> 后端
             const mappedConfig = {
                 enabled: newConfig.enabled,
-                appid: newConfig.appId || newConfig.appid,
-                token: newConfig.accessToken || newConfig.token,
-                voiceType: newConfig.voiceType,
-                speedRatio: newConfig.speed || newConfig.speedRatio || 1.0,
-                volumeRatio: newConfig.volume || newConfig.volumeRatio || 1.0,
-                pitchRatio: newConfig.pitch || newConfig.pitchRatio || 1.0
+                provider: newConfig.provider || 'doubao',
+                baseUrl: newConfig.baseUrl || '',
+                apiKey: newConfig.apiKey || newConfig.accessToken || newConfig.token,
+                modelId: newConfig.modelId || newConfig.model || '',
+                voiceId: newConfig.voiceId || newConfig.voiceType || '',
+                speed: newConfig.speed || newConfig.speedRatio || 1.0,
+                volume: newConfig.volume || newConfig.volumeRatio || 1.0,
+                pitch: newConfig.pitch || newConfig.pitchRatio || 1.0,
+                appId: newConfig.appId || newConfig.appid || ''
             };
             console.log('[TTS] 映射后配置:', JSON.stringify(mappedConfig, null, 2));
+            config.tts = {
+                ...(config.tts || {}),
+                ...mappedConfig
+            };
             ttsManager.updateConfig(mappedConfig);
+            saveConfig(config);
             logger.info('TTS 配置已更新');
             res.json({ success: true, message: 'TTS 配置已保存' });
         } catch (error) {
@@ -1334,6 +1380,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             activeMemory: getActiveMemoryInfo(),
             lastRouting: typeof getLastRoutingSnapshot === 'function' ? getLastRoutingSnapshot() : null,
             lastInjectionObservation: typeof getLastInjectionObservation === 'function' ? getLastInjectionObservation() : null,
+            recentInjectionObservations: typeof getRecentInjectionObservations === 'function' ? getRecentInjectionObservations() : [],
             lastRecall: typeof getLastRecallSnapshot === 'function' ? getLastRecallSnapshot() : null,
             server: {
                 host: config.server?.host,
