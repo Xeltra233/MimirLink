@@ -903,7 +903,8 @@ async function processBatch(batch) {
                 recentLimit: 3,
                 searchLimit: 3,
                 summaryLimit: 2,
-                limit: 5
+                limit: 5,
+                currentParticipantId: runtimeContext.currentSpeaker?.participantId || null
             });
             lastRecallSnapshot = {
                 at: Date.now(),

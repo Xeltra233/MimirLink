@@ -59,6 +59,378 @@ function normalizeSessionMode(mode) {
     }
 }
 
+function normalizeMemoryEntryType(entry = {}) {
+    switch (entry.entryType) {
+        case 'participant_profile':
+        case 'fact':
+        case 'event':
+        case 'conversation':
+        case 'note':
+            return entry.entryType;
+        case undefined:
+        case null:
+        case '':
+            return 'note';
+        default:
+            return 'conversation';
+    }
+}
+
+function normalizeRecallText(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function normalizeConversationDedupeText(value) {
+    return normalizeRecallText(value)
+        .replace(/(用户|助手)\s*:/g, ' ')
+        .replace(/[^a-z0-9一-龥]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function parseConversationParts(entry) {
+    const content = String(entry.content || '');
+    const userMatch = content.match(/用户:\s*([^\n]+)/);
+    const assistantMatch = content.match(/助手:\s*([\s\S]+)/);
+    const fallbackUser = entry.title || '';
+
+    return {
+        user: normalizeConversationDedupeText(userMatch?.[1] || fallbackUser),
+        assistant: normalizeConversationDedupeText(assistantMatch?.[1] || content),
+        combined: normalizeConversationDedupeText(`${userMatch?.[1] || fallbackUser} ${assistantMatch?.[1] || content}`)
+    };
+}
+
+function buildConversationExactIdentity(entry) {
+    const parts = parseConversationParts(entry);
+    return `${parts.user}|${parts.assistant}`;
+}
+
+function buildConversationNearDuplicateFingerprint(entry) {
+    const parts = parseConversationParts(entry);
+    return {
+        user: parts.user.replace(/\s+/g, ''),
+        assistant: parts.assistant.replace(/\s+/g, ''),
+        combined: parts.combined.replace(/\s+/g, '')
+    };
+}
+
+function countSharedBigrams(left, right) {
+    if (!left || !right) {
+        return 0;
+    }
+
+    const leftBigrams = new Set();
+    const rightBigrams = new Set();
+
+    for (let index = 0; index < left.length - 1; index += 1) {
+        leftBigrams.add(left.slice(index, index + 2));
+    }
+
+    for (let index = 0; index < right.length - 1; index += 1) {
+        rightBigrams.add(right.slice(index, index + 2));
+    }
+
+    let shared = 0;
+    for (const bigram of leftBigrams) {
+        if (rightBigrams.has(bigram)) {
+            shared += 1;
+        }
+    }
+
+    return shared;
+}
+
+function areNearDuplicateConversationEntries(leftEntry, rightEntry) {
+    const leftFingerprint = buildConversationNearDuplicateFingerprint(leftEntry);
+    const rightFingerprint = buildConversationNearDuplicateFingerprint(rightEntry);
+
+    if (!leftFingerprint.combined || !rightFingerprint.combined) {
+        return false;
+    }
+
+    if (leftFingerprint.combined === rightFingerprint.combined) {
+        return true;
+    }
+
+    const userSimilarity = compareConversationFingerprintPart(leftFingerprint.user, rightFingerprint.user);
+    const assistantSimilarity = compareConversationFingerprintPart(leftFingerprint.assistant, rightFingerprint.assistant);
+    const combinedSimilarity = compareConversationFingerprintPart(leftFingerprint.combined, rightFingerprint.combined);
+
+    return combinedSimilarity || (userSimilarity && assistantSimilarity);
+}
+
+function compareConversationFingerprintPart(leftPart, rightPart) {
+    if (!leftPart || !rightPart) {
+        return false;
+    }
+
+    if (leftPart === rightPart) {
+        return true;
+    }
+
+    if (leftPart.includes(rightPart) || rightPart.includes(leftPart)) {
+        return true;
+    }
+
+    const sharedBigrams = countSharedBigrams(leftPart, rightPart);
+    const minBigramCount = Math.max(Math.min(leftPart.length - 1, rightPart.length - 1), 1);
+
+    return sharedBigrams >= 6 && (sharedBigrams / minBigramCount) >= 0.55;
+}
+
+const RECALL_TYPE_PRIORITIES = {
+    participant_profile: 120,
+    fact: 95,
+    event: 80,
+    summary: 70,
+    conversation: 55,
+    note: 40
+};
+
+const RECALL_TYPE_LIMITS = {
+    participant_profile: 1,
+    fact: 2,
+    event: 2,
+    summary: 2,
+    conversation: 2,
+    note: 1
+};
+
+function getRecallTypeWeight(entryType) {
+    return RECALL_TYPE_PRIORITIES[entryType] || RECALL_TYPE_PRIORITIES.note;
+}
+
+function countRecallKeywordHits(queryKeywords, parts = []) {
+    const haystack = parts
+        .map((part) => normalizeRecallText(part))
+        .filter(Boolean)
+        .join(' ');
+
+    return queryKeywords.filter((keyword) => haystack.includes(keyword)).length;
+}
+
+function buildRecallIdentity(entry) {
+    if (entry.entryType === 'conversation') {
+        return `conversation:${buildConversationExactIdentity(entry).slice(0, 160)}`;
+    }
+
+    return entry.id;
+}
+
+function upsertRecallCandidate(dedupe, candidate) {
+    const identity = buildRecallIdentity(candidate);
+    const existing = dedupe.get(identity);
+
+    if (existing) {
+        if ((existing.recallScore || 0) < (candidate.recallScore || 0)) {
+            dedupe.set(identity, candidate);
+        }
+        return;
+    }
+
+    if (candidate.entryType === 'conversation') {
+        for (const [key, value] of dedupe.entries()) {
+            if (value.entryType !== 'conversation') {
+                continue;
+            }
+
+            if (areNearDuplicateConversationEntries(value, candidate)) {
+                if ((value.recallScore || 0) < (candidate.recallScore || 0)) {
+                    dedupe.set(key, candidate);
+                }
+                return;
+            }
+        }
+    }
+
+    dedupe.set(identity, candidate);
+}
+
+function scoreRecallCandidate(entry, queryKeywords, { isMatched = false, isRecent = false, currentParticipantId = null } = {}) {
+    const keywordHits = countRecallKeywordHits(queryKeywords, [entry.title, entry.content, ...(entry.tags || []), ...(entry.keywords || [])]);
+    const participantMatchesCurrent = String(entry.metadata?.participantId || '').trim().toLowerCase() === String(currentParticipantId || '').trim().toLowerCase();
+
+    return getRecallTypeWeight(entry.entryType)
+        + (isMatched ? 45 : 0)
+        + (isRecent ? 15 : 0)
+        + (participantMatchesCurrent ? 20 : 0)
+        + keywordHits * 8;
+}
+
+function normalizeMemoryRecallEntry(entry, queryKeywords, { isMatched = false, isRecent = false, currentParticipantId = null } = {}) {
+    return {
+        ...entry,
+        sourceKind: entry.entryType === 'participant_profile' ? 'participant_profile' : 'memory_entry',
+        recallReason: entry.entryType === 'participant_profile'
+            ? 'participant_profile'
+            : (isMatched ? 'keyword_match' : 'recent_memory'),
+        recallScore: scoreRecallCandidate(entry, queryKeywords, { isMatched, isRecent, currentParticipantId })
+    };
+}
+
+function normalizeSummaryRecallEntry(summary, queryKeywords) {
+    const entry = {
+        id: summary.id,
+        entryType: 'summary',
+        title: '摘要索引',
+        content: summary.outline,
+        tags: [],
+        keywords: summary.keywords,
+        metadata: summary.metadata,
+        sourceKind: 'summary_index',
+        recallReason: 'summary_index'
+    };
+
+    return {
+        ...entry,
+        recallScore: scoreRecallCandidate(entry, queryKeywords, { isMatched: true, isRecent: false })
+    };
+}
+
+function isStableTraitFragment(candidate = {}) {
+    const type = candidate.entryType || 'note';
+    return type === 'conversation' || type === 'note';
+}
+
+function buildParticipantIdentitySet(candidate = {}) {
+    const identities = new Set();
+    const participantId = String(candidate.metadata?.participantId || '').trim().toLowerCase();
+    const participantName = String(candidate.metadata?.participantName || candidate.title || '').trim().toLowerCase();
+
+    if (participantId) {
+        identities.add(participantId);
+    }
+
+    if (participantName) {
+        identities.add(participantName);
+    }
+
+    return identities;
+}
+
+function sharesParticipantIdentity(left = {}, right = {}) {
+    const leftIdentities = buildParticipantIdentitySet(left);
+    const rightIdentities = buildParticipantIdentitySet(right);
+
+    for (const identity of leftIdentities) {
+        if (rightIdentities.has(identity)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function hasStableTraitOverlap(profileCandidate = {}, fragmentCandidate = {}) {
+    const profileTags = new Set((profileCandidate.tags || []).map((tag) => normalizeRecallText(tag)).filter(Boolean));
+    const fragmentTags = new Set((fragmentCandidate.tags || []).map((tag) => normalizeRecallText(tag)).filter(Boolean));
+
+    let overlap = 0;
+    for (const tag of profileTags) {
+        if (fragmentTags.has(tag)) {
+            overlap += 1;
+        }
+    }
+
+    if (overlap > 0) {
+        return true;
+    }
+
+    const profileKeywords = Array.from(profileTags);
+    const fragmentText = normalizeRecallText([fragmentCandidate.title, fragmentCandidate.content, ...(fragmentCandidate.tags || [])].join(' '));
+    return profileKeywords.some((keyword) => keyword && fragmentText.includes(keyword));
+}
+
+function dedupeRecallCandidates(candidates) {
+    const dedupe = new Map();
+
+    for (const candidate of candidates) {
+        upsertRecallCandidate(dedupe, candidate);
+    }
+
+    const values = Array.from(dedupe.values());
+    const suppressedIds = new Set();
+
+    for (const candidate of values) {
+        if (candidate.entryType !== 'participant_profile') {
+            continue;
+        }
+
+        for (const other of values) {
+            if (candidate.id === other.id) {
+                continue;
+            }
+
+            if (!isStableTraitFragment(other)) {
+                continue;
+            }
+
+            if (!sharesParticipantIdentity(candidate, other)) {
+                continue;
+            }
+
+            if (!hasStableTraitOverlap(candidate, other)) {
+                continue;
+            }
+
+            if ((candidate.recallScore || 0) >= (other.recallScore || 0)) {
+                suppressedIds.add(other.id);
+            }
+        }
+    }
+
+    return values.filter((candidate) => !suppressedIds.has(candidate.id));
+}
+
+function finalizeRecallSelection(candidates, options = {}) {
+    const limit = options.limit || 6;
+    const counts = new Map();
+    const selected = [];
+
+    const sortedCandidates = [...candidates].sort((left, right) => {
+        const scoreDiff = (right.recallScore || 0) - (left.recallScore || 0);
+        if (scoreDiff !== 0) {
+            return scoreDiff;
+        }
+
+        return (right.updatedAt || right.createdAt || 0) - (left.updatedAt || left.createdAt || 0);
+    });
+
+    for (const candidate of sortedCandidates) {
+        const type = candidate.entryType || 'note';
+        const currentCount = counts.get(type) || 0;
+        const allowed = RECALL_TYPE_LIMITS[type] || 1;
+
+        if (currentCount >= allowed) {
+            continue;
+        }
+
+        counts.set(type, currentCount + 1);
+        selected.push(candidate);
+
+        if (selected.length >= limit) {
+            break;
+        }
+    }
+
+    const typeOrder = ['participant_profile', 'fact', 'event', 'summary', 'conversation', 'note'];
+    return selected.sort((left, right) => {
+        const leftIndex = typeOrder.indexOf(left.entryType || 'note');
+        const rightIndex = typeOrder.indexOf(right.entryType || 'note');
+        const orderDiff = leftIndex - rightIndex;
+
+        if (orderDiff !== 0) {
+            return orderDiff;
+        }
+
+        return (right.recallScore || 0) - (left.recallScore || 0);
+    });
+}
+
 export class SessionManager {
     constructor(dataDir, config = {}, logger = console) {
         this.dataDir = dataDir;
@@ -830,7 +1202,7 @@ export class SessionManager {
             namespace.id,
             entry.sourceSessionId || null,
             entry.sourceMessageId || null,
-            entry.entryType || 'note',
+            normalizeMemoryEntryType(entry),
             entry.title || null,
             entry.content || '',
             JSON.stringify(entry.tags || []),
@@ -1052,50 +1424,41 @@ export class SessionManager {
         });
     }
 
-    recallMemory(namespaceOptions, query, options = {}) {
+    collectRecallCandidates(namespaceOptions, query, options = {}) {
         const recentLimit = options.recentLimit || 4;
         const searchLimit = options.searchLimit || 4;
-        const recentEntries = this.listRecentMemoryEntries(namespaceOptions, recentLimit);
-        const matchedEntries = query ? this.searchMemoryEntries(namespaceOptions, query, searchLimit) : [];
-        const summaryEntries = this.listRecentSummaryIndexEntries(namespaceOptions, options.summaryLimit || 3);
-        const queryKeywords = this.buildKeywordsFromText(query, 8);
 
-        const dedupe = new Map();
+        return {
+            recentEntries: this.listRecentMemoryEntries(namespaceOptions, recentLimit),
+            matchedEntries: query ? this.searchMemoryEntries(namespaceOptions, query, searchLimit) : [],
+            summaryEntries: this.listRecentSummaryIndexEntries(namespaceOptions, options.summaryLimit || 3)
+        };
+    }
+
+    recallMemory(namespaceOptions, query, options = {}) {
+        const { recentEntries, matchedEntries, summaryEntries } = this.collectRecallCandidates(namespaceOptions, query, options);
+        const queryKeywords = this.buildKeywordsFromText(query, 8);
+        const matchedIds = new Set(matchedEntries.map((entry) => entry.id));
+        const recentIds = new Set(recentEntries.map((entry) => entry.id));
+        const currentParticipantId = options.currentParticipantId || null;
+
+        const candidates = [];
         for (const entry of [...matchedEntries, ...recentEntries]) {
-            if (!dedupe.has(entry.id)) {
-                const keywordHits = queryKeywords.filter((keyword) => entry.content.toLowerCase().includes(keyword)).length;
-                const recencyBoost = matchedEntries.some((item) => item.id === entry.id) ? 50 : 20;
-                const profileBoost = entry.entryType === 'participant_profile' ? 80 : 0;
-                dedupe.set(entry.id, {
-                    ...entry,
-                    sourceKind: entry.entryType === 'participant_profile' ? 'participant_profile' : 'memory_entry',
-                    recallReason: entry.entryType === 'participant_profile'
-                        ? 'participant_profile'
-                        : (matchedEntries.some((item) => item.id === entry.id) ? 'keyword_match' : 'recent_memory'),
-                    recallScore: profileBoost + recencyBoost + keywordHits * 8
-                });
-            }
+            const candidate = normalizeMemoryRecallEntry(entry, queryKeywords, {
+                isMatched: matchedIds.has(entry.id),
+                isRecent: recentIds.has(entry.id),
+                currentParticipantId
+            });
+
+            candidates.push(candidate);
         }
 
         for (const summary of summaryEntries) {
-            if (!dedupe.has(summary.id)) {
-                const keywordHits = queryKeywords.filter((keyword) => summary.outline.toLowerCase().includes(keyword)).length;
-                dedupe.set(summary.id, {
-                    id: summary.id,
-                    title: '摘要索引',
-                    content: summary.outline,
-                    keywords: summary.keywords,
-                    metadata: summary.metadata,
-                    sourceKind: 'summary_index',
-                    recallReason: 'summary_index',
-                    recallScore: 30 + keywordHits * 6
-                });
-            }
+            candidates.push(normalizeSummaryRecallEntry(summary, queryKeywords));
         }
 
-        return Array.from(dedupe.values())
-            .sort((a, b) => (b.recallScore || 0) - (a.recallScore || 0))
-            .slice(0, options.limit || 6);
+        const dedupedCandidates = dedupeRecallCandidates(candidates);
+        return finalizeRecallSelection(dedupedCandidates, options);
     }
 
     cleanupSessions(maxIdleTime = 24 * 60 * 60 * 1000) {
