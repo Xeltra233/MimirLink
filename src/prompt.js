@@ -13,22 +13,155 @@ export class PromptBuilder {
     }
 
     updateConfig(config = {}, bindingPreset = null) {
-        const presetConfig = bindingPreset || config.preset || {};
+        const presetConfig = PromptBuilder.normalizePreset(bindingPreset || config.preset || {});
         const contextConfig = config.context || {};
-        this.presetConfig = {
-            enabled: presetConfig.enabled === true,
-            name: presetConfig.name || '',
-            systemPrompt: presetConfig.systemPrompt || '',
-            postHistoryInstructions: presetConfig.postHistoryInstructions || '',
-            jailbreak: presetConfig.jailbreak || '',
-            assistantPrefill: presetConfig.assistantPrefill || ''
-        };
+        this.presetConfig = presetConfig;
         this.contextConfig = {
             enabled: contextConfig.enabled !== false,
             includeSessionFacts: contextConfig.includeSessionFacts !== false,
             includeParticipants: contextConfig.includeParticipants !== false,
             includeReplyReference: contextConfig.includeReplyReference !== false,
             includeRecentUserIntent: contextConfig.includeRecentUserIntent !== false
+        };
+    }
+
+    static createPromptItem({
+        identifier,
+        name,
+        role = 'system',
+        content = '',
+        enabled = true,
+        injection_position = 0,
+        injection_depth = 0,
+        forbid_overrides = false,
+        marker = false,
+        system_prompt = false
+    } = {}) {
+        return {
+            identifier: String(identifier || '').trim(),
+            name: String(name || '').trim(),
+            role: String(role || 'system').trim() || 'system',
+            content: typeof content === 'string' ? content : '',
+            enabled: enabled !== false,
+            injection_position: Number.isInteger(injection_position) ? injection_position : 0,
+            injection_depth: Number.isInteger(injection_depth) ? injection_depth : 0,
+            forbid_overrides: forbid_overrides === true,
+            marker: marker === true,
+            system_prompt: system_prompt === true
+        };
+    }
+
+    static createLegacyPromptItems(source = {}) {
+        const items = [];
+
+        if (typeof source.systemPrompt === 'string' && source.systemPrompt.trim()) {
+            items.push(PromptBuilder.createPromptItem({
+                identifier: 'main',
+                name: 'Main Prompt',
+                role: 'system',
+                content: source.systemPrompt,
+                injection_position: 0,
+                system_prompt: true
+            }));
+        }
+
+        if (typeof source.postHistoryInstructions === 'string' && source.postHistoryInstructions.trim()) {
+            items.push(PromptBuilder.createPromptItem({
+                identifier: 'post-history',
+                name: 'Post-History Instructions',
+                role: 'system',
+                content: source.postHistoryInstructions,
+                injection_position: 1,
+                system_prompt: true
+            }));
+        }
+
+        if (typeof source.jailbreak === 'string' && source.jailbreak.trim()) {
+            items.push(PromptBuilder.createPromptItem({
+                identifier: 'jailbreak',
+                name: 'Jailbreak',
+                role: 'system',
+                content: source.jailbreak,
+                injection_position: 0,
+                system_prompt: true
+            }));
+        }
+
+        if (typeof source.assistantPrefill === 'string' && source.assistantPrefill.trim()) {
+            items.push(PromptBuilder.createPromptItem({
+                identifier: 'assistant-prefill',
+                name: 'Assistant Prefill',
+                role: 'assistant',
+                content: source.assistantPrefill,
+                injection_position: 1,
+                system_prompt: false
+            }));
+        }
+
+        return items;
+    }
+
+    static createDefaultPromptItems() {
+        return [
+            PromptBuilder.createPromptItem({
+                identifier: 'main',
+                name: 'Main Prompt',
+                role: 'system',
+                content: '',
+                injection_position: 0,
+                system_prompt: true
+            }),
+            PromptBuilder.createPromptItem({
+                identifier: 'jailbreak',
+                name: 'Jailbreak',
+                role: 'system',
+                content: '',
+                injection_position: 0,
+                system_prompt: true
+            }),
+            PromptBuilder.createPromptItem({
+                identifier: 'post-history',
+                name: 'Post-History Instructions',
+                role: 'system',
+                content: '',
+                injection_position: 1,
+                system_prompt: true
+            }),
+            PromptBuilder.createPromptItem({
+                identifier: 'assistant-prefill',
+                name: 'Assistant Prefill',
+                role: 'assistant',
+                content: '',
+                injection_position: 1,
+                system_prompt: false
+            })
+        ];
+    }
+
+    static normalizePreset(source = {}) {
+        const prompts = Array.isArray(source.prompts) && source.prompts.length > 0
+            ? source.prompts
+                .map((item) => PromptBuilder.createPromptItem(item))
+            : PromptBuilder.createLegacyPromptItems(source);
+        const hasPromptContent = prompts.some((item) => item.content.trim());
+
+        return {
+            enabled: source.enabled === true,
+            name: typeof source.name === 'string' ? source.name : '',
+            prompts: hasPromptContent ? prompts : PromptBuilder.createDefaultPromptItems(),
+            regexRules: Array.isArray(source.regexRules) ? source.regexRules : []
+        };
+    }
+
+    static partitionPromptItems(presetConfig = {}) {
+        const items = presetConfig.enabled === true && Array.isArray(presetConfig.prompts)
+            ? presetConfig.prompts.filter((item) => item.enabled !== false && item.content.trim())
+            : [];
+
+        return {
+            preSystem: items.filter((item) => item.role === 'system' && item.injection_position !== 1),
+            postHistory: items.filter((item) => item.role === 'system' && item.injection_position === 1),
+            assistantPrefill: items.filter((item) => item.role === 'assistant')
         };
     }
 
@@ -51,6 +184,7 @@ export class PromptBuilder {
         const summaryText = normalizedContext.summaries.map((summary) => summary.content).join(' ');
         const allText = `${historyText} ${summaryText} ${userMessage}`.trim();
         const worldBookEntries = this.worldBookManager.matchEntries(worldBook, allText, 10, stickyKeys);
+        const { preSystem, postHistory, assistantPrefill } = PromptBuilder.partitionPromptItems(this.presetConfig);
 
         let systemPrompt = '';
         const now = new Date();
@@ -66,8 +200,8 @@ export class PromptBuilder {
 
         systemPrompt += `${buildInputGuardrail(runtimeContext.injectionRisk)}\n\n`;
 
-        if (this.presetConfig.enabled && this.presetConfig.systemPrompt) {
-            systemPrompt += `${this.presetConfig.systemPrompt}\n\n`;
+        for (const item of preSystem) {
+            systemPrompt += `${item.content}\n\n`;
         }
 
         if (normalizedContext.summaries.length > 0) {
@@ -109,10 +243,6 @@ export class PromptBuilder {
             systemPrompt += `${character.system_prompt}\n\n`;
         }
 
-        if (this.presetConfig.enabled && this.presetConfig.jailbreak) {
-            systemPrompt += `${this.presetConfig.jailbreak}\n\n`;
-        }
-
         const messages = [
             { role: 'system', content: systemPrompt.trim() }
         ];
@@ -125,14 +255,14 @@ export class PromptBuilder {
             messages.push({ role: message.role, content: message.content });
         }
 
-        if (this.presetConfig.enabled && this.presetConfig.postHistoryInstructions) {
-            messages.push({ role: 'system', content: this.presetConfig.postHistoryInstructions });
+        for (const item of postHistory) {
+            messages.push({ role: 'system', content: item.content });
         }
 
         messages.push({ role: 'user', content: userMessage });
 
-        if (this.presetConfig.enabled && this.presetConfig.assistantPrefill) {
-            messages.push({ role: 'assistant', content: this.presetConfig.assistantPrefill });
+        for (const item of assistantPrefill) {
+            messages.push({ role: 'assistant', content: item.content });
         }
 
         return {
@@ -203,6 +333,15 @@ export class PromptBuilder {
     static importPreset(payload = {}) {
         const source = payload.preset || payload;
 
+        if (Array.isArray(source.prompts) && source.prompts.length > 0) {
+            return PromptBuilder.normalizePreset({
+                enabled: source.enabled !== false,
+                name: source.name || source.preset_name || source.title || '',
+                prompts: source.prompts,
+                regexRules: Array.isArray(source.regexRules) ? source.regexRules : []
+            });
+        }
+
         const normalizeText = (value) => typeof value === 'string' ? value.trim() : '';
 
         const promptItems = Array.isArray(source.prompts) ? source.prompts : [];
@@ -260,14 +399,15 @@ export class PromptBuilder {
 
         const importedJailbreak = normalizeText(source.jailbreak || source.jailbreak_system || source.nsfw_prompt || '');
 
-        return {
+        return PromptBuilder.normalizePreset({
             enabled: source.enabled !== false,
             name: source.name || source.preset_name || source.title || '',
             systemPrompt: importedSystemPrompt,
             postHistoryInstructions: importedPostHistory,
             jailbreak: importedJailbreak,
-            assistantPrefill
-        };
+            assistantPrefill,
+            regexRules: Array.isArray(source.regexRules) ? source.regexRules : []
+        });
     }
 
     static diagnosePresetImport(payload = {}) {
@@ -301,25 +441,17 @@ export class PromptBuilder {
     }
 
     static exportPreset(presetConfig = {}, format = 'native') {
+        const normalized = PromptBuilder.normalizePreset(presetConfig);
+
         if (format === 'sillytavern') {
             return {
-                name: presetConfig.name || 'Imported Preset',
-                system_prompt: presetConfig.systemPrompt || '',
-                post_history_instructions: presetConfig.postHistoryInstructions || '',
-                jailbreak_system: presetConfig.jailbreak || '',
-                assistant_prefill: presetConfig.assistantPrefill || ''
+                name: normalized.name || 'Imported Preset',
+                prompts: normalized.prompts
             };
         }
 
         return {
-            preset: {
-                enabled: presetConfig.enabled === true,
-                name: presetConfig.name || '',
-                systemPrompt: presetConfig.systemPrompt || '',
-                postHistoryInstructions: presetConfig.postHistoryInstructions || '',
-                jailbreak: presetConfig.jailbreak || '',
-                assistantPrefill: presetConfig.assistantPrefill || ''
-            }
+            preset: normalized
         };
     }
 }

@@ -185,7 +185,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
         if (finalOptions.importPreset && (metadata.postHistoryInstructions || metadata.systemPrompt || metadata.preferredPreset.assistantPrefill)) {
             const binding = getCharacterBinding(characterName);
-            binding.importedFromCard.preset = {
+            binding.importedFromCard.preset = PromptBuilder.normalizePreset({
                 enabled: true,
                 name: metadata.preferredPreset.name,
                 systemPrompt: metadata.preferredPreset.systemPrompt,
@@ -193,7 +193,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 assistantPrefill: metadata.preferredPreset.assistantPrefill,
                 jailbreak: binding.preset?.jailbreak || config.preset?.jailbreak || '',
                 regexRules: []
-            };
+            });
             applied.push('已自动同步角色卡中的预设相关字段');
         }
 

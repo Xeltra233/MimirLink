@@ -1422,17 +1422,19 @@
                     </div>
                 </div>
                 <div class="card">
-                    <h3>轻量预设</h3>
+                    <h3>预设</h3>
                     <div class="btn-group" style="margin-bottom: 12px;">
                         <button class="secondary" onclick="document.getElementById('preset-import-file').click()">导入预设</button>
                         <button class="secondary" onclick="exportPreset('native')">导出原生</button>
                         <button class="secondary" onclick="exportPreset('sillytavern')">导出 ST</button>
+                        <button class="secondary" onclick="createPresetPromptItem()">新增提示词</button>
+                        <button class="secondary" onclick="resetPresetToDefaults()">恢复默认预设</button>
                     </div>
                     <input type="file" id="preset-import-file" accept="application/json,.json" style="display:none" onchange="importPresetFile(this)">
                     <div class="form-group">
                         <label>
                             <input type="checkbox" id="config-preset-enabled">
-                            启用轻量预设层
+                            启用预设
                         </label>
                     </div>
                     <div class="form-group">
@@ -1440,20 +1442,12 @@
                         <input type="text" id="config-preset-name" placeholder="例如: Tavern Default">
                     </div>
                     <div class="form-group">
-                        <label>系统预设</label>
-                        <textarea id="config-preset-system" rows="4" placeholder="额外的系统预设"></textarea>
+                        <label>提示词列表</label>
+                        <div id="preset-prompt-list"></div>
                     </div>
                     <div class="form-group">
-                        <label>历史后指令</label>
-                        <textarea id="config-preset-post-history" rows="3" placeholder="插入在历史之后"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Jailbreak</label>
-                        <textarea id="config-preset-jailbreak" rows="3" placeholder="额外的 jailbreak 指令"></textarea>
-                    </div>
-                    <div class="form-group">
-                        <label>Assistant Prefill</label>
-                        <textarea id="config-preset-assistant-prefill" rows="2" placeholder="可选的 assistant 预填充"></textarea>
+                        <label>提示词详情</label>
+                        <div id="preset-prompt-editor"></div>
                     </div>
                 </div>
                 <div class="card">
@@ -1555,6 +1549,8 @@
         let participantProfiles = [];
         let selectedParticipantProfileId = null;
         let participantProfilesLoaded = false;
+        let presetDraft = { enabled: true, name: '', prompts: [] };
+        let selectedPresetPromptIndex = 0;
 
         function setTheme(theme) {
             const normalized = theme || 'sand';
@@ -2220,6 +2216,242 @@
                 .replace(/"/g, '&quot;')
                 .replace(/'/g, '&#039;');
         }
+
+        function createDefaultPresetPromptItems() {
+            return [
+                { identifier: 'main', name: 'Main Prompt', role: 'system', content: '', enabled: true, injection_position: 0, injection_depth: 0, forbid_overrides: false, marker: false, system_prompt: true },
+                { identifier: 'jailbreak', name: 'Jailbreak', role: 'system', content: '', enabled: true, injection_position: 0, injection_depth: 0, forbid_overrides: false, marker: false, system_prompt: true },
+                { identifier: 'post-history', name: 'Post-History Instructions', role: 'system', content: '', enabled: true, injection_position: 1, injection_depth: 0, forbid_overrides: false, marker: false, system_prompt: true },
+                { identifier: 'assistant-prefill', name: 'Assistant Prefill', role: 'assistant', content: '', enabled: true, injection_position: 1, injection_depth: 0, forbid_overrides: false, marker: false, system_prompt: false }
+            ];
+        }
+
+        function ensurePresetDraftDefaults() {
+            if (!Array.isArray(presetDraft.prompts) || presetDraft.prompts.length === 0) {
+                presetDraft.prompts = createDefaultPresetPromptItems();
+            }
+            if (selectedPresetPromptIndex < 0 || selectedPresetPromptIndex >= presetDraft.prompts.length) {
+                selectedPresetPromptIndex = 0;
+            }
+        }
+
+        function normalizePresetDraft(preset = {}) {
+            const prompts = Array.isArray(preset.prompts) && preset.prompts.length > 0
+                ? preset.prompts.map((item) => ({
+                    identifier: item.identifier || '',
+                    name: item.name || '',
+                    role: item.role || 'system',
+                    content: item.content || '',
+                    enabled: item.enabled !== false,
+                    injection_position: Number.isInteger(item.injection_position) ? item.injection_position : 0,
+                    injection_depth: Number.isInteger(item.injection_depth) ? item.injection_depth : 0,
+                    forbid_overrides: item.forbid_overrides === true,
+                    marker: item.marker === true,
+                    system_prompt: item.system_prompt === true
+                }))
+                : createDefaultPresetPromptItems();
+
+            return {
+                enabled: preset.enabled === true,
+                name: preset.name || '',
+                prompts
+            };
+        }
+
+        function renderPresetPromptList() {
+            const list = document.getElementById('preset-prompt-list');
+            if (!list) {
+                return;
+            }
+
+            ensurePresetDraftDefaults();
+            list.innerHTML = presetDraft.prompts.map((item, index) => `
+                <div class="participant-profile-item ${selectedPresetPromptIndex === index ? 'selected' : ''}" onclick="selectPresetPrompt(${index})">
+                    <div class="name">${escapeHtml(item.name || item.identifier || `Prompt ${index + 1}`)}</div>
+                    <div class="meta">${escapeHtml(item.identifier || '-')} | ${escapeHtml(item.role || 'system')}</div>
+                    <div class="meta">${item.enabled !== false ? '已启用' : '已禁用'} | 注入位置 ${item.injection_position ?? 0}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderPresetPromptEditor() {
+            const container = document.getElementById('preset-prompt-editor');
+            if (!container) {
+                return;
+            }
+
+            ensurePresetDraftDefaults();
+            const item = presetDraft.prompts[selectedPresetPromptIndex];
+            if (!item) {
+                container.innerHTML = '<div class="empty-state">暂无提示词</div>';
+                return;
+            }
+
+            container.innerHTML = `
+                <div class="form-group">
+                    <label><input type="checkbox" id="preset-item-enabled" ${item.enabled !== false ? 'checked' : ''}> 启用此提示词</label>
+                </div>
+                <div class="form-group">
+                    <label>Identifier</label>
+                    <input type="text" id="preset-item-identifier" value="${escapeHtml(item.identifier || '')}" placeholder="例如: main">
+                </div>
+                <div class="form-group">
+                    <label>显示名称</label>
+                    <input type="text" id="preset-item-name" value="${escapeHtml(item.name || '')}" placeholder="例如: Main Prompt">
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="preset-item-role">
+                        <option value="system" ${item.role === 'system' ? 'selected' : ''}>system</option>
+                        <option value="assistant" ${item.role === 'assistant' ? 'selected' : ''}>assistant</option>
+                        <option value="user" ${item.role === 'user' ? 'selected' : ''}>user</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>注入位置</label>
+                    <select id="preset-item-injection-position">
+                        <option value="0" ${Number(item.injection_position || 0) === 0 ? 'selected' : ''}>历史前 / 主 system</option>
+                        <option value="1" ${Number(item.injection_position || 0) === 1 ? 'selected' : ''}>历史后</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>注入深度</label>
+                    <input type="number" id="preset-item-injection-depth" value="${item.injection_depth ?? 0}" min="0">
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="preset-item-forbid-overrides" ${item.forbid_overrides === true ? 'checked' : ''}> forbid_overrides</label>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="preset-item-marker" ${item.marker === true ? 'checked' : ''}> marker</label>
+                </div>
+                <div class="form-group">
+                    <label><input type="checkbox" id="preset-item-system-prompt" ${item.system_prompt === true ? 'checked' : ''}> system_prompt</label>
+                </div>
+                <div class="form-group">
+                    <label>内容</label>
+                    <textarea id="preset-item-content" rows="8" placeholder="输入该提示词内容...">${escapeHtml(item.content || '')}</textarea>
+                </div>
+                <div class="btn-group">
+                    <button class="secondary" onclick="movePresetPrompt(-1)">上移</button>
+                    <button class="secondary" onclick="movePresetPrompt(1)">下移</button>
+                    <button class="secondary" onclick="deletePresetPromptItem()">删除</button>
+                </div>
+            `;
+
+            ['preset-item-enabled', 'preset-item-identifier', 'preset-item-name', 'preset-item-role', 'preset-item-injection-position', 'preset-item-injection-depth', 'preset-item-forbid-overrides', 'preset-item-marker', 'preset-item-system-prompt', 'preset-item-content'].forEach((id) => {
+                const element = document.getElementById(id);
+                if (!element) {
+                    return;
+                }
+                const eventName = element.tagName === 'SELECT' ? 'change' : 'input';
+                element.addEventListener(eventName, syncPresetPromptFromEditor);
+                if (eventName !== 'change') {
+                    element.addEventListener('change', syncPresetPromptFromEditor);
+                }
+            });
+        }
+
+        function renderPresetEditor() {
+            renderPresetPromptList();
+            renderPresetPromptEditor();
+        }
+
+        function selectPresetPrompt(index) {
+            selectedPresetPromptIndex = index;
+            renderPresetEditor();
+        }
+
+        function syncPresetPromptFromEditor() {
+            ensurePresetDraftDefaults();
+            const item = presetDraft.prompts[selectedPresetPromptIndex];
+            if (!item) {
+                return;
+            }
+
+            item.enabled = document.getElementById('preset-item-enabled')?.checked !== false;
+            item.identifier = document.getElementById('preset-item-identifier')?.value || '';
+            item.name = document.getElementById('preset-item-name')?.value || '';
+            item.role = document.getElementById('preset-item-role')?.value || 'system';
+            item.injection_position = parseInt(document.getElementById('preset-item-injection-position')?.value || '0', 10) || 0;
+            item.injection_depth = parseInt(document.getElementById('preset-item-injection-depth')?.value || '0', 10) || 0;
+            item.forbid_overrides = document.getElementById('preset-item-forbid-overrides')?.checked === true;
+            item.marker = document.getElementById('preset-item-marker')?.checked === true;
+            item.system_prompt = document.getElementById('preset-item-system-prompt')?.checked === true;
+            item.content = document.getElementById('preset-item-content')?.value || '';
+            renderPresetPromptList();
+            markConfigDirty('预设提示词已修改');
+        }
+
+        function createPresetPromptItem() {
+            ensurePresetDraftDefaults();
+            presetDraft.prompts.push({
+                identifier: `prompt-${presetDraft.prompts.length + 1}`,
+                name: `Prompt ${presetDraft.prompts.length + 1}`,
+                role: 'system',
+                content: '',
+                enabled: true,
+                injection_position: 0,
+                injection_depth: 0,
+                forbid_overrides: false,
+                marker: false,
+                system_prompt: false
+            });
+            selectedPresetPromptIndex = presetDraft.prompts.length - 1;
+            renderPresetEditor();
+            markConfigDirty('已新增预设提示词');
+        }
+
+        function deletePresetPromptItem() {
+            ensurePresetDraftDefaults();
+            if (presetDraft.prompts.length <= 1) {
+                showToast('至少保留一条提示词', true);
+                return;
+            }
+            presetDraft.prompts.splice(selectedPresetPromptIndex, 1);
+            selectedPresetPromptIndex = Math.max(0, selectedPresetPromptIndex - 1);
+            renderPresetEditor();
+            markConfigDirty('已删除预设提示词');
+        }
+
+        function movePresetPrompt(delta) {
+            ensurePresetDraftDefaults();
+            const from = selectedPresetPromptIndex;
+            const to = from + delta;
+            if (to < 0 || to >= presetDraft.prompts.length) {
+                return;
+            }
+            const [item] = presetDraft.prompts.splice(from, 1);
+            presetDraft.prompts.splice(to, 0, item);
+            selectedPresetPromptIndex = to;
+            renderPresetEditor();
+            markConfigDirty('已调整预设提示词顺序');
+        }
+
+        function resetPresetToDefaults() {
+            presetDraft = {
+                enabled: document.getElementById('config-preset-enabled')?.checked === true,
+                name: document.getElementById('config-preset-name')?.value || '',
+                prompts: createDefaultPresetPromptItems()
+            };
+            selectedPresetPromptIndex = 0;
+            renderPresetEditor();
+            markConfigDirty('已恢复默认预设结构');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const presetEnabled = document.getElementById('config-preset-enabled');
+            const presetName = document.getElementById('config-preset-name');
+
+            presetEnabled?.addEventListener('change', () => {
+                presetDraft.enabled = presetEnabled.checked;
+                markConfigDirty('预设启用状态已修改');
+            });
+
+            presetName?.addEventListener('input', () => {
+                presetDraft.name = presetName.value;
+                markConfigDirty('预设名称已修改');
+            });
+        });
 
         function formatSecurityTimestamp(timestamp) {
             if (!timestamp) {
@@ -3649,10 +3881,9 @@
 
                 document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
                 document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
-                document.getElementById('config-preset-system').value = currentConfig.preset?.systemPrompt || '';
-                document.getElementById('config-preset-post-history').value = currentConfig.preset?.postHistoryInstructions || '';
-                document.getElementById('config-preset-jailbreak').value = currentConfig.preset?.jailbreak || '';
-                document.getElementById('config-preset-assistant-prefill').value = currentConfig.preset?.assistantPrefill || '';
+                presetDraft = normalizePresetDraft(currentConfig.preset || {});
+                selectedPresetPromptIndex = 0;
+                renderPresetEditor();
 
                 document.getElementById('config-context-enabled').checked = currentConfig.context?.enabled !== false;
                 document.getElementById('config-context-session-facts').checked = currentConfig.context?.includeSessionFacts !== false;
@@ -3848,10 +4079,7 @@
                 preset: {
                     enabled: document.getElementById('config-preset-enabled').checked,
                     name: document.getElementById('config-preset-name').value,
-                    systemPrompt: document.getElementById('config-preset-system').value,
-                    postHistoryInstructions: document.getElementById('config-preset-post-history').value,
-                    jailbreak: document.getElementById('config-preset-jailbreak').value,
-                    assistantPrefill: document.getElementById('config-preset-assistant-prefill').value,
+                    prompts: structuredClone(presetDraft.prompts),
                     regexRules: currentConfig.preset?.regexRules || []
                 },
                 context: {

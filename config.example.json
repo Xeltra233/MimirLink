@@ -70,10 +70,22 @@
   },
   "preset": {
     "enabled": false,
-    "systemPrompt": "",
-    "postHistoryInstructions": "",
-    "jailbreak": "",
-    "assistantPrefill": ""
+    "name": "Default Preset",
+    "prompts": [
+      {
+        "identifier": "main",
+        "name": "Main Prompt",
+        "role": "system",
+        "content": "",
+        "enabled": true,
+        "injection_position": 0,
+        "injection_depth": 0,
+        "forbid_overrides": false,
+        "marker": false,
+        "system_prompt": true
+      }
+    ],
+    "regexRules": []
   },
   "bindings": {
     "global": {
