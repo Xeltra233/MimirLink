@@ -1,9 +1,25 @@
 @echo off
+setlocal EnableExtensions EnableDelayedExpansion
 chcp 65001 >nul 2>nul
-title Tavern-Link
+title MimirLink
+
+cd /d "%~dp0"
+
+set "WEB_PORT=18001"
+if exist "config.json" (
+    for /f "usebackq delims=" %%L in (`findstr /r /c:"\"port\"[ ]*:" "config.json"`) do (
+        set "PORT_LINE=%%L"
+    )
+    if defined PORT_LINE (
+        for /f "tokens=2 delims=:," %%P in ("!PORT_LINE!") do (
+            set "WEB_PORT=%%~P"
+            set "WEB_PORT=!WEB_PORT: =!"
+        )
+    )
+)
 
 echo ========================================
-echo    Tavern-Link Launcher
+echo    MimirLink Launcher
 echo ========================================
 echo.
 
@@ -22,6 +38,12 @@ if not exist "node_modules\" (
     echo [!] Installing dependencies...
     echo.
     call npm install
+    if errorlevel 1 (
+        echo.
+        echo [X] npm install failed.
+        pause
+        exit /b 1
+    )
     echo.
 )
 
@@ -42,18 +64,20 @@ if not exist "data\chats\" mkdir "data\chats" 2>nul
 if not exist "logs\" mkdir "logs" 2>nul
 
 echo ========================================
-echo    Starting Tavern-Link
+echo    Starting MimirLink
 echo ========================================
 echo.
-echo [i] Web UI: http://127.0.0.1:8001
+echo [i] Web UI: http://127.0.0.1:%WEB_PORT%
 echo [i] OneBot URL: check config.json
 echo [i] Press Ctrl+C to stop.
 echo.
 
-node src/index.js
+call npm run start
+set "EXIT_CODE=%ERRORLEVEL%"
 
 echo.
 echo ========================================
-echo    Process exited
+echo    Process exited ^(code %EXIT_CODE%^)
 echo ========================================
 pause
+exit /b %EXIT_CODE%
