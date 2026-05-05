@@ -7,17 +7,6 @@ function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function summarizeRuntimeItems(items = []) {
-    return {
-        count: items.length,
-        roles: [...new Set(items.map((item) => item?.role).filter(Boolean))],
-        messageIds: items
-            .map((item) => item?.messageId || item?.id || item?.metadata?.id || '')
-            .filter(Boolean)
-            .slice(0, 5)
-    };
-}
-
 class Semaphore {
     constructor(maxConcurrent = 2) {
         this.maxConcurrent = Math.max(1, maxConcurrent);
@@ -98,13 +87,6 @@ export class MessageRuntime {
 
         const state = this.getBufferState(item.sessionKey);
         state.items.push(item);
-        this.logger.debug?.('[调度] 消息已入缓冲', {
-            sessionKey: item.sessionKey,
-            dedupeKey: item.dedupeKey || '',
-            bufferSize: state.items.length,
-            bufferedSessions: this.buffers.size,
-            item: summarizeRuntimeItems([item])
-        });
 
         if (state.timer) {
             clearTimeout(state.timer);
@@ -143,15 +125,6 @@ export class MessageRuntime {
             state.timer = null;
         }
 
-        this.logger.info?.('[调度] 开始刷新缓冲', {
-            sessionKey,
-            itemCount: items.length,
-            activeSessions: this.chains.size,
-            bufferedSessions: this.buffers.size,
-            queueDepth: this.semaphore.waiters.length,
-            batch: summarizeRuntimeItems(items)
-        });
-
         const chain = (this.chains.get(sessionKey) || Promise.resolve())
             .then(() => this.runBatch(sessionKey, items))
             .catch((error) => {
@@ -166,41 +139,17 @@ export class MessageRuntime {
     }
 
     async runBatch(sessionKey, items) {
-        const startedAt = Date.now();
         await this.semaphore.acquire();
         try {
             this.totalBatches += 1;
-            this.logger.info?.('[调度] 开始批处理', {
-                sessionKey,
-                batchIndex: this.totalBatches,
-                itemCount: items.length,
-                replyDelayMs: this.replyDelayMs,
-                maxConcurrentSessions: this.semaphore.maxConcurrent,
-                currentConcurrency: this.semaphore.current,
-                waitingSessions: this.semaphore.waiters.length,
-                batch: summarizeRuntimeItems(items)
-            });
-
             if (this.replyDelayMs > 0) {
                 await sleep(this.replyDelayMs);
             }
 
-            const batchMemoryScope = items[items.length - 1]?.memoryScope || items[0]?.memoryScope || null;
-
             await this.processor({
                 sessionKey,
                 items,
-                memoryScope: batchMemoryScope,
                 createdAt: Date.now()
-            });
-
-            this.logger.info?.('[调度] 批处理完成', {
-                sessionKey,
-                batchIndex: this.totalBatches,
-                durationMs: Date.now() - startedAt,
-                itemCount: items.length,
-                memoryScopeType: batchMemoryScope?.scopeType || '',
-                memoryScopeKey: batchMemoryScope?.scopeKey || ''
             });
         } finally {
             this.semaphore.release();

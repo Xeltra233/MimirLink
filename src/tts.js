@@ -48,27 +48,6 @@ const Events = {
     TTSResponse: 352
 };
 
-function createNoopLogger() {
-    return {
-        debug() {},
-        info() {},
-        warn() {},
-        error() {}
-    };
-}
-
-function summarizeTtsText(text) {
-    const normalizedText = String(text || '').trim();
-    return {
-        length: normalizedText.length,
-        preview: normalizedText.slice(0, 120)
-    };
-}
-
-function summarizeAudioPath(filePath) {
-    return filePath ? path.basename(filePath) : '';
-}
-
 /**
  * 构建二进制协议帧
  */
@@ -119,7 +98,7 @@ function buildFrame(messageType, messageTypeFlags, serializationMethod, compress
  * 解析二进制协议帧
  * 参考文档: https://www.volcengine.com/docs/6561/1329505
  */
-function parseFrame(data, logger = null) {
+function parseFrame(data) {
     if (data.length < 4) {
         return { error: 'Frame too short' };
     }
@@ -216,13 +195,7 @@ function parseFrame(data, logger = null) {
     }
     
     // 调试输出
-    logger?.debug?.('[TTS] 解析协议帧', {
-        totalLength: data.length,
-        header,
-        eventNumber,
-        sessionIdPreview: sessionId ? `${sessionId.substring(0, 8)}...` : null,
-        payloadType: payload ? (Buffer.isBuffer(payload) ? `Buffer(${payload.length})` : typeof payload) : null
-    });
+    console.log(`[parseFrame] 总长度: ${data.length}, header: ${JSON.stringify(header)}, event: ${eventNumber}, sessionId: ${sessionId ? sessionId.substring(0, 8) + '...' : null}, payload类型: ${payload ? (Buffer.isBuffer(payload) ? `Buffer(${payload.length})` : typeof payload) : null}`);
     
     return { header, eventNumber, sessionId, sequenceNumber, payload };
 }
@@ -231,8 +204,7 @@ function parseFrame(data, logger = null) {
  * TTS 管理器
  */
 export class TTSManager {
-    constructor(logger = null) {
-        this.logger = logger || createNoopLogger();
+    constructor() {
         this.config = normalizeTTSConfig();
 
         if (!fs.existsSync(AUDIO_DIR)) {
@@ -248,16 +220,7 @@ export class TTSManager {
 
     updateConfig(options) {
         this.config = normalizeTTSConfig({ ...this.config, ...options });
-        this.logger.info?.('[TTS] 配置已更新', {
-            provider: this.config.provider,
-            enabled: this.config.enabled,
-            voiceId: this.config.voiceId,
-            modelId: this.config.modelId || '',
-            encoding: this.config.encoding,
-            hasApiKey: !!this.config.apiKey,
-            hasAppId: !!this.config.appId,
-            baseUrl: this.getResolvedBaseUrl()
-        });
+        console.log(`[TTS ${this.config.provider}] 配置已更新:`, JSON.stringify(this.config, null, 2));
     }
 
     startCleanupTimer() {
@@ -269,9 +232,7 @@ export class TTSManager {
             try {
                 this.cleanupAudio();
             } catch (error) {
-                this.logger.warn?.('[TTS] 定时清理失败', {
-                    error: error.message
-                });
+                console.warn(`[TTS] 定时清理失败: ${error.message}`);
             }
         }, TTS_CLEANUP_INTERVAL_MS);
     }
@@ -320,54 +281,20 @@ export class TTSManager {
     async synthesize(text) {
         this.validateConfig();
 
-        const startedAt = Date.now();
-        let normalizedText = String(text || '');
-        if (normalizedText.length > 1000) {
-            normalizedText = normalizedText.substring(0, 1000);
-            this.logger.warn?.('[TTS] 合成文本过长，已截断', {
-                maxLength: 1000,
-                text: summarizeTtsText(normalizedText)
-            });
+        if (text.length > 1000) {
+            text = text.substring(0, 1000);
+            console.log('[TTS] 文本过长，已截断至 1000 字符');
         }
 
-        this.logger.info?.('[TTS] 开始合成', {
-            provider: this.config.provider,
-            voiceId: this.config.voiceId,
-            modelId: this.config.modelId || '',
-            text: summarizeTtsText(normalizedText)
-        });
-
-        const synthesizeFn = this.config.provider === 'minimax'
-            ? () => this.synthesizeWithMinimax(normalizedText)
-            : () => this.synthesizeWithDoubao(normalizedText);
-
-        try {
-            const filePath = await synthesizeFn();
-            this.logger.info?.('[TTS] 合成完成', {
-                provider: this.config.provider,
-                voiceId: this.config.voiceId,
-                durationMs: Date.now() - startedAt,
-                file: summarizeAudioPath(filePath)
-            });
-            return filePath;
-        } catch (error) {
-            this.logger.error?.('[TTS] 合成失败', {
-                provider: this.config.provider,
-                voiceId: this.config.voiceId,
-                durationMs: Date.now() - startedAt,
-                error: error.message,
-                text: summarizeTtsText(normalizedText)
-            });
-            throw error;
+        if (this.config.provider === 'minimax') {
+            return this.synthesizeWithMinimax(text);
         }
+
+        return this.synthesizeWithDoubao(text);
     }
 
     async synthesizeWithDoubao(text) {
-        this.logger.debug?.('[TTS Doubao] 准备请求', {
-            voiceId: this.config.voiceId,
-            encoding: this.config.encoding,
-            text: summarizeTtsText(text)
-        });
+        console.log(`[TTS Doubao] 音色: ${this.config.voiceId}, 文本: ${text.substring(0, 50)}...`);
 
         return new Promise((resolve, reject) => {
             const connectId = uuidv4();
@@ -383,10 +310,7 @@ export class TTSManager {
             });
 
             const timeout = setTimeout(() => {
-                this.logger.error?.('[TTS Doubao] 请求超时', {
-                    voiceId: this.config.voiceId,
-                    text: summarizeTtsText(text)
-                });
+                console.error('[TTS Doubao] 超时');
                 ws.close();
                 reject(new Error('TTS 请求超时'));
             }, 30000);
@@ -397,7 +321,7 @@ export class TTSManager {
             });
 
             ws.on('message', (data) => {
-                const frame = parseFrame(data, this.logger);
+                const frame = parseFrame(data);
 
                 if (frame.isError) {
                     clearTimeout(timeout);
@@ -480,11 +404,7 @@ export class TTSManager {
                         const filepath = path.join(AUDIO_DIR, filename);
                         fs.writeFileSync(filepath, audioBuffer);
                         this.cleanupAudio();
-                        this.logger.info?.('[TTS Doubao] 音频已保存', {
-                            file: summarizeAudioPath(filepath),
-                            bytes: audioBuffer.length,
-                            chunks: audioChunks.length
-                        });
+                        console.log('[TTS Doubao] 音频已保存:', filepath, `(${audioBuffer.length} bytes)`);
                         resolve(filepath);
                         break;
                     }
@@ -506,13 +426,6 @@ export class TTSManager {
 
     async synthesizeWithMinimax(text) {
         const baseUrl = this.getResolvedBaseUrl();
-        this.logger.debug?.('[TTS Minimax] 准备请求', {
-            baseUrl,
-            modelId: this.config.modelId,
-            voiceId: this.config.voiceId,
-            encoding: this.config.encoding,
-            text: summarizeTtsText(text)
-        });
         const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
             method: 'POST',
             headers: {
@@ -555,12 +468,7 @@ export class TTSManager {
         const filepath = path.join(AUDIO_DIR, filename);
         fs.writeFileSync(filepath, audioBuffer);
         this.cleanupAudio();
-        this.logger.info?.('[TTS Minimax] 音频已保存', {
-            file: summarizeAudioPath(filepath),
-            bytes: audioBuffer.length,
-            modelId: this.config.modelId,
-            voiceId: this.config.voiceId
-        });
+        console.log('[TTS Minimax] 音频已保存:', filepath, `(${audioBuffer.length} bytes)`);
         return filepath;
     }
     
@@ -571,8 +479,6 @@ export class TTSManager {
         if (!fs.existsSync(AUDIO_DIR)) return;
 
         const now = Date.now();
-        let expiredRemoved = 0;
-        let overflowRemoved = 0;
         const files = fs.readdirSync(AUDIO_DIR)
             .filter((f) => f.startsWith('tts_'))
             .map((f) => ({
@@ -585,10 +491,7 @@ export class TTSManager {
         for (const file of files) {
             if (now - file.time > TTS_MAX_CACHE_AGE_MS) {
                 fs.unlinkSync(file.path);
-                expiredRemoved += 1;
-                this.logger.debug?.('[TTS] 已清理过期音频', {
-                    file: file.name
-                });
+                console.log('[TTS] 清理过期音频:', file.name);
             }
         }
 
@@ -604,18 +507,7 @@ export class TTSManager {
         if (remainingFiles.length > TTS_MAX_CACHE_FILES) {
             remainingFiles.slice(TTS_MAX_CACHE_FILES).forEach((file) => {
                 fs.unlinkSync(file.path);
-                overflowRemoved += 1;
-                this.logger.debug?.('[TTS] 已清理超量音频', {
-                    file: file.name
-                });
-            });
-        }
-
-        if (expiredRemoved > 0 || overflowRemoved > 0) {
-            this.logger.info?.('[TTS] 缓存清理完成', {
-                expiredRemoved,
-                overflowRemoved,
-                remaining: Math.max(0, remainingFiles.length - overflowRemoved)
+                console.log('[TTS] 清理超量音频:', file.name);
             });
         }
     }

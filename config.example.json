@@ -6,14 +6,12 @@
     "sessionSecret": "your-random-secret-key-change-this",
     "sessionDays": 30,
     "shortSessionHours": 12,
-    "sessionStorePath": "./data/sessions",
-    "cookieSecure": false
+    "sessionStorePath": "./data/sessions"
   },
   "server": {
     "port": 8001,
     "host": "0.0.0.0",
-    "healthLogIntervalMs": 60000,
-    "trustProxy": true
+    "healthLogIntervalMs": 60000
   },
   "onebot": {
     "url": "ws://127.0.0.1:3001",
@@ -21,54 +19,15 @@
     "tokenMode": "header"
   },
   "ai": {
-    "provider": "openai-compatible",
     "baseUrl": "https://api.example.com/v1",
     "apiKey": "your-api-key-here",
     "model": "your-model-name",
     "maxTokens": 65535,
     "temperature": 1,
-    "timeout": 60000,
-    "activeProviderId": "default",
-    "providers": [
-      {
-        "id": "default",
-        "name": "默认供应商",
-        "provider": "openai-compatible",
-        "baseUrl": "https://api.example.com/v1",
-        "apiKey": "your-api-key-here",
-        "model": "your-model-name",
-        "models": [
-          {
-            "id": "your-model-name",
-            "name": "your-model-name",
-            "enabled": true
-          }
-        ]
-      }
-    ],
-    "tools": {
-      "webSearch": {
-        "enabled": false,
-        "provider": "duckduckgo",
-        "apiKey": "",
-        "googleEngineId": "",
-        "bingEndpoint": "",
-        "maxResults": 5,
-        "timeoutMs": 10000,
-        "maxSnippetLength": 800,
-        "allowedDomains": [],
-        "blockedDomains": [],
-        "fallbackEnabled": false
-      },
-      "sendMention": {
-        "enabled": false
-      }
-    }
+    "timeout": 60000
   },
   "chat": {
     "sessionMode": "scoped",
-    "modelProviderId": "default",
-    "model": "your-model-name",
     "triggerMode": "auto",
     "requireAtInGroup": true,
     "triggerPrefix": "",
@@ -86,20 +45,9 @@
     "dedupeWindowMs": 10000,
     "maxConcurrentSessions": 2,
     "quoteReplyEnabled": true,
-    "mentionSenderOnReply": true,
     "attachMetadata": true,
     "splitMessage": true,
-    "defaultCharacter": "你的角色名",
-    "commands": {
-      "adminMention": {
-        "enabled": true,
-        "command": "/at"
-      },
-      "participantProfileManual": {
-        "enabled": true,
-        "command": "/人物档案"
-      }
-    }
+    "defaultCharacter": "你的角色名"
   },
   "memory": {
     "storage": {
@@ -107,20 +55,9 @@
       "path": "./data/chats/memory-store.sqlite"
     },
     "participantProfile": {
-      "enabled": false,
-      "injectEnabled": true,
-      "blacklistParticipantIds": [],
-      "manualCommand": "/人物档案",
       "triggerMessages": 8,
       "idleMs": 120000,
-      "intervalMs": 300000,
-      "maxSourceMessages": 50,
-      "triggerMode": "idle",
-      "analysisMode": "profile_plus_messages",
-      "providerId": "default",
-      "model": "your-model-name",
-      "baseUrl": "",
-      "apiKey": ""
+      "maxSourceMessages": 50
     },
     "summary": {
       "enabled": true,

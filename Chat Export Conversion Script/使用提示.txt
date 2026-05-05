@@ -1,0 +1,4 @@
+若需将原版聊天记录导入至魔改版环境，请使用本工具进行转换处理。
+请将 extract.bat 和 extract_by_sessionid.js 文件复制到 /data/chats 目录下后再运行批处理脚本。
+运行完成后，目录中会生成新的 global_memory.json 文件。
+除 global_memory.json 以外的其他文件，可根据需要自行移走、删除或备份处理。

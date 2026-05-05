@@ -76,111 +76,52 @@ export class WorldBookManager {
             return [];
         }
 
-        const normalizeKeys = (value) => {
-            if (Array.isArray(value)) {
-                return value.filter((item) => typeof item === 'string' && item.trim());
-            }
-
-            if (typeof value === 'string' && value.trim()) {
-                return [value];
-            }
-
-            return [];
-        };
-
-        const isEnabled = (value, fallback = true) => {
-            if (value === undefined || value === null || value === '') {
-                return fallback;
-            }
-
-            if (typeof value === 'string') {
-                const normalized = value.trim().toLowerCase();
-                if (['false', '0', 'off', 'no'].includes(normalized)) {
-                    return false;
-                }
-                if (['true', '1', 'on', 'yes'].includes(normalized)) {
-                    return true;
-                }
-            }
-
-            return Boolean(value);
-        };
-
-        const normalizeNumber = (value, fallback = 0) => {
-            const normalized = Number(value);
-            return Number.isFinite(normalized) ? normalized : fallback;
-        };
-
-        const normalizePosition = (value) => {
-            if (typeof value === 'string') {
-                const normalized = value.trim().toLowerCase();
-                if ([
-                    '1',
-                    'after',
-                    'after_char',
-                    'after_character',
-                    'after_description',
-                    'post',
-                    'post_history',
-                    'post-history'
-                ].includes(normalized)) {
-                    return 1;
-                }
-
-                if ([
-                    '0',
-                    'before',
-                    'before_char',
-                    'before_character',
-                    'before_description',
-                    'system',
-                    'pre_history',
-                    'pre-history'
-                ].includes(normalized)) {
-                    return 0;
-                }
-            }
-
-            return normalizeNumber(value, 0);
-        };
-
         const matched = [];
         const constants = [];
-        const stickyMatched = [];
+        const stickyMatched = [];  // 粘性触发的条目
         const inputLower = inputText.toLowerCase();
 
-        const entriesArray = Array.isArray(worldBook.entries)
-            ? worldBook.entries
+        // 支持数组格式和对象格式的 entries
+        const entriesArray = Array.isArray(worldBook.entries) 
+            ? worldBook.entries 
             : Object.values(worldBook.entries);
 
         for (const entry of entriesArray) {
-            if (!isEnabled(entry.enabled, true) || isEnabled(entry.disable, false)) {
+            // enabled 为 undefined 时视为启用，只有明确设为 false 才禁用
+            if (entry.enabled === false || entry.disable === true) {
                 continue;
             }
 
-            const keys = normalizeKeys(entry.keys ?? entry.key);
+            // 获取条目的唯一标识（用于粘性追踪）
+            const keys = entry.keys || entry.key || [];
             const entryKey = entry.uid || entry.id || keys[0] || entry.comment || entry.name || 'unknown';
-            const sticky = normalizeNumber(entry.sticky, 0);
-            const order = normalizeNumber(entry.order ?? entry.insertion_order, 0);
-            const position = normalizePosition(entry.position);
+            
+            // 获取粘性设置（sticky 字段，单位：轮数）
+            // SillyTavern 使用 sticky 字段，0 或 undefined 表示不粘性
+            const sticky = entry.sticky || 0;
 
-            if (isEnabled(entry.constant, false)) {
+            // 常驻条目（constant: true）始终包含
+            if (entry.constant === true) {
                 constants.push({
                     content: entry.content,
-                    order,
+                    order: entry.order || entry.insertion_order || 0,
                     key: entryKey,
                     isConstant: true,
-                    position,
-                    sticky: 0
+                    position: entry.position || 0,
+                    sticky: 0  // 常驻条目不需要粘性
                 });
                 continue;
             }
 
+            // 检查是否是粘性触发（之前触发过，还在粘性期内）
             const isStickyActive = stickyKeys.has(entryKey);
-            const secondaryKeys = normalizeKeys(entry.secondary_keys ?? entry.keysecondary);
-            let primaryMatch = false;
-            let secondaryMatch = secondaryKeys.length === 0;
 
+            // 关键词匹配 - 支持 keys（数组格式）和 key（对象格式）
+            const secondaryKeys = entry.secondary_keys || entry.keysecondary || [];
+            let primaryMatch = false;
+            let secondaryMatch = secondaryKeys.length === 0; // 如果没有次要关键词，默认为 true
+
+            // 主要关键词匹配（OR 逻辑）
             for (const key of keys) {
                 if (key && inputLower.includes(key.toLowerCase())) {
                     primaryMatch = true;
@@ -188,34 +129,36 @@ export class WorldBookManager {
                 }
             }
 
+            // 次要关键词匹配（根据 selectiveLogic）
             if (primaryMatch && secondaryKeys.length > 0) {
-                const logic = normalizeNumber(entry.selectiveLogic, 0);
-
-                if (logic === 0) {
-                    secondaryMatch = secondaryKeys.some((k) => k && inputLower.includes(k.toLowerCase()));
-                } else if (logic === 1) {
-                    secondaryMatch = !secondaryKeys.every((k) => k && inputLower.includes(k.toLowerCase()));
-                } else if (logic === 2) {
-                    secondaryMatch = !secondaryKeys.some((k) => k && inputLower.includes(k.toLowerCase()));
-                } else if (logic === 3) {
-                    secondaryMatch = secondaryKeys.every((k) => k && inputLower.includes(k.toLowerCase()));
+                const logic = entry.selectiveLogic || 0; // 0 = AND ANY, 1 = NOT ALL, 2 = NOT ANY, 3 = AND ALL
+                
+                if (logic === 0) { // AND ANY - 任意一个次要关键词匹配
+                    secondaryMatch = secondaryKeys.some(k => k && inputLower.includes(k.toLowerCase()));
+                } else if (logic === 1) { // NOT ALL - 不是所有次要关键词都匹配
+                    secondaryMatch = !secondaryKeys.every(k => k && inputLower.includes(k.toLowerCase()));
+                } else if (logic === 2) { // NOT ANY - 没有任何次要关键词匹配
+                    secondaryMatch = !secondaryKeys.some(k => k && inputLower.includes(k.toLowerCase()));
+                } else if (logic === 3) { // AND ALL - 所有次要关键词都匹配
+                    secondaryMatch = secondaryKeys.every(k => k && inputLower.includes(k.toLowerCase()));
                 }
             }
 
             const keywordMatch = primaryMatch && secondaryMatch;
 
+            // 条目触发条件：关键词匹配 OR 粘性激活
             if (keywordMatch || isStickyActive) {
                 const entryData = {
                     content: entry.content,
-                    order,
+                    order: entry.order || entry.insertion_order || 0,
                     key: entryKey,
-                    keys,
+                    keys: keys,
                     comment: entry.comment || entry.name || keys[0] || '未命名',
                     isConstant: false,
-                    position,
-                    sticky,
-                    triggeredByKeyword: keywordMatch,
-                    triggeredBySticky: isStickyActive && !keywordMatch
+                    position: entry.position || 0,
+                    sticky: sticky,
+                    triggeredByKeyword: keywordMatch,  // 标记是否由关键词触发
+                    triggeredBySticky: isStickyActive && !keywordMatch  // 标记是否仅由粘性触发
                 };
 
                 if (keywordMatch) {
@@ -226,6 +169,7 @@ export class WorldBookManager {
             }
         }
 
+        // 合并常驻、关键词匹配和粘性触发的条目，按 order 排序
         const all = [...constants, ...matched, ...stickyMatched];
         all.sort((a, b) => b.order - a.order);
 

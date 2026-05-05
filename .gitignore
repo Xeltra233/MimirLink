@@ -32,8 +32,6 @@ npm-debug.log*
 .worktrees/
 tmp/
 compare-ui/
-claude-script-check.js
-todo.txt
 
 # Audio files (generated TTS)
 audio/

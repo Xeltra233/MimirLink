@@ -7,8 +7,6 @@ import fs from 'fs';
 import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 
-import { getParticipantProfileConfig } from './participant-profile-config.js';
-
 function ensureDir(dirPath) {
     if (!fs.existsSync(dirPath)) {
         fs.mkdirSync(dirPath, { recursive: true });
@@ -22,23 +20,6 @@ function truncate(text, maxLength = 240) {
     return text.length > maxLength ? `${text.slice(0, maxLength)}...` : text;
 }
 
-function summarizeText(value, maxLength = 120) {
-    const normalized = String(value || '').trim();
-    return {
-        length: normalized.length,
-        preview: truncate(normalized, maxLength)
-    };
-}
-
-function summarizeNamespaceOptions(namespaceOptions = {}) {
-    return {
-        scopeType: namespaceOptions.scopeType || '',
-        scopeKey: namespaceOptions.scopeKey || '',
-        characterName: namespaceOptions.characterName || '',
-        presetName: namespaceOptions.presetName || ''
-    };
-}
-
 function parseJson(value, fallback) {
     if (!value) {
         return fallback;
@@ -49,19 +30,6 @@ function parseJson(value, fallback) {
     } catch {
         return fallback;
     }
-}
-
-
-function extractParticipantNameFromMessage(row) {
-    const metadata = parseJson(row?.metadata_json, {});
-    const metadataName = metadata.participantName || metadata.userName || metadata.senderName || metadata.nickname || metadata.card;
-    if (metadataName) {
-        return String(metadataName).trim();
-    }
-
-    const content = String(row?.content || '');
-    const match = content.match(new RegExp('\u6635\u79f0:([^|\\]]+)'));
-    return match ? match[1].trim() : '';
 }
 
 function resolveDbPath(baseDir, configuredPath) {
@@ -89,135 +57,6 @@ function normalizeSessionMode(mode) {
         default:
             return 'user_persistent';
     }
-}
-
-function parseVariableValue(rawValue, declaredType = 'string') {
-    if (rawValue === null || rawValue === undefined) {
-        return null;
-    }
-
-    switch (declaredType) {
-        case 'number': {
-            const value = Number(rawValue);
-            return Number.isFinite(value) ? value : null;
-        }
-        case 'boolean': {
-            if (typeof rawValue === 'boolean') {
-                return rawValue;
-            }
-            const normalized = String(rawValue).trim().toLowerCase();
-            if (['true', '1', 'yes', 'on'].includes(normalized)) {
-                return true;
-            }
-            if (['false', '0', 'no', 'off'].includes(normalized)) {
-                return false;
-            }
-            return null;
-        }
-        case 'json': {
-            if (typeof rawValue !== 'string') {
-                return rawValue;
-            }
-            try {
-                return JSON.parse(rawValue);
-            } catch {
-                return null;
-            }
-        }
-        case 'string':
-        default:
-            return String(rawValue);
-    }
-}
-
-function serializeVariableValue(value, declaredType = 'string') {
-    if (value === null || value === undefined) {
-        return '';
-    }
-
-    if (declaredType === 'json') {
-        return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
-    }
-
-    return String(value);
-}
-
-function normalizeVariableType(valueType) {
-    return ['string', 'number', 'boolean', 'json'].includes(valueType) ? valueType : 'string';
-}
-
-function normalizeKnowledgeType(value) {
-    return value === 'fixed' ? 'fixed' : 'dynamic';
-}
-
-function mapVariableRow(row) {
-    const metadata = parseJson(row.metadata_json, {});
-    const valueType = normalizeVariableType(metadata.valueType || 'string');
-    return {
-        id: row.id,
-        namespaceId: row.namespace_id,
-        key: row.title || '',
-        title: row.title || '',
-        value: parseVariableValue(row.content, valueType),
-        rawValue: row.content,
-        valueType,
-        tags: parseJson(row.tags_json, []),
-        metadata,
-        sourceSessionId: row.source_session_id,
-        sourceMessageId: row.source_message_id,
-        scopeType: row.scope_type,
-        scopeKey: row.scope_key,
-        characterName: row.character_name || '',
-        presetName: row.preset_name || '',
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-    };
-}
-
-function mapParticipantProfileRow(row) {
-    const metadata = parseJson(row.metadata_json, {});
-    return {
-        id: row.id,
-        namespaceId: row.namespace_id,
-        participantId: String(metadata.participantId || ''),
-        participantName: metadata.participantName || row.title || '',
-        title: row.title || metadata.participantName || '',
-        contentPreview: truncate(row.content, 160),
-        content: row.content,
-        tags: parseJson(row.tags_json, []),
-        scopeType: row.scope_type,
-        scopeKey: row.scope_key,
-        characterName: row.character_name || '',
-        presetName: row.preset_name || '',
-        metadata,
-        sourceSessionId: row.source_session_id,
-        sourceMessageId: row.source_message_id,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-    };
-}
-
-function mapKnowledgeRow(row) {
-    const metadata = parseJson(row.metadata_json, {});
-    return {
-        id: row.id,
-        namespaceId: row.namespace_id,
-        entryType: row.entry_type,
-        knowledgeType: metadata.knowledgeType || (row.entry_type === 'knowledge_fixed' ? 'fixed' : 'dynamic'),
-        title: row.title || '',
-        contentPreview: truncate(row.content, 160),
-        content: row.content,
-        tags: parseJson(row.tags_json, []),
-        scopeType: row.scope_type,
-        scopeKey: row.scope_key,
-        characterName: row.character_name || '',
-        presetName: row.preset_name || '',
-        metadata,
-        sourceSessionId: row.source_session_id,
-        sourceMessageId: row.source_message_id,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at
-    };
 }
 
 export class SessionManager {
@@ -540,13 +379,9 @@ export class SessionManager {
             listParticipantProfiles: this.db.prepare(`
                 SELECT
                     me.id,
-                    me.namespace_id,
                     me.title,
                     me.content,
-                    me.tags_json,
                     me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
                     me.created_at,
                     me.updated_at,
                     ns.scope_type,
@@ -562,13 +397,9 @@ export class SessionManager {
             getParticipantProfileByEntryId: this.db.prepare(`
                 SELECT
                     me.id,
-                    me.namespace_id,
                     me.title,
                     me.content,
-                    me.tags_json,
                     me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
                     me.created_at,
                     me.updated_at,
                     ns.scope_type,
@@ -580,140 +411,13 @@ export class SessionManager {
                 WHERE me.id = ? AND me.entry_type = 'participant_profile'
                 LIMIT 1
             `),
-            listVariables: this.db.prepare(`
-                SELECT
-                    me.id,
-                    me.namespace_id,
-                    me.title,
-                    me.content,
-                    me.tags_json,
-                    me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
-                    me.created_at,
-                    me.updated_at,
-                    ns.scope_type,
-                    ns.scope_key,
-                    ns.character_name,
-                    ns.preset_name
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.entry_type = 'variable'
-                  AND (? IS NULL OR ns.scope_type = ?)
-                  AND (? IS NULL OR ns.scope_key = ?)
-                  AND (? IS NULL OR IFNULL(ns.character_name, '') = ?)
-                  AND (? IS NULL OR IFNULL(ns.preset_name, '') = ?)
-                  AND (? IS NULL OR me.title LIKE ? OR me.content LIKE ? OR IFNULL(me.tags_json, '') LIKE ? OR IFNULL(me.metadata_json, '') LIKE ? OR ns.scope_type LIKE ? OR ns.scope_key LIKE ? OR IFNULL(ns.character_name, '') LIKE ? OR IFNULL(ns.preset_name, '') LIKE ?)
-                ORDER BY me.updated_at DESC, me.rowid DESC
-                LIMIT ?
-            `),
-            getVariableByEntryId: this.db.prepare(`
-                SELECT
-                    me.id,
-                    me.namespace_id,
-                    me.title,
-                    me.content,
-                    me.tags_json,
-                    me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
-                    me.created_at,
-                    me.updated_at,
-                    ns.scope_type,
-                    ns.scope_key,
-                    ns.character_name,
-                    ns.preset_name
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.id = ? AND me.entry_type = 'variable'
-                LIMIT 1
-            `),
-            listKnowledgeEntries: this.db.prepare(`
-                SELECT
-                    me.id,
-                    me.namespace_id,
-                    me.entry_type,
-                    me.title,
-                    me.content,
-                    me.tags_json,
-                    me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
-                    me.created_at,
-                    me.updated_at,
-                    ns.scope_type,
-                    ns.scope_key,
-                    ns.character_name,
-                    ns.preset_name
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.entry_type IN ('knowledge_fixed', 'knowledge_dynamic')
-                  AND (? IS NULL OR ns.scope_type = ?)
-                  AND (? IS NULL OR ns.scope_key = ?)
-                  AND (? IS NULL OR IFNULL(ns.character_name, '') = ?)
-                  AND (? IS NULL OR IFNULL(ns.preset_name, '') = ?)
-                  AND (? IS NULL OR me.entry_type = ?)
-                  AND (? IS NULL OR me.title LIKE ? OR me.content LIKE ? OR IFNULL(me.tags_json, '') LIKE ? OR IFNULL(me.metadata_json, '') LIKE ? OR ns.scope_type LIKE ? OR ns.scope_key LIKE ? OR IFNULL(ns.character_name, '') LIKE ? OR IFNULL(ns.preset_name, '') LIKE ?)
-                ORDER BY me.updated_at DESC, me.rowid DESC
-                LIMIT ?
-            `),
-            getKnowledgeByEntryId: this.db.prepare(`
-                SELECT
-                    me.id,
-                    me.namespace_id,
-                    me.entry_type,
-                    me.title,
-                    me.content,
-                    me.tags_json,
-                    me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
-                    me.created_at,
-                    me.updated_at,
-                    ns.scope_type,
-                    ns.scope_key,
-                    ns.character_name,
-                    ns.preset_name
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.id = ? AND me.entry_type IN ('knowledge_fixed', 'knowledge_dynamic')
-                LIMIT 1
-            `),
-            findVariableByName: this.db.prepare(`
-                SELECT id, namespace_id, title, content, tags_json, metadata_json, source_session_id, source_message_id, created_at, updated_at
-                FROM memory_entries
-                WHERE namespace_id = ? AND entry_type = 'variable' AND title = ?
-                ORDER BY updated_at DESC, rowid DESC
-                LIMIT 1
-            `),
-            updateMemoryEntry: this.db.prepare(`
-                UPDATE memory_entries
-                SET title = ?, content = ?, tags_json = ?, metadata_json = ?, source_session_id = ?, source_message_id = ?, updated_at = ?
-                WHERE id = ?
-            `),
-            deleteMemoryEntry: this.db.prepare('DELETE FROM memory_entries WHERE id = ?'),
             listParticipantMessages: this.db.prepare(`
                 SELECT session_id, role, content, metadata_json, timestamp, date_iso
                 FROM messages
-                WHERE CAST(json_extract(metadata_json, '$.userId') AS TEXT) = ?
+                WHERE json_extract(metadata_json, '$.userId') = ?
                   AND timestamp > ?
                 ORDER BY timestamp ASC, rowid ASC
                 LIMIT ?
-            `),
-            exportMemoryNamespaces: this.db.prepare(`
-                SELECT id, scope_type, scope_key, character_name, preset_name, created_at, updated_at
-                FROM memory_namespaces
-                ORDER BY updated_at ASC, rowid ASC
-            `),
-            exportMemoryEntries: this.db.prepare(`
-                SELECT id, namespace_id, source_session_id, source_message_id, entry_type, title, content, tags_json, metadata_json, created_at, updated_at
-                FROM memory_entries
-                ORDER BY updated_at ASC, rowid ASC
-            `),
-            exportSummaryIndexEntries: this.db.prepare(`
-                SELECT id, namespace_id, source_summary_id, source_session_id, outline, keywords_json, metadata_json, created_at, updated_at
-                FROM summary_index_entries
-                ORDER BY updated_at ASC, rowid ASC
             `),
             insertSummaryIndexEntry: this.db.prepare(`
                 INSERT INTO summary_index_entries (id, namespace_id, source_summary_id, source_session_id, outline, keywords_json, metadata_json, created_at, updated_at)
@@ -786,14 +490,6 @@ export class SessionManager {
             this.db.exec('ROLLBACK');
             throw error;
         }
-
-        this.logger.debug?.('[记忆] 已写入消息', {
-            sessionId,
-            messageId: id,
-            role,
-            content: summarizeText(content),
-            metadataKeys: Object.keys(metadata || {}).slice(0, 10)
-        });
 
         return {
             id,
@@ -967,14 +663,6 @@ export class SessionManager {
             return null;
         }
 
-        this.logger.info?.('[记忆] 开始生成摘要', {
-            sessionId,
-            totalMessages,
-            sourceCount: sourceRows.length,
-            keepRecent,
-            useAI: this.summaryConfig.useAI && typeof summarizer === 'function'
-        });
-
         const sourceMessages = sourceRows.map((row) => ({
             id: row.id,
             role: row.role,
@@ -1036,13 +724,7 @@ export class SessionManager {
             throw error;
         }
 
-        this.logger.info?.('[记忆] 摘要生成完成', {
-            sessionId,
-            summaryId,
-            sourceCount: sourceMessages.length,
-            summaryCount: this.statements.getSummaries.all(sessionId).length,
-            content: summarizeText(summaryText, 160)
-        });
+        this.logger.info?.(`[记忆] 会话 ${sessionId} 已生成摘要，压缩 ${sourceMessages.length} 条消息`);
         return {
             id: summaryId,
             content: summaryText,
@@ -1207,327 +889,53 @@ export class SessionManager {
     }
 
     getParticipantProfile(namespaceOptions, participantId) {
-        const namespace = this.ensureMemoryNamespace(namespaceOptions);
-        const row = this.db.prepare(`
-            SELECT me.id, me.namespace_id, me.entry_type, me.title, me.content, me.tags_json, me.metadata_json,
-                   me.source_session_id, me.source_message_id, me.created_at, me.updated_at,
-                   ns.scope_type, ns.scope_key, ns.character_name, ns.preset_name
-            FROM memory_entries me
-            INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-            WHERE me.namespace_id = ?
-              AND me.entry_type = 'participant_profile'
-              AND json_extract(me.metadata_json, '$.participantId') = ?
-            ORDER BY me.updated_at DESC, me.rowid DESC
-            LIMIT 1
-        `).get(namespace.id, String(participantId));
-        return row ? mapParticipantProfileRow(row) : null;
-    }
-
-    getLatestParticipantIdentity(participantId) {
-        const row = this.db.prepare(`
-            SELECT metadata_json, content, timestamp
-            FROM messages
-            WHERE CAST(json_extract(metadata_json, '$.userId') AS TEXT) = ?
-            ORDER BY timestamp DESC, rowid DESC
-            LIMIT 1
-        `).get(String(participantId));
-        if (!row) {
-            return null;
-        }
-
-        const participantName = extractParticipantNameFromMessage(row);
-        return {
-            participantId: String(participantId),
-            participantName,
-            timestamp: row.timestamp
-        };
-    }
-
-    refreshParticipantProfileName(entryId) {
-        const existing = this.getParticipantProfileByEntryId(entryId);
-        if (!existing) {
-            return null;
-        }
-        const identity = this.getLatestParticipantIdentity(existing.participantId);
-        const latestName = identity?.participantName || '';
-        if (!latestName) {
-            return { item: existing, changed: false, reason: 'no_latest_name' };
-        }
-
-        const metadata = {
-            ...existing.metadata,
-            participantId: existing.participantId,
-            participantName: latestName,
-            lastParticipantNameRefreshAt: Date.now(),
-            lastParticipantNameSourceAt: identity.timestamp || null
-        };
-        this.statements.updateMemoryEntry.run(
-            latestName,
-            existing.content,
-            JSON.stringify(existing.tags || []),
-            JSON.stringify(metadata),
-            existing.sourceSessionId || null,
-            existing.sourceMessageId || null,
-            Date.now(),
-            existing.id
-        );
-        return {
-            item: this.getParticipantProfileByEntryId(existing.id),
-            changed: latestName !== existing.participantName,
-            participantName: latestName
-        };
-    }
-
-    listVariables(filters = {}) {
-        const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
-        const scopeType = filters.scopeType || null;
-        const scopeKey = filters.scopeKey || null;
-        const characterName = filters.characterName || null;
-        const presetName = filters.presetName || null;
-        const search = filters.search ? `%${String(filters.search).trim()}%` : null;
-
-        return this.statements.listVariables.all(
-            scopeType,
-            scopeType,
-            scopeKey,
-            scopeKey,
-            characterName,
-            characterName,
-            presetName,
-            presetName,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            limit
-        ).map(mapVariableRow);
-    }
-
-    getVariable(namespaceOptions, key) {
-        if (!key) {
-            return null;
-        }
-
-        const namespace = this.ensureMemoryNamespace(namespaceOptions);
-        const row = this.statements.findVariableByName.get(namespace.id, String(key));
-        if (!row) {
-            return null;
-        }
-
-        return mapVariableRow({
-            ...row,
-            scope_type: namespace.scope_type,
-            scope_key: namespace.scope_key,
-            character_name: namespace.character_name,
-            preset_name: namespace.preset_name
-        });
-    }
-
-    getVariableByEntryId(entryId) {
-        const row = this.statements.getVariableByEntryId.get(entryId);
-        return row ? mapVariableRow(row) : null;
-    }
-
-    listKnowledgeEntries(filters = {}) {
-        const limit = Math.min(Math.max(Number(filters.limit) || 100, 1), 500);
-        const scopeType = filters.scopeType || null;
-        const scopeKey = filters.scopeKey || null;
-        const characterName = filters.characterName || null;
-        const presetName = filters.presetName || null;
-        const knowledgeType = filters.knowledgeType === 'fixed'
-            ? 'knowledge_fixed'
-            : (filters.knowledgeType === 'dynamic' ? 'knowledge_dynamic' : null);
-        const search = filters.search ? `%${String(filters.search).trim()}%` : null;
-
-        return this.statements.listKnowledgeEntries.all(
-            scopeType,
-            scopeType,
-            scopeKey,
-            scopeKey,
-            characterName,
-            characterName,
-            presetName,
-            presetName,
-            knowledgeType,
-            knowledgeType,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            search,
-            limit
-        ).map(mapKnowledgeRow);
-    }
-
-    getKnowledgeByEntryId(entryId) {
-        const row = this.statements.getKnowledgeByEntryId.get(entryId);
-        return row ? mapKnowledgeRow(row) : null;
-    }
-
-    upsertKnowledgeEntry(namespaceOptions, knowledge = {}) {
-        const title = String(knowledge.title || '').trim();
-        if (!title) {
-            throw new Error('知识标题不能为空');
-        }
-
-        const content = String(knowledge.content || '').trim();
-        if (!content) {
-            throw new Error('知识内容不能为空');
-        }
-
-        const normalizedKnowledgeType = normalizeKnowledgeType(knowledge.knowledgeType || knowledge.metadata?.knowledgeType);
-        return this.addMemoryEntry(namespaceOptions, {
-            entryType: normalizedKnowledgeType === 'fixed' ? 'knowledge_fixed' : 'knowledge_dynamic',
-            title,
-            content,
-            tags: Array.isArray(knowledge.tags) ? knowledge.tags : [],
-            metadata: {
-                ...(knowledge.metadata || {}),
-                knowledgeType: normalizedKnowledgeType,
-                source: knowledge.metadata?.source || knowledge.source || 'admin',
-                updatedBy: knowledge.metadata?.updatedBy || 'admin-panel'
-            },
-            sourceSessionId: knowledge.sourceSessionId || null,
-            sourceMessageId: knowledge.sourceMessageId || null
-        });
-    }
-
-    saveKnowledgeEntry(entryId, knowledge = {}) {
-        const existing = this.getKnowledgeByEntryId(entryId);
-        if (!existing) {
-            return null;
-        }
-
-        const title = String(knowledge.title ?? existing.title ?? '').trim();
-        const content = String(knowledge.content ?? existing.content ?? '').trim();
-        if (!title) {
-            throw new Error('知识标题不能为空');
-        }
-        if (!content) {
-            throw new Error('知识内容不能为空');
-        }
-
-        const normalizedKnowledgeType = normalizeKnowledgeType(knowledge.knowledgeType || knowledge.metadata?.knowledgeType || existing.knowledgeType);
-        const metadata = {
-            ...existing.metadata,
-            ...(knowledge.metadata || {}),
-            knowledgeType: normalizedKnowledgeType,
-            source: String((knowledge.metadata || {}).source || existing.metadata?.source || 'admin').trim() || 'admin',
-            updatedBy: String((knowledge.metadata || {}).updatedBy || existing.metadata?.updatedBy || 'admin-panel').trim() || 'admin-panel'
-        };
-        const tags = Array.isArray(knowledge.tags) ? knowledge.tags : existing.tags;
-        const now = Date.now();
-
-        this.statements.updateMemoryEntry.run(
-            title,
-            content,
-            JSON.stringify(tags || []),
-            JSON.stringify(metadata),
-            knowledge.sourceSessionId || existing.sourceSessionId || null,
-            knowledge.sourceMessageId || existing.sourceMessageId || null,
-            now,
-            existing.id
-        );
-
-        if (existing.entryType !== (normalizedKnowledgeType === 'fixed' ? 'knowledge_fixed' : 'knowledge_dynamic')) {
-            this.db.prepare(`
-                UPDATE memory_entries
-                SET entry_type = ?
-                WHERE id = ?
-            `).run(normalizedKnowledgeType === 'fixed' ? 'knowledge_fixed' : 'knowledge_dynamic', existing.id);
-        }
-
-        const saved = this.getKnowledgeByEntryId(existing.id);
-        this.logger.info?.('[记忆] 知识条目已保存', {
-            entryId: existing.id,
-            knowledgeType: saved?.knowledgeType || normalizedKnowledgeType,
-            title: saved?.title || title,
-            content: summarizeText(content, 160),
-            tagCount: Array.isArray(tags) ? tags.length : 0
-        });
-        return saved;
-    }
-
-    deleteKnowledgeEntry(entryId) {
-        const existing = this.getKnowledgeByEntryId(entryId);
-        if (!existing) {
-            return false;
-        }
-        this.statements.deleteMemoryEntry.run(entryId);
-        return true;
-    }
-
-    upsertVariable(namespaceOptions, variable = {}) {
-        const key = String(variable.key || variable.title || '').trim();
-        if (!key) {
-            throw new Error('变量名不能为空');
-        }
-
-        const valueType = normalizeVariableType(variable.valueType || variable.metadata?.valueType || 'string');
-        const parsedValue = Object.prototype.hasOwnProperty.call(variable, 'value')
-            ? variable.value
-            : parseVariableValue(variable.rawValue ?? variable.content ?? '', valueType);
-        const rawValue = serializeVariableValue(parsedValue, valueType);
-        const namespace = this.ensureMemoryNamespace(namespaceOptions);
-        const existing = this.statements.findVariableByName.get(namespace.id, key);
-        const now = Date.now();
-        const metadata = {
-            ...(existing ? parseJson(existing.metadata_json, {}) : {}),
-            ...(variable.metadata || {}),
-            valueType,
-            source: variable.metadata?.source || variable.source || (existing ? parseJson(existing.metadata_json, {}).source : 'admin')
-        };
-
-        if (existing) {
-            this.statements.updateMemoryEntry.run(
-                key,
-                rawValue,
-                JSON.stringify(variable.tags || parseJson(existing.tags_json, [])),
-                JSON.stringify(metadata),
-                variable.sourceSessionId || existing.source_session_id || null,
-                variable.sourceMessageId || existing.source_message_id || null,
-                now,
-                existing.id
-            );
-            return { id: existing.id, namespaceId: namespace.id, updated: true };
-        }
-
-        return this.addMemoryEntry(namespaceOptions, {
-            entryType: 'variable',
-            title: key,
-            content: rawValue,
-            tags: variable.tags || [],
-            metadata,
-            sourceSessionId: variable.sourceSessionId || null,
-            sourceMessageId: variable.sourceMessageId || null
-        });
-    }
-
-    deleteVariable(entryId) {
-        const existing = this.getVariableByEntryId(entryId);
-        if (!existing) {
-            return false;
-        }
-        this.statements.deleteMemoryEntry.run(entryId);
-        return true;
+        return this.listRecentMemoryEntries(namespaceOptions, 20)
+            .find((entry) => entry.entryType === 'participant_profile' && String(entry.metadata?.participantId || '') === String(participantId)) || null;
     }
 
     listParticipantProfiles(limit = 50) {
-        return this.statements.listParticipantProfiles.all(limit).map(mapParticipantProfileRow);
+        return this.statements.listParticipantProfiles.all(limit).map((row) => {
+            const metadata = parseJson(row.metadata_json, {});
+            return {
+                id: row.id,
+                participantId: String(metadata.participantId || ''),
+                participantName: metadata.participantName || row.title || '',
+                title: row.title || metadata.participantName || '',
+                contentPreview: truncate(row.content, 160),
+                content: row.content,
+                scopeType: row.scope_type,
+                scopeKey: row.scope_key,
+                characterName: row.character_name || '',
+                presetName: row.preset_name || '',
+                metadata,
+                createdAt: row.created_at,
+                updatedAt: row.updated_at
+            };
+        });
     }
 
     getParticipantProfileByEntryId(entryId) {
         const row = this.statements.getParticipantProfileByEntryId.get(entryId);
-        return row ? mapParticipantProfileRow(row) : null;
+        if (!row) {
+            return null;
+        }
+
+        const metadata = parseJson(row.metadata_json, {});
+        return {
+            id: row.id,
+            participantId: String(metadata.participantId || ''),
+            participantName: metadata.participantName || row.title || '',
+            title: row.title || metadata.participantName || '',
+            contentPreview: truncate(row.content, 160),
+            content: row.content,
+            scopeType: row.scope_type,
+            scopeKey: row.scope_key,
+            characterName: row.character_name || '',
+            presetName: row.preset_name || '',
+            metadata,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
+        };
     }
 
     upsertParticipantProfile(namespaceOptions, participantProfile) {
@@ -1557,64 +965,6 @@ export class SessionManager {
             tags: participantProfile.tags || [],
             metadata: participantProfile.metadata || {}
         });
-    }
-
-    saveParticipantProfile(entryId, participantProfile = {}) {
-        const existing = this.getParticipantProfileByEntryId(entryId);
-        if (!existing) {
-            return null;
-        }
-
-        const title = String(participantProfile.title ?? existing.title ?? '').trim();
-        const content = String(participantProfile.content ?? existing.content ?? '').trim();
-        if (!title) {
-            throw new Error('人物档案标题不能为空');
-        }
-        if (!content) {
-            throw new Error('人物档案内容不能为空');
-        }
-
-        const metadata = {
-            ...existing.metadata,
-            ...(participantProfile.metadata || {}),
-            participantId: String((participantProfile.metadata || {}).participantId || existing.metadata?.participantId || existing.participantId || ''),
-            participantName: String((participantProfile.metadata || {}).participantName || existing.metadata?.participantName || title).trim() || title,
-            editedBy: String((participantProfile.metadata || {}).editedBy || existing.metadata?.editedBy || 'admin-panel').trim() || 'admin-panel',
-            updatedBy: String((participantProfile.metadata || {}).updatedBy || existing.metadata?.updatedBy || 'admin-panel').trim() || 'admin-panel',
-            source: String((participantProfile.metadata || {}).source || existing.metadata?.source || 'participant_profile').trim() || 'participant_profile'
-        };
-        const tags = Array.isArray(participantProfile.tags) ? participantProfile.tags : existing.tags;
-        const now = Date.now();
-
-        this.statements.updateMemoryEntry.run(
-            title,
-            content,
-            JSON.stringify(tags || []),
-            JSON.stringify(metadata),
-            existing.sourceSessionId || null,
-            existing.sourceMessageId || null,
-            now,
-            existing.id
-        );
-
-        const saved = this.getParticipantProfileByEntryId(existing.id);
-        this.logger.info?.('[记忆] 人物档案已保存', {
-            entryId: existing.id,
-            participantId: saved?.participantId || metadata.participantId || '',
-            participantName: saved?.participantName || metadata.participantName || title,
-            content: summarizeText(content, 160),
-            tagCount: Array.isArray(tags) ? tags.length : 0
-        });
-        return saved;
-    }
-
-    deleteParticipantProfile(entryId) {
-        const existing = this.getParticipantProfileByEntryId(entryId);
-        if (!existing) {
-            return false;
-        }
-        this.statements.deleteMemoryEntry.run(entryId);
-        return true;
     }
 
     collectParticipantProfileSource(userId, namespaceOptions, options = {}) {
@@ -1708,70 +1058,23 @@ export class SessionManager {
         const recentEntries = this.listRecentMemoryEntries(namespaceOptions, recentLimit);
         const matchedEntries = query ? this.searchMemoryEntries(namespaceOptions, query, searchLimit) : [];
         const summaryEntries = this.listRecentSummaryIndexEntries(namespaceOptions, options.summaryLimit || 3);
-        const fixedKnowledgeEntries = this.listKnowledgeEntries({
-            scopeType: namespaceOptions?.scopeType,
-            scopeKey: namespaceOptions?.scopeKey,
-            characterName: namespaceOptions?.characterName,
-            presetName: namespaceOptions?.presetName,
-            knowledgeType: 'fixed',
-            limit: options.fixedLimit || 6
-        });
         const queryKeywords = this.buildKeywordsFromText(query, 8);
-        const participantProfileConfig = getParticipantProfileConfig(this.config);
-        const blacklist = new Set(participantProfileConfig.blacklistParticipantIds);
-        const currentParticipantId = options.currentParticipantId ? String(options.currentParticipantId) : '';
-
-        const shouldIncludeEntry = (entry) => {
-            if (entry.entryType === 'knowledge_fixed' || entry.entryType === 'knowledge_dynamic') {
-                return true;
-            }
-            if (entry.entryType !== 'participant_profile') {
-                return true;
-            }
-            if (!participantProfileConfig.injectEnabled) {
-                return false;
-            }
-
-            const profileParticipantId = String(entry.metadata?.participantId || '');
-            if (profileParticipantId && blacklist.has(profileParticipantId)) {
-                return false;
-            }
-            if (currentParticipantId && profileParticipantId && currentParticipantId !== profileParticipantId) {
-                return false;
-            }
-            return true;
-        };
 
         const dedupe = new Map();
-        for (const entry of [...fixedKnowledgeEntries, ...matchedEntries, ...recentEntries]) {
-            if (!shouldIncludeEntry(entry) || dedupe.has(entry.id)) {
-                continue;
+        for (const entry of [...matchedEntries, ...recentEntries]) {
+            if (!dedupe.has(entry.id)) {
+                const keywordHits = queryKeywords.filter((keyword) => entry.content.toLowerCase().includes(keyword)).length;
+                const recencyBoost = matchedEntries.some((item) => item.id === entry.id) ? 50 : 20;
+                const profileBoost = entry.entryType === 'participant_profile' ? 80 : 0;
+                dedupe.set(entry.id, {
+                    ...entry,
+                    sourceKind: entry.entryType === 'participant_profile' ? 'participant_profile' : 'memory_entry',
+                    recallReason: entry.entryType === 'participant_profile'
+                        ? 'participant_profile'
+                        : (matchedEntries.some((item) => item.id === entry.id) ? 'keyword_match' : 'recent_memory'),
+                    recallScore: profileBoost + recencyBoost + keywordHits * 8
+                });
             }
-
-            const contentText = String(entry.content || '').toLowerCase();
-            const keywordHits = queryKeywords.filter((keyword) => contentText.includes(keyword)).length;
-            const isMatched = matchedEntries.some((item) => item.id === entry.id);
-            const isFixedKnowledge = entry.entryType === 'knowledge_fixed';
-            const isDynamicKnowledge = entry.entryType === 'knowledge_dynamic';
-            const recencyBoost = isMatched ? 50 : 20;
-            const profileBoost = entry.entryType === 'participant_profile' ? 80 : 0;
-            const knowledgeBoost = isFixedKnowledge ? 120 : (isDynamicKnowledge ? 70 : 0);
-            dedupe.set(entry.id, {
-                ...entry,
-                sourceKind: isFixedKnowledge
-                    ? 'knowledge_fixed'
-                    : (isDynamicKnowledge
-                        ? 'knowledge_dynamic'
-                        : (entry.entryType === 'participant_profile' ? 'participant_profile' : 'memory_entry')),
-                recallReason: isFixedKnowledge
-                    ? 'fixed_knowledge'
-                    : (isDynamicKnowledge
-                        ? (isMatched ? 'dynamic_knowledge_match' : 'dynamic_knowledge_recent')
-                        : (entry.entryType === 'participant_profile'
-                            ? 'participant_profile'
-                            : (isMatched ? 'keyword_match' : 'recent_memory'))),
-                recallScore: knowledgeBoost + profileBoost + recencyBoost + keywordHits * 8
-            });
         }
 
         for (const summary of summaryEntries) {
@@ -1790,29 +1093,9 @@ export class SessionManager {
             }
         }
 
-        const results = Array.from(dedupe.values())
+        return Array.from(dedupe.values())
             .sort((a, b) => (b.recallScore || 0) - (a.recallScore || 0))
             .slice(0, options.limit || 6);
-
-        this.logger.info?.('[记忆] 记忆召回完成', {
-            namespace: summarizeNamespaceOptions(namespaceOptions),
-            query: summarizeText(query),
-            recentCount: recentEntries.length,
-            matchedCount: matchedEntries.length,
-            fixedKnowledgeCount: fixedKnowledgeEntries.length,
-            summaryCount: summaryEntries.length,
-            resultCount: results.length,
-            currentParticipantId,
-            results: results.slice(0, 6).map((entry) => ({
-                id: entry.id,
-                sourceKind: entry.sourceKind || entry.entryType || '',
-                recallReason: entry.recallReason || '',
-                recallScore: entry.recallScore || 0,
-                title: entry.title || ''
-            }))
-        });
-
-        return results;
     }
 
     cleanupSessions(maxIdleTime = 24 * 60 * 60 * 1000) {
@@ -1841,24 +1124,6 @@ export class SessionManager {
         };
     }
 
-    getDashboardCompositionStats() {
-        const row = this.db.prepare(`
-            SELECT
-                SUM(CASE WHEN entry_type = 'participant_profile' THEN 1 ELSE 0 END) AS participant_profiles,
-                SUM(CASE WHEN entry_type = 'knowledge_fixed' THEN 1 ELSE 0 END) AS fixed_knowledge,
-                SUM(CASE WHEN entry_type = 'knowledge_dynamic' THEN 1 ELSE 0 END) AS dynamic_knowledge
-            FROM memory_entries
-        `).get();
-        const stats = this.getStats();
-        return {
-            messages: Number(stats.totalMessages) || 0,
-            summaries: Number(stats.totalSummaries) || 0,
-            participantProfiles: Number(row?.participant_profiles) || 0,
-            fixedKnowledge: Number(row?.fixed_knowledge) || 0,
-            dynamicKnowledge: Number(row?.dynamic_knowledge) || 0
-        };
-    }
-
     getMemoryFileSize() {
         try {
             if (fs.existsSync(this.dbPath)) {
@@ -1874,9 +1139,6 @@ export class SessionManager {
     clearGlobalMemory() {
         this.db.exec('BEGIN');
         try {
-            this.db.exec('DELETE FROM summary_index_entries;');
-            this.db.exec('DELETE FROM memory_entries;');
-            this.db.exec('DELETE FROM memory_namespaces;');
             this.db.exec('DELETE FROM sticky_entries;');
             this.db.exec('DELETE FROM summaries;');
             this.db.exec('DELETE FROM messages;');
@@ -1903,99 +1165,6 @@ export class SessionManager {
         }));
     }
 
-    exportKnowledgeSnapshot() {
-        return {
-            namespaces: this.statements.exportMemoryNamespaces.all().map((row) => ({
-                id: row.id,
-                scopeType: row.scope_type,
-                scopeKey: row.scope_key,
-                characterName: row.character_name || null,
-                presetName: row.preset_name || null,
-                createdAt: row.created_at,
-                updatedAt: row.updated_at
-            })),
-            entries: this.statements.exportMemoryEntries.all().map((row) => ({
-                id: row.id,
-                namespaceId: row.namespace_id,
-                sourceSessionId: row.source_session_id,
-                sourceMessageId: row.source_message_id,
-                entryType: row.entry_type,
-                title: row.title,
-                content: row.content,
-                tags: parseJson(row.tags_json, []),
-                metadata: parseJson(row.metadata_json, {}),
-                createdAt: row.created_at,
-                updatedAt: row.updated_at
-            })),
-            summaryIndexEntries: this.statements.exportSummaryIndexEntries.all().map((row) => ({
-                id: row.id,
-                namespaceId: row.namespace_id,
-                sourceSummaryId: row.source_summary_id,
-                sourceSessionId: row.source_session_id,
-                outline: row.outline,
-                keywords: parseJson(row.keywords_json, []),
-                metadata: parseJson(row.metadata_json, {}),
-                createdAt: row.created_at,
-                updatedAt: row.updated_at
-            }))
-        };
-    }
-
-    importKnowledgeSnapshot(snapshot = {}) {
-        const namespaces = Array.isArray(snapshot.namespaces) ? snapshot.namespaces : [];
-        const entries = Array.isArray(snapshot.entries) ? snapshot.entries : [];
-        const summaryIndexEntries = Array.isArray(snapshot.summaryIndexEntries) ? snapshot.summaryIndexEntries : [];
-        const now = Date.now();
-
-        for (const namespace of namespaces) {
-            this.statements.upsertMemoryNamespace.run(
-                namespace.id || `ns_${namespace.scopeType}_${Buffer.from(`${namespace.scopeKey}|${namespace.characterName || ''}|${namespace.presetName || ''}`).toString('base64url')}`,
-                namespace.scopeType || 'user_persistent',
-                namespace.scopeKey || 'default',
-                namespace.characterName || null,
-                namespace.presetName || null,
-                namespace.createdAt || now,
-                namespace.updatedAt || now
-            );
-        }
-
-        for (const entry of entries) {
-            this.statements.insertMemoryEntry.run(
-                entry.id || `mem_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                entry.namespaceId,
-                entry.sourceSessionId || null,
-                entry.sourceMessageId || null,
-                entry.entryType || 'note',
-                entry.title || null,
-                entry.content || '',
-                JSON.stringify(entry.tags || []),
-                JSON.stringify(entry.metadata || {}),
-                entry.createdAt || now,
-                entry.updatedAt || now
-            );
-        }
-
-        for (const entry of summaryIndexEntries) {
-            this.statements.insertSummaryIndexEntry.run(
-                entry.id || `sumidx_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-                entry.namespaceId,
-                entry.sourceSummaryId || null,
-                entry.sourceSessionId || null,
-                entry.outline || '',
-                JSON.stringify(entry.keywords || []),
-                JSON.stringify(entry.metadata || {}),
-                entry.createdAt || now,
-                entry.updatedAt || now
-            );
-        }
-
-        return {
-            importedNamespaces: namespaces.length,
-            importedMemoryEntries: entries.length,
-            importedSummaryIndexEntries: summaryIndexEntries.length
-        };
-    }
-
     exportMemory() {
         const sessions = {};
         for (const session of this.listSessions()) {
@@ -2009,7 +1178,6 @@ export class SessionManager {
 
         return {
             sessions,
-            knowledge: this.exportKnowledgeSnapshot(),
             globalTimeline: this.getGlobalHistory(100000, true),
             stats: this.getStats(),
             exportDate: new Date().toISOString(),
@@ -2047,14 +1215,10 @@ export class SessionManager {
             };
         }
 
-        const knowledge = this.exportKnowledgeSnapshot();
-
         return {
             sessions,
-            knowledge,
             stats: {
                 exportedSessions: Object.keys(sessions).length,
-                exportedKnowledgeEntries: Array.isArray(knowledge.entries) ? knowledge.entries.length : 0,
                 storagePath: this.dbPath
             },
             exportDate: new Date().toISOString(),
@@ -2066,15 +1230,8 @@ export class SessionManager {
     }
 
     importMemorySnapshot(snapshot, options = {}) {
-        if (!snapshot?.sessions && !snapshot?.knowledge) {
-            return {
-                importedSessions: 0,
-                importedMessages: 0,
-                importedSummaries: 0,
-                importedNamespaces: 0,
-                importedMemoryEntries: 0,
-                importedSummaryIndexEntries: 0
-            };
+        if (!snapshot?.sessions) {
+            return { importedSessions: 0, importedMessages: 0, importedSummaries: 0 };
         }
 
         const replace = options.replace !== false;
@@ -2086,7 +1243,7 @@ export class SessionManager {
         let importedMessages = 0;
         let importedSummaries = 0;
 
-        for (const [sessionId, session] of Object.entries(snapshot.sessions || {})) {
+        for (const [sessionId, session] of Object.entries(snapshot.sessions)) {
             this.ensureSession(sessionId);
             importedSessions += 1;
 
@@ -2109,14 +1266,7 @@ export class SessionManager {
             }
         }
 
-        const importedKnowledge = this.importKnowledgeSnapshot(snapshot.knowledge || {});
-
-        return {
-            importedSessions,
-            importedMessages,
-            importedSummaries,
-            ...importedKnowledge
-        };
+        return { importedSessions, importedMessages, importedSummaries };
     }
 
     getDbPath() {
