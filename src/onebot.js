@@ -6,6 +6,106 @@ import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import fs from 'fs';
 
+function summarizeMessagePayload(message) {
+    if (typeof message === 'string') {
+        const normalizedText = message.trim();
+        return {
+            kind: 'text',
+            length: normalizedText.length,
+            preview: normalizedText.slice(0, 120)
+        };
+    }
+
+    if (!Array.isArray(message)) {
+        return {
+            kind: typeof message,
+            preview: null
+        };
+    }
+
+    const segmentTypes = message.map((segment) => segment?.type || 'unknown');
+    const textPreview = message
+        .filter((segment) => segment?.type === 'text')
+        .map((segment) => String(segment?.data?.text || '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .slice(0, 120);
+    const hasRecord = message.some((segment) => segment?.type === 'record');
+
+    return {
+        kind: 'segment_array',
+        segmentCount: message.length,
+        segmentTypes,
+        preview: textPreview || null,
+        containsRecord: hasRecord
+    };
+}
+
+function summarizeOneBotParams(action, params = {}) {
+    if (action === 'send_group_msg') {
+        return {
+            groupId: params.group_id ? String(params.group_id) : '',
+            message: summarizeMessagePayload(params.message)
+        };
+    }
+
+    if (action === 'send_private_msg') {
+        return {
+            userId: params.user_id ? String(params.user_id) : '',
+            message: summarizeMessagePayload(params.message)
+        };
+    }
+
+    if (action === 'get_login_info' || action === 'get_group_list' || action === 'get_friend_list') {
+        return {};
+    }
+
+    return Object.keys(params || {}).length > 0
+        ? { keys: Object.keys(params) }
+        : {};
+}
+
+function summarizeOneBotResult(action, result) {
+    if (action === 'get_login_info') {
+        return {
+            userId: result?.user_id ? String(result.user_id) : '',
+            nickname: result?.nickname || ''
+        };
+    }
+
+    if (action === 'get_group_list' || action === 'get_friend_list') {
+        return {
+            count: Array.isArray(result) ? result.length : 0
+        };
+    }
+
+    if (result && typeof result === 'object' && !Array.isArray(result)) {
+        return {
+            keys: Object.keys(result).slice(0, 10)
+        };
+    }
+
+    if (Array.isArray(result)) {
+        return {
+            count: result.length
+        };
+    }
+
+    return {
+        type: typeof result
+    };
+}
+
+export function buildMentionMessage(targetUserId, text) {
+    const normalizedTargetUserId = String(targetUserId || '').trim();
+    const normalizedText = String(text || '').trim();
+
+    return [
+        { type: 'at', data: { qq: normalizedTargetUserId } },
+        { type: 'text', data: { text: normalizedText ? ` ${normalizedText}` : '' } }
+    ];
+}
+
 export class OneBotClient extends EventEmitter {
     constructor(config, logger) {
         super();
@@ -132,12 +232,41 @@ export class OneBotClient extends EventEmitter {
     _call(action, params = {}) {
         return new Promise((resolve, reject) => {
             if (!this.connected) {
+                this.logger.error?.('[OneBot] API 调用失败: 未连接', { action });
                 reject(new Error('未连接到 OneBot'));
                 return;
             }
 
             const echo = ++this.callId;
-            this.pendingCalls.set(echo, { resolve, reject });
+            const startedAt = Date.now();
+            const summarizedParams = summarizeOneBotParams(action, params);
+            this.logger.debug?.('[OneBot] API 调用开始', {
+                action,
+                echo,
+                params: summarizedParams
+            });
+
+            this.pendingCalls.set(echo, {
+                resolve: (data) => {
+                    this.logger.info?.('[OneBot] API 调用成功', {
+                        action,
+                        echo,
+                        durationMs: Date.now() - startedAt,
+                        result: summarizeOneBotResult(action, data)
+                    });
+                    resolve(data);
+                },
+                reject: (error) => {
+                    this.logger.error?.('[OneBot] API 调用失败', {
+                        action,
+                        echo,
+                        durationMs: Date.now() - startedAt,
+                        error: error.message,
+                        params: summarizedParams
+                    });
+                    reject(error);
+                }
+            });
 
             this.ws.send(JSON.stringify({
                 action,
@@ -149,7 +278,14 @@ export class OneBotClient extends EventEmitter {
             setTimeout(() => {
                 if (this.pendingCalls.has(echo)) {
                     this.pendingCalls.delete(echo);
-                    reject(new Error('API 调用超时'));
+                    const timeoutError = new Error('API 调用超时');
+                    this.logger.error?.('[OneBot] API 调用超时', {
+                        action,
+                        echo,
+                        durationMs: Date.now() - startedAt,
+                        params: summarizedParams
+                    });
+                    reject(timeoutError);
                 }
             }, 30000);
         });
@@ -254,6 +390,16 @@ export class OneBotClient extends EventEmitter {
      */
     isConnected() {
         return this.connected;
+    }
+
+    getStatus() {
+        return {
+            connected: this.connected,
+            url: this.config?.url || '',
+            tokenMode: this.config?.tokenMode || 'header',
+            selfId: this.selfId || null,
+            readyState: this.ws?.readyState ?? null
+        };
     }
 
     /**

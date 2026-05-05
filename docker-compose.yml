@@ -1,0 +1,16 @@
+services:
+  mimirlink:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mimirlink
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      NODE_ENV: production
+    volumes:
+      - ./config.json:/app/config.json
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./audio:/app/audio

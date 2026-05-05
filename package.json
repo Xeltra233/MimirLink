@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "dev": "node src/index.js",
+    "dev:watch": "node --watch src/index.js",
     "debug": "NODE_ENV=development DEBUG=* node src/index.js",
     "check": "node -e \"console.log('✅ Node.js 工作正常 - MimirLink')\"",
     "install-deps": "npm install",
@@ -28,7 +29,7 @@
   "author": "MimirLink Runtime Team",
   "contributors": [
     {
-      "name": "Original Tavern-Link Team"
+      "name": "Original MimirLink Team"
     },
     {
       "name": "MimirLink Contributors"
@@ -45,7 +46,9 @@
   },
   "dependencies": {
     "axios": "^1.6.0",
+    "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.4.1",
     "express-session": "^1.18.2",
     "multer": "^2.1.1",
     "session-file-store": "^1.5.0",

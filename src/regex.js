@@ -25,7 +25,17 @@ export class RegexProcessor {
         this.enabled = config.enabled !== false;
         const mergedRules = usePresetRules
             ? [...presetRules, ...globalRules, ...presetRulesBound, ...characterRules]
-            : [...globalRules, ...presetRulesBound, ...characterRules];
+            : [...globalRules, ...characterRules];
+        mergedRules.push({
+            name: '【内置】去除思考链标签',
+            pattern: '<thinking>[\\s\\S]*?</thinking>',
+            flags: 'g',
+            replacement: '',
+            enabled: true,
+            stage: 'output',
+            source: 'built-in',
+            markdownOnly: false
+        });
         this.loadRules(mergedRules);
     }
 
@@ -51,15 +61,19 @@ export class RegexProcessor {
     }
 
     getRules() {
-        return this.rules.map((rule) => ({
+        return this.rules.filter((rule) => rule.source !== 'built-in').map((rule) => ({
             name: rule.name,
             pattern: rule.pattern.source,
             flags: rule.pattern.flags,
             replacement: rule.replacement,
             enabled: rule.enabled !== false,
             description: rule.description || '',
-            stage: rule.stage || 'output',
-            source: rule.source || 'custom'
+            stage: RegexProcessor.normalizeRuleStage(rule.stage, rule.promptOnly === true),
+            source: rule.source || 'custom',
+            markdownOnly: rule.markdownOnly === true,
+            promptOnly: rule.promptOnly === true,
+            minDepth: rule.minDepth ?? null,
+            maxDepth: rule.maxDepth ?? null
         }));
     }
 
@@ -85,12 +99,14 @@ export class RegexProcessor {
         const markdownOnly = rule.markdownOnly === true;
         const placementValue = Array.isArray(placement) ? placement[0] : placement;
 
-        let stage = rule.stage || (promptOnly ? 'input' : 'output');
+        let stage = typeof rule.stage === 'string' && rule.stage.trim() ? rule.stage : (promptOnly ? 'input' : 'output');
         if (typeof placementValue === 'number') {
             stage = placementValue === 2 ? 'output' : placementValue === 1 ? 'input' : stage;
         } else if (typeof placementValue === 'string' && placementValue.trim()) {
             stage = placementValue;
         }
+
+        const normalizedStage = RegexProcessor.normalizeRuleStage(stage, promptOnly);
 
         return {
             name: rule.name || rule.scriptName || `Imported Rule ${index + 1}`,
@@ -99,13 +115,47 @@ export class RegexProcessor {
             replacement: rule.replacement ?? rule.replaceString ?? '',
             enabled: rule.enabled !== false && rule.disabled !== true,
             description: rule.description || rule.comment || '',
-            stage,
+            stage: normalizedStage,
             source: rule.source || 'imported',
             markdownOnly,
             promptOnly,
             minDepth: rule.minDepth ?? null,
             maxDepth: rule.maxDepth ?? null
         };
+    }
+
+    static normalizeRuleStage(stage, promptOnly = false) {
+        const normalized = String(stage || '').trim().toLowerCase();
+
+        if (promptOnly) {
+            return 'input';
+        }
+
+        if (!normalized) {
+            return 'output';
+        }
+
+        if ([
+            'input',
+            'prompt',
+            'user_input',
+            'before_prompt',
+            'before_generation'
+        ].includes(normalized)) {
+            return 'input';
+        }
+
+        if ([
+            'output',
+            'display',
+            'response',
+            'assistant_output',
+            'after_generation'
+        ].includes(normalized)) {
+            return 'output';
+        }
+
+        return 'output';
     }
 
     static importRules(payload) {
@@ -117,9 +167,11 @@ export class RegexProcessor {
                     ? payload.regex
                     : Array.isArray(payload?.regex_scripts)
                         ? payload.regex_scripts
-                        : Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes)
-                            ? payload.extensions.SPreset.RegexBinding.regexes
-                            : [];
+                        : Array.isArray(payload?.extensions?.regex_scripts)
+                            ? payload.extensions.regex_scripts
+                            : Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes)
+                                ? payload.extensions.SPreset.RegexBinding.regexes
+                                : [];
 
         return items
             .map((rule, index) => RegexProcessor.normalizeImportedRule(rule, index))
@@ -135,9 +187,11 @@ export class RegexProcessor {
                     ? payload.regex
                     : Array.isArray(payload?.regex_scripts)
                         ? payload.regex_scripts
-                        : Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes)
-                            ? payload.extensions.SPreset.RegexBinding.regexes
-                            : [];
+                        : Array.isArray(payload?.extensions?.regex_scripts)
+                            ? payload.extensions.regex_scripts
+                            : Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes)
+                                ? payload.extensions.SPreset.RegexBinding.regexes
+                                : [];
 
         const imported = rawItems
             .map((rule, index) => RegexProcessor.normalizeImportedRule(rule, index))
@@ -150,17 +204,17 @@ export class RegexProcessor {
 
         const warnings = [];
         if (markdownOnlyCount > 0) {
-            warnings.push(`检测到 ${markdownOnlyCount} 条 markdownOnly 规则，当前只能按普通文本规则导入。`);
+            warnings.push(`检测到 ${markdownOnlyCount} 条 markdownOnly 规则，当前后端没有 markdown 渲染阶段，这些规则会被保留但不会在真实聊天链路执行。`);
         }
         if (runOnEditCount > 0) {
             warnings.push(`检测到 ${runOnEditCount} 条 runOnEdit 规则，当前不会复刻 ST 编辑态执行时机。`);
         }
         if (depthLimitedCount > 0) {
-            warnings.push(`检测到 ${depthLimitedCount} 条深度限制规则，当前仅保留元数据，不会完整复刻 ST 深度执行模型。`);
+            warnings.push(`检测到 ${depthLimitedCount} 条深度限制规则，当前仅按 depth=0 执行，超出范围的规则会在真实聊天链路中被跳过。`);
         }
 
         return {
-            detectedFormat: Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes) || Array.isArray(payload?.regex_scripts)
+            detectedFormat: Array.isArray(payload?.extensions?.SPreset?.RegexBinding?.regexes) || Array.isArray(payload?.extensions?.regex_scripts) || Array.isArray(payload?.regex_scripts)
                 ? 'sillytavern-regex'
                 : 'basic-regex',
             totalRules: rawItems.length,
@@ -183,10 +237,13 @@ export class RegexProcessor {
                     findRegex: rule.pattern,
                     replaceString: rule.replacement || '',
                     trimStrings: [],
-                    placement: rule.stage || 'output',
+                    placement: RegexProcessor.normalizeRuleStage(rule.stage, rule.promptOnly === true) === 'input' ? 1 : 2,
                     disabled: rule.enabled === false,
-                    markdownOnly: false,
-                    promptOnly: rule.stage === 'input'
+                    markdownOnly: rule.markdownOnly === true,
+                    promptOnly: rule.promptOnly === true || RegexProcessor.normalizeRuleStage(rule.stage, rule.promptOnly === true) === 'input',
+                    runOnEdit: rule.runOnEdit === true,
+                    minDepth: rule.minDepth ?? null,
+                    maxDepth: rule.maxDepth ?? null
                 }))
             };
         }
@@ -205,12 +262,19 @@ export class RegexProcessor {
 
         let result = text;
         const appliedRules = [];
+        const normalizedStage = RegexProcessor.normalizeRuleStage(stage);
 
         for (const rule of this.rules) {
             if (rule.enabled === false) {
                 continue;
             }
-            if (rule.stage && rule.stage !== stage) {
+            if (rule.markdownOnly === true && normalizedStage === 'input') {
+                continue;
+            }
+            if (!RegexProcessor.ruleMatchesStage(rule, normalizedStage)) {
+                continue;
+            }
+            if (!RegexProcessor.ruleMatchesDepth(rule, 0)) {
                 continue;
             }
 
@@ -239,6 +303,22 @@ export class RegexProcessor {
 
     processOutput(text) {
         return this.process(text, 'output');
+    }
+
+    static ruleMatchesStage(rule = {}, stage = 'output') {
+        return RegexProcessor.normalizeRuleStage(rule.stage, rule.promptOnly === true) === RegexProcessor.normalizeRuleStage(stage);
+    }
+
+    static ruleMatchesDepth(rule = {}, depth = 0) {
+        if (rule.minDepth != null && Number(depth) < Number(rule.minDepth)) {
+            return false;
+        }
+
+        if (rule.maxDepth != null && Number(depth) > Number(rule.maxDepth)) {
+            return false;
+        }
+
+        return true;
     }
 
     testRule(pattern, flags, replacement, testText) {
