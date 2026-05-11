@@ -1398,7 +1398,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const autoBackupDir = path.join(__dirname, '..', 'data', 'restore-backups');
             fsSync.mkdirSync(autoBackupDir, { recursive: true });
             const autoBackupFile = `pre-restore-${new Date().toISOString().replace(/[:.]/g, '-')}.tar.gz`;
-            const { pack, createGzip } = await import('tar-fs');
+            const { pack } = await import('tar-fs');
+            const { createGzip } = await import('zlib');
             const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
             fsSync.writeFileSync(path.join(tmpDir, '_current_config.json'), JSON.stringify(config, null, 2), 'utf8');
             const autoStream = pack(tmpDir).pipe(createGzip()).pipe(fsSync.createWriteStream(path.join(autoBackupDir, autoBackupFile)));
@@ -1408,8 +1409,14 @@ export function setupRoutes(app, config, saveConfig, managers) {
             if (fsSync.existsSync(backupConfigPath)) {
                 const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
                 const merged = deepMergeConfig(config, backupConfig);
-                Object.keys(config).forEach(k => delete config[k]);
-                Object.assign(config, merged);
+                // 将合并结果逐字段写回 config 对象（保留引用）
+                for (const key of Object.keys(merged)) {
+                    config[key] = merged[key];
+                }
+                // 删除备份中没有的 key（说明被故意移除）
+                for (const key of Object.keys(config)) {
+                    if (!(key in merged)) delete config[key];
+                }
                 saveConfig(config);
                 changes.replaced.push('config.json');
             }
