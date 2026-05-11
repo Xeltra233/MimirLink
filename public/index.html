@@ -4967,6 +4967,7 @@
                 <button type="button" class="config-subtab" data-config-panel="model" onclick="setConfigSubPanel('model')">模型供应</button>
                 <button type="button" class="config-subtab" data-config-panel="preset" onclick="setConfigSubPanel('preset')">预设</button>
                 <button type="button" class="config-subtab" data-config-panel="context" onclick="setConfigSubPanel('context')">上下文</button>
+                <button type="button" class="config-subtab" data-config-panel="data" onclick="setConfigSubPanel('data')">数据</button>
             </div>
             <div class="grid">
                 <div class="config-subpanel active" data-config-panel="overview">
@@ -5317,6 +5318,7 @@
                             </div>
                         </div>
                     </div>
+                </div>
                 </div>
                 </div>
                 <div class="config-subpanel" data-config-panel="memory">
@@ -5677,6 +5679,25 @@
                     </div>
                 </div>
                 </div>
+                <div class="config-subpanel" data-config-panel="data">
+                <div class="card">
+                    <div class="config-card-header">
+                        <h3>数据备份与恢复</h3>
+                        <p class="config-card-intro">导出完整数据备份（含角色卡、世界书、语料、预设、会话）或从备份恢复</p>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">备份</div>
+                        <p class="hint-text" style="margin-bottom:12px;">导出所有数据为单个 .tar.gz 文件。完整备份含 API 密钥（可迁移到新机器），安全备份隐藏密钥（适合分享）。</p>
+                        <button class="success" onclick="backupAllConfig()" style="margin-right:8px;">📥 备份全部</button>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">恢复</div>
+                        <p class="hint-text" style="margin-bottom:12px;">选择之前导出的 .tar.gz 备份文件。恢复前会自动备份当前状态到 data/restore-backups/。</p>
+                        <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 一键恢复</button>
+                        <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="handleRestoreFile(event)">
+                    </div>
+                </div>
+                </div>
             </div>
             </div>
 
@@ -5824,9 +5845,6 @@
             <div id="config-save-status" class="save-status" data-state="idle">尚未修改配置</div>
             <div class="save-row-actions">
                 <button class="success" onclick="saveConfig()">💾 保存配置</button>
-                <button class="secondary" onclick="backupAllConfig()">📥 备份全部</button>
-                <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 一键恢复</button>
-                <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="handleRestoreFile(event)">
             </div>
         </div>
         </div>
@@ -12499,17 +12517,25 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
         });
         // === 配置备份/恢复 ===
         async function backupAllConfig() {
+            const includeKeys = confirm(
+                '导出备份：\n\n' +
+                '点「确定」= 完整备份（含 API 密钥，可迁移到新机器直接用）\n' +
+                '点「取消」= 安全备份（密钥隐藏，适合分享给他人）'
+            );
             try {
-                const res = await fetch('/api/config/backup');
+                const url = includeKeys ? '/api/config/backup?includeKeys=true' : '/api/config/backup';
+                const res = await fetch(url);
                 if (!res.ok) throw new Error('备份失败');
                 const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
+                const objUrl = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
-                a.download = `mimirlink-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.href = objUrl;
+                const name = res.headers.get('Content-Disposition')?.match(/filename="(.+)"/)?.[1] ||
+                    `mimirlink-backup-${new Date().toISOString().slice(0,10)}.tar.gz`;
+                a.download = name;
                 a.click();
-                URL.revokeObjectURL(url);
-                showToast('配置已备份');
+                URL.revokeObjectURL(objUrl);
+                showToast(includeKeys ? '完整备份已下载（含密钥，请妥善保管）' : '安全备份已下载（密钥已隐藏）');
             } catch(e) { showToast('备份失败: ' + e.message, true); }
         }
         async function handleRestoreFile(event) {
