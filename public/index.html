@@ -45,6 +45,8 @@
             min-height: 100vh;
             overflow-y: auto;
             -webkit-font-smoothing: antialiased;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-y: none;
         }
 
         body[data-theme='dark'] {
@@ -1148,9 +1150,226 @@
             #range-info-panel { display: none; }
         }
         @media (max-width: 900px) {
-            .range-layout { grid-template-columns: 1fr; height: auto; }
+            .range-layout {
+                grid-template-columns: 1fr;
+                height: auto;
+                gap: 12px;
+                padding: 8px;
+            }
         }
         .range-col { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+
+        /* 移动端优化 */
+        @media (max-width: 768px) {
+            .range-layout {
+                padding: 6px;
+                gap: 10px;
+            }
+
+            /* 聊天列在移动端占满高度 */
+            .range-chat-col {
+                min-height: 60vh;
+                max-height: 80vh;
+            }
+
+            /* 头部优化 - 更紧凑，可滚动 */
+            .range-chat-header {
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 10px;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .range-chat-header-label {
+                font-size: 0.9rem;
+                flex: 0 0 100%;
+                margin-bottom: 4px;
+            }
+
+            .range-chat-header select {
+                font-size: 0.85rem;
+                padding: 6px 10px;
+                min-height: 36px;
+                max-width: none;
+                flex: 1 1 calc(50% - 4px);
+            }
+
+            /* 输入框和按钮 - 更大的触摸目标 */
+            .range-chat-foot {
+                padding: 12px;
+                gap: 8px;
+            }
+
+            .range-chat-foot textarea,
+            .range-chat-foot input {
+                font-size: 16px; /* 防止 iOS 自动缩放 */
+                padding: 10px 14px;
+                min-height: 44px;
+            }
+
+            .range-chat-foot button {
+                padding: 10px 20px;
+                min-height: 44px;
+                font-size: 0.9rem;
+            }
+
+            .range-clear-round-btn {
+                width: 44px !important;
+                height: 44px !important;
+                font-size: 1rem !important;
+            }
+
+            /* 聊天气泡 */
+            .chat-bubble {
+                max-width: 90%;
+                font-size: 0.9rem;
+                padding: 12px 16px;
+            }
+
+            /* 状态栏 */
+            .range-chat-status {
+                padding: 8px 12px;
+                font-size: 0.85rem;
+            }
+
+            .range-status-inline-btn {
+                min-height: 32px;
+                padding: 4px 12px;
+                font-size: 0.8rem;
+            }
+
+            /* Agent 头部 */
+            .range-iter-label,
+            .range-iter-count-text {
+                font-size: 0.8rem;
+            }
+
+            .range-iter-input {
+                width: 50px;
+                font-size: 0.85rem;
+                padding: 4px 6px;
+                min-height: 32px;
+            }
+
+            .range-state-indicator {
+                padding: 6px 12px;
+                font-size: 0.85rem;
+            }
+
+            /* 工具面板按钮 */
+            .range-btn-sm {
+                font-size: 0.8rem;
+                padding: 6px 12px;
+                min-height: 36px;
+            }
+
+            .range-btn-xs {
+                font-size: 0.75rem;
+                padding: 4px 10px;
+                min-height: 32px;
+            }
+
+            /* 复选框标签 */
+            .range-checkbox-label {
+                font-size: 0.85rem;
+                padding: 4px 0;
+            }
+
+            .range-checkbox-label input[type="checkbox"] {
+                width: 18px;
+                height: 18px;
+                margin-right: 6px;
+            }
+
+            /* 语料库工具栏 */
+            .range-corpus-toolbar {
+                flex-direction: column;
+                gap: 10px;
+            }
+
+            .range-corpus-toolbar .form-group {
+                flex: none;
+            }
+
+            .range-corpus-toolbar label {
+                font-size: 0.8rem;
+            }
+
+            .range-corpus-toolbar select {
+                font-size: 0.85rem;
+                padding: 6px 10px;
+                min-height: 36px;
+            }
+
+            /* 卡片内边距 */
+            .range-card-padded {
+                padding: 12px;
+            }
+
+            /* 段落拆解卡片 */
+            .range-segment-card {
+                font-size: 0.85rem;
+            }
+
+            .range-segment-head {
+                padding: 8px 12px;
+                flex-wrap: wrap;
+            }
+
+            .range-segment-label {
+                font-size: 0.9rem;
+            }
+
+            .range-segment-content {
+                font-size: 0.8rem;
+                padding: 10px 12px;
+            }
+
+            /* 按钮组自动换行 */
+            .btn-group {
+                flex-wrap: wrap;
+            }
+
+            .btn-group button {
+                flex: 1 1 auto;
+                min-width: fit-content;
+            }
+
+            /* 隐藏不必要的元素 */
+            .range-header-spacer {
+                display: none;
+            }
+        }
+
+        /* 超小屏幕优化 (< 480px) */
+        @media (max-width: 480px) {
+            .range-chat-header select {
+                flex: 1 1 100%;
+            }
+
+            .chat-bubble {
+                max-width: 95%;
+                font-size: 0.88rem;
+            }
+
+            .range-chat-foot {
+                flex-wrap: wrap;
+            }
+
+            .range-chat-foot textarea,
+            .range-chat-foot input {
+                flex: 1 1 100%;
+            }
+
+            .range-chat-foot button {
+                flex: 1 1 calc(50% - 4px);
+            }
+
+            .range-clear-round-btn {
+                flex: 0 0 44px !important;
+            }
+        }
 
         /* 聊天列 */
         .range-chat-col {
@@ -2132,6 +2351,12 @@
                 padding: 8px 12px;
                 border-right: none;
                 border-bottom: 1px solid var(--border);
+                -webkit-overflow-scrolling: touch;
+                scrollbar-width: none;
+            }
+
+            .tabs::-webkit-scrollbar {
+                display: none;
             }
 
             .tab {
@@ -2160,6 +2385,53 @@
 
             .task-grid {
                 grid-template-columns: 1fr;
+            }
+        }
+
+        /* 移动端触摸优化 */
+        @media (max-width: 768px) {
+            .tabs {
+                padding: 10px 12px;
+                gap: 8px;
+            }
+
+            .tab {
+                font-size: 0.9rem;
+                padding: 10px 16px;
+                min-height: 44px;
+                display: flex;
+                align-items: center;
+            }
+
+            .content-shell {
+                padding: 10px 10px 60px;
+            }
+
+            /* 按钮最小触摸目标 */
+            button:not(.range-clear-round-btn):not(.range-sidebar-toggle-btn):not(.range-mobile-tab):not(.range-header-toggle-btn) {
+                min-height: 44px;
+                padding: 10px 16px;
+            }
+
+            /* 输入框最小高度 */
+            input[type="text"],
+            input[type="number"],
+            input[type="password"],
+            select,
+            textarea {
+                min-height: 44px;
+                font-size: 16px; /* 防止 iOS 自动缩放 */
+            }
+
+            /* 卡片间距 */
+            .card {
+                margin-bottom: 12px;
+            }
+
+            /* 表单组 */
+            .form-group label {
+                font-size: 0.9rem;
+                margin-bottom: 6px;
             }
         }
 
@@ -2192,6 +2464,13 @@
                 font-size: 0.52em !important;
                 padding: 3px 8px !important;
                 letter-spacing: 0.4px !important;
+            }
+
+            /* 手机端精简 banner：隐藏非必要元素 */
+            .status-item:first-child,
+            .theme-picker,
+            .global-search-trigger {
+                display: none !important;
             }
 
             .status-bar {
@@ -3151,14 +3430,59 @@
             height: 100%;
             min-height: 0;
         }
-        @media (max-width: 1300px) {
-            .range-layout-with-sidebar { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); }
+        /* ====== 移动端新组件基础样式（必须位于 @media 之前） ====== */
+        .range-mobile-tabs {
+            display: none;
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 90;
+            background: var(--bg-elevated); border-top: 1px solid var(--border);
+            padding: 4px 8px max(4px, env(safe-area-inset-bottom));
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 6px;
+            -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
         }
-        @media (max-width: 900px) {
-            .range-layout-with-sidebar { grid-template-columns: 1fr; height: auto; }
-            .range-session-sidebar { width: 100%; min-width: unset; }
-            .range-session-sidebar.collapsed { display: none; }
+        .range-mobile-sidebar-btn {
+            min-width: 40px; font-size: 1.1rem; flex: 0 0 auto;
+            padding: 8px 8px 6px;
+            opacity: 0.7;
         }
+        .range-mobile-tab {
+            flex: 1; padding: 8px 4px 6px; border: none; border-radius: 10px;
+            background: transparent; color: var(--text-muted);
+            font-size: 0.78rem; font-weight: 500; cursor: pointer;
+            display: flex; flex-direction: column; align-items: center; gap: 2px;
+            transition: background 0.15s, color 0.15s;
+            min-height: 48px; justify-content: center;
+        }
+        .range-mobile-tab.active {
+            background: var(--accent); color: #fff;
+        }
+        .range-mobile-tab:active { transform: scale(0.96); }
+
+        .range-sidebar-overlay {
+            display: none;
+            position: fixed; inset: 0; z-index: 85;
+            background: rgba(0,0,0,0.45);
+            opacity: 0; transition: opacity 0.25s ease;
+            pointer-events: none;
+        }
+        .range-sidebar-overlay.show {
+            opacity: 1; pointer-events: auto;
+        }
+
+        .range-mobile-tools-header {
+            display: none;
+            align-items: center; justify-content: space-between;
+            padding: 12px 14px; border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .range-mobile-tools-title { font-weight: 600; font-size: 0.95rem; }
+        .range-mobile-tools-close {
+            width: 32px; height: 32px; padding: 0; border: none; border-radius: 50%;
+            background: var(--bg-inset); color: var(--text-muted);
+            font-size: 1rem; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .range-mobile-pad { padding-bottom: 70px; }
 
         .range-session-sidebar {
             border: 1px solid var(--border);
@@ -3262,6 +3586,229 @@
         .range-session-badge.error { background: rgba(217,64,64,0.12); color: #d94040; }
         .range-session-badge.ok { background: rgba(45,138,94,0.12); color: #2d8a5e; }
 
+        @media (max-width: 1300px) {
+            .range-layout-with-sidebar { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); }
+            /* 1300px以下信息面板在桌面端隐藏，移动端通过底部Tab抽屉访问 */
+        }
+
+        /* ====== 平板 / 手机通用 ====== */
+        @media (max-width: 900px) {
+            .range-layout-with-sidebar {
+                grid-template-columns: 1fr;
+                height: 100%; min-height: 0;
+                gap: 10px; padding: 8px;
+                position: relative;
+                overflow-x: hidden;
+            }
+
+            /* 侧边栏 → 左侧浮层 */
+            .range-session-sidebar {
+                position: fixed; top: 0; left: 0; bottom: 0; z-index: 86;
+                width: 280px; max-width: 80vw; min-width: unset;
+                border-radius: 0 12px 12px 0;
+                transform: translateX(-100%);
+                transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+                box-shadow: 4px 0 20px rgba(0,0,0,0.2);
+            }
+            .range-session-sidebar:not(.collapsed) {
+                transform: translateX(0);
+            }
+            .range-session-sidebar.collapsed {
+                width: 280px; max-width: 80vw;
+                transform: translateX(-100%);
+            }
+            /* 确保侧边栏打开时遮罩可见 */
+            .range-sidebar-overlay.show { display: block; }
+            .range-sidebar-overlay { display: block; }
+
+            /* 侧边栏打开时隐藏底部Tab（避免遮挡） */
+            body.range-sidebar-open .range-mobile-tabs { display: none; }
+
+            /* 平板竖屏：恢复信息面板显示（1300px断点隐藏了它） */
+            #range-info-panel { display: flex; }
+        }
+
+        /* ====== 手机端优化 (≤ 768px) ====== */
+        @media (max-width: 768px) {
+            /* 靶场面板最大化 — 吃掉 content-shell 底部 padding */
+            #prompt-range.panel.active {
+                padding: 0;
+                overflow: visible;
+                height: calc(100% + 52px);
+            }
+
+            .range-layout-with-sidebar {
+                padding: 4px;
+                padding-bottom: 52px; /* 给底部Tab留空间（Tab约57px） */
+                height: 100%;
+                min-height: 0;
+                grid-template-rows: 1fr;
+            }
+
+            /* 底部Tab栏显示 */
+            .range-mobile-tabs { display: grid; }
+
+            /* 工具面板 → 底部抽屉（最大化占比） */
+            #range-info-panel {
+                display: flex !important;
+                position: fixed; bottom: 0; left: 0; right: 0; z-index: 101;
+                max-height: 92dvh; overflow-y: auto;
+                border-radius: 16px 16px 0 0;
+                background: var(--bg-elevated);
+                box-shadow: 0 -4px 20px rgba(0,0,0,0.2);
+                transform: translateY(100%);
+                transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                padding-bottom: max(64px, calc(env(safe-area-inset-bottom) + 52px));
+                flex-direction: column;
+            }
+            #range-info-panel.drawer-open {
+                transform: translateY(0);
+            }
+            /* 覆盖桌面端卡片伸缩规则 — 抽屉里卡片自然高度 */
+            #range-info-panel > .card {
+                flex: 0 0 auto;
+                min-height: auto;
+                overflow: visible;
+            }
+            .range-mobile-tools-header { display: flex; }
+
+            /* 列按Tab切换显隐 */
+            .range-col[data-range-col] { display: none; }
+            .range-col[data-range-col].range-col-active { display: flex; }
+
+            /* 侧边栏开关按钮始终可见 */
+            .range-sidebar-toggle-btn {
+                width: 44px; height: 44px;
+                top: 8px; left: 8px;
+            }
+            .range-session-sidebar-head {
+                padding: 12px 12px 12px 56px;
+            }
+            .range-sidebar-title { font-size: 1rem; }
+            .range-sidebar-new-btn {
+                font-size: 0.9rem; padding: 6px 14px; min-height: 36px;
+            }
+            .range-session-sidebar-list { padding: 10px; gap: 10px; }
+
+            /* 聊天列填满网格单元 */
+            .range-chat-col {
+                min-height: 0; max-height: none;
+                overflow: hidden;
+            }
+            /* 让 chat-body 在列内滚动 */
+            .range-chat-col .range-chat-body {
+                flex: 1 1 0;
+                min-height: 0;
+                overflow-y: auto;
+            }
+            /* 横屏时聊天高度自适应 */
+            @media (orientation: landscape) {
+                .range-chat-col { min-height: 40dvh; }
+                .range-mobile-tabs { padding: 2px 8px max(2px, env(safe-area-inset-bottom)); }
+                .range-mobile-tab { min-height: 38px; padding: 4px 4px 2px; font-size: 0.72rem; }
+                .range-layout-with-sidebar { padding-bottom: 58px; }
+            }
+
+            /* 头部：默认折叠，只显示标签+设置按钮 */
+            .range-chat-header {
+                flex-wrap: wrap; gap: 4px; padding: 6px 10px;
+                flex-shrink: 0;
+                position: relative;
+            }
+            .range-chat-header-label { font-size: 0.85rem; flex: 0 0 auto; }
+            .range-chat-header select,
+            .range-chat-header .range-header-spacer,
+            .range-chat-header .range-iter-label,
+            .range-chat-header .range-iter-input,
+            .range-chat-header .range-state-indicator {
+                display: none;
+            }
+            /* 展开时显示所有控件 */
+            .range-chat-header.range-header-open select,
+            .range-chat-header.range-header-open .range-header-spacer,
+            .range-chat-header.range-header-open .range-iter-label,
+            .range-chat-header.range-header-open .range-iter-input,
+            .range-chat-header.range-header-open .range-state-indicator {
+                display: block;
+            }
+            .range-chat-header.range-header-open select {
+                font-size: 0.8rem; padding: 4px 8px; min-height: 32px;
+                max-width: none; flex: 1 1 calc(50% - 4px); border-radius: 6px;
+            }
+            .range-chat-header.range-header-open .range-header-spacer { flex: 1; }
+            .range-chat-header.range-header-open .range-iter-label,
+            .range-chat-header.range-header-open .range-iter-input { flex: 0 0 auto; }
+            .range-chat-header.range-header-open .range-state-indicator { flex: 0 0 auto; }
+            /* 展开/收起按钮 — 覆盖全局44px规则 */
+            .range-header-toggle-btn {
+                display: inline-flex; align-items: center; gap: 4px;
+                font-size: 0.75rem; padding: 3px 8px; min-height: 28px;
+                border: 1px dashed var(--border); border-radius: 8px;
+                background: var(--bg-inset); color: var(--text-muted);
+                cursor: pointer; flex: 0 0 auto;
+            }
+            .range-header-toggle-btn:active { background: var(--bg); }
+            .range-header-open .range-header-toggle-btn { margin-bottom: 2px; }
+            /* Agent头部保持展开状态（控件少，不需要折叠） */
+            .range-chat-header:has(.range-iter-input) select,
+            .range-chat-header:has(.range-iter-input) .range-header-spacer,
+            .range-chat-header:has(.range-iter-input) .range-iter-label,
+            .range-chat-header:has(.range-iter-input) .range-iter-input,
+            .range-chat-header:has(.range-iter-input) .range-state-indicator {
+                display: block;
+            }
+            .range-chat-header:has(.range-iter-input) .range-header-toggle-btn { display: none; }
+
+            /* 输入区域紧凑化 */
+            .range-chat-foot { padding: 8px; gap: 6px; }
+            .range-chat-foot textarea, .range-chat-foot input {
+                font-size: 16px; padding: 6px 10px; min-height: 36px;
+            }
+            .range-chat-foot button { padding: 6px 14px; min-height: 36px; font-size: 0.85rem; }
+            .range-clear-round-btn { width: 36px !important; height: 36px !important; font-size: 0.9rem !important; }
+
+            /* 聊天气泡 */
+            .chat-bubble { max-width: 90%; font-size: 0.9rem; padding: 12px 16px; }
+
+            /* 状态栏 */
+            .range-chat-status { padding: 8px 12px; font-size: 0.85rem; }
+            .range-status-inline-btn { min-height: 32px; padding: 4px 12px; font-size: 0.8rem; }
+
+            /* Agent 迭代控件 */
+            .range-iter-label, .range-iter-count-text { font-size: 0.8rem; }
+            .range-iter-input { width: 50px; font-size: 0.85rem; padding: 4px 6px; min-height: 32px; }
+            .range-state-indicator { padding: 6px 12px; font-size: 0.85rem; }
+
+            /* 工具面板按钮 */
+            .range-btn-sm { font-size: 0.8rem; padding: 6px 12px; min-height: 36px; }
+            .range-btn-xs { font-size: 0.75rem; padding: 4px 10px; min-height: 32px; }
+
+            /* 复选框 */
+            .range-checkbox-label { font-size: 0.85rem; padding: 4px 0; }
+            .range-checkbox-label input[type="checkbox"] { width: 18px; height: 18px; margin-right: 6px; }
+
+            /* 语料库工具栏 */
+            .range-corpus-toolbar { flex-direction: column; gap: 10px; }
+            .range-corpus-toolbar .form-group { flex: none; }
+            .range-corpus-toolbar label { font-size: 0.8rem; }
+            .range-corpus-toolbar select { font-size: 0.85rem; padding: 6px 10px; min-height: 36px; }
+
+            /* 卡片内边距 */
+            .range-card-padded { padding: 12px; }
+
+            /* 段落拆解 */
+            .range-segment-card { font-size: 0.85rem; }
+            .range-segment-head { padding: 8px 12px; flex-wrap: wrap; }
+            .range-segment-label { font-size: 0.9rem; }
+            .range-segment-content { font-size: 0.8rem; padding: 10px 12px; }
+
+            /* 按钮组换行 */
+            .btn-group { flex-wrap: wrap; }
+            .btn-group button { flex: 1 1 auto; min-width: fit-content; }
+        }
+
+
+        /* ====== 移动端整体优化 ====== */
         .model-provider-layout {
             display: grid;
             grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
@@ -4691,6 +5238,19 @@
                                 <p class="hint-text">它和上面的“管理员指令”不是一回事：上面是你手动输入命令触发，这里是允许模型在回复流程里自行调用</p>
                             </div>
                             <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-ai-tool-text-fallback-enabled">
+                                    启用文本工具兜底
+                                </label>
+                                <p class="hint-text">当模型不支持原生 tool_calls 时，追加严格 JSON 协议，让模型输出工具调用 JSON，由本地解析并执行。</p>
+                                <p class="hint-text">仍然优先走原生工具调用；只有上游明确不支持工具调用时才切到这个兜底。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>文本工具最大轮次</label>
+                                <input type="number" id="config-ai-tool-text-fallback-max-rounds" placeholder="3" min="1" max="8">
+                                <p class="hint-text">限制文本工具连续调用轮数，避免模型反复套娃。</p>
+                            </div>
+                            <div class="form-group">
                                 <label>搜索方式</label>
                                 <select id="config-ai-tool-web-search-provider" onchange="updateWebSearchProviderFields(); markConfigDirty('搜索方式已修改')">
                                     <option value="duckduckgo">DuckDuckGo（免 Key）</option>
@@ -4927,7 +5487,7 @@
                                                 <option value="openai-compatible">OpenAI Compatible</option>
                                                 <option value="openai">OpenAI</option>
                                                 <option value="deepseek">DeepSeek</option>
-                                                <option value="claude">Claude</option>
+                                                <option value="anthropic">Anthropic</option>
                                                 <option value="gemini">Gemini</option>
                                                 <option value="ollama">Ollama</option>
                                                 <option value="custom">Custom</option>
@@ -5123,6 +5683,7 @@
         <!-- 提示词优化靶场 -->
         <div class="panel" id="prompt-range">
             <div class="range-layout range-layout-with-sidebar">
+                <div class="range-sidebar-overlay" id="range-sidebar-overlay"></div>
                 <aside class="range-session-sidebar collapsed" id="range-session-sidebar">
                     <button class="range-sidebar-toggle-btn" type="button" data-range-action="toggle-sidebar" title="收起侧边栏"><span class="hamburger-icon"></span></button>
                     <div class="range-session-sidebar-head">
@@ -5133,15 +5694,21 @@
                         <div class="empty-state">暂无会话</div>
                     </div>
                 </aside>
+                <nav class="range-mobile-tabs" id="range-mobile-tabs">
+                    <button class="range-mobile-tab active" data-range-mobile-tab="test">💬 测试</button>
+                    <button class="range-mobile-tab" data-range-mobile-tab="agent">🤖 Agent</button>
+                    <button class="range-mobile-tab" data-range-mobile-tab="tools">🔧 工具</button>
+                    <button class="range-mobile-tab range-mobile-sidebar-btn" data-range-action="toggle-sidebar" title="会话列表">☰</button>
+                </nav>
                 <!-- 第1列：测试对话 -->
-                <div class="range-col range-chat-col">
+                <div class="range-col range-chat-col" data-range-col="test">
                     <div class="range-chat-header">
                         <span class="range-chat-header-label">测试</span>
-                        <select id="range-provider" data-range-action="provider-change"></select>
-                        <select id="range-model" data-range-action="model-change"><option value="">默认</option></select>
+                        <select id="range-provider" data-range-action="provider-change" style="display:none"></select>
+                        <select id="range-model" data-range-action="model-change" class="range-model-all"></select>
                         <select id="range-character" data-range-action="character-change"></select>
-                        <select id="range-worldbook" class="range-select-narrow" data-range-action="worldbook-change"><option value="">世界书</option></select>
-                        <select id="range-preset" class="range-select-narrow" data-range-action="preset-change"><option value="">预设</option></select>
+                        <select id="range-worldbook" class="range-select-narrow" data-range-action="worldbook-change"></select>
+                        <select id="range-preset" class="range-select-narrow" data-range-action="preset-change"></select>
                     </div>
                     <div class="range-chat-body" id="range-test-chat"><div class="empty-state">输入消息开始测试</div></div>
                     <div class="range-chat-status" id="range-test-status" style="display:none"><span class="range-state-dot running"></span>AI 回复中...<button class="secondary range-status-inline-btn" data-range-action="stop-ai">打断</button></div>
@@ -5153,11 +5720,11 @@
                 </div>
 
                 <!-- 第2列：优化师Agent -->
-                <div class="range-col range-chat-col">
+                <div class="range-col range-chat-col" data-range-col="agent">
                     <div class="range-chat-header">
                         <span class="range-chat-header-label">Agent</span>
-                        <select id="range-opt-provider" data-range-action="opt-provider-change"></select>
-                        <select id="range-opt-model" data-range-action="opt-model-change"><option value="">默认</option></select>
+                        <select id="range-opt-provider" data-range-action="opt-provider-change" style="display:none"></select>
+                        <select id="range-opt-model" data-range-action="opt-model-change" class="range-model-all"></select>
                         <div class="range-header-spacer"></div>
                         <span class="range-iter-label">上限</span><input type="number" id="range-max-iter" value="5" min="1" max="20" class="range-iter-input">
                         <span id="range-iter-count" class="range-iter-count-text">-</span>
@@ -5179,7 +5746,11 @@
                 </div>
 
                 <!-- 第3列：语料库/日志/工具 -->
-                <div class="range-col" id="range-info-panel">
+                <div class="range-col" id="range-info-panel" data-range-col="tools">
+                    <div class="range-mobile-tools-header" id="range-mobile-tools-header">
+                        <span class="range-mobile-tools-title">工具面板</span>
+                        <button class="range-mobile-tools-close" data-range-action="close-tools">✕</button>
+                    </div>
                     <div class="card range-card-padded">
                         <div class="section-head range-section-head">
                             <h3 class="range-panel-h3">语料库 <span id="range-corpus-count" class="range-corpus-count"></span></h3>
@@ -5218,6 +5789,10 @@
                             <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-reference" checked> 回复引用</label>
                             <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-intent" checked> 用户意图</label>
                         </div>
+                        <div class="range-section-label">输出格式</div>
+                        <div class="range-ctx-checkboxes">
+                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-json-mode" checked data-range-action="json-mode-change"> JSON 输出</label>
+                        </div>
                         <div class="range-iteration-log" id="range-iter-log"><div class="empty-state">迭代日志</div></div>
                     </div>
                     <div class="card range-card-padded" id="range-diff-card" style="display:none">
@@ -5249,6 +5824,9 @@
             <div id="config-save-status" class="save-status" data-state="idle">尚未修改配置</div>
             <div class="save-row-actions">
                 <button class="success" onclick="saveConfig()">💾 保存配置</button>
+                <button class="secondary" onclick="backupAllConfig()">📥 备份全部</button>
+                <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 一键恢复</button>
+                <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="handleRestoreFile(event)">
             </div>
         </div>
         </div>
@@ -5295,27 +5873,27 @@
         let currentConfig = {};
         const AI_PROVIDER_DEFAULTS = {
             'openai-compatible': {
-                baseUrl: 'https://api.openai.com/v1',
+                baseUrl: 'https://api.openai.com',
                 model: 'gpt-4o-mini'
             },
             openai: {
-                baseUrl: 'https://api.openai.com/v1',
+                baseUrl: 'https://api.openai.com',
                 model: 'gpt-4o-mini'
             },
             deepseek: {
-                baseUrl: 'https://api.deepseek.com/v1',
+                baseUrl: 'https://api.deepseek.com',
                 model: 'deepseek-chat'
             },
-            claude: {
-                baseUrl: 'https://api.openai-proxy.org/anthropic/v1',
+            anthropic: {
+                baseUrl: 'https://api.anthropic.com',
                 model: 'claude-sonnet-4-5'
             },
             gemini: {
-                baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+                baseUrl: 'https://generativelanguage.googleapis.com',
                 model: 'gemini-2.5-flash'
             },
             ollama: {
-                baseUrl: 'http://127.0.0.1:11434/v1',
+                baseUrl: 'http://127.0.0.1:11434',
                 model: 'qwen3:8b'
             },
             custom: {
@@ -8462,7 +9040,13 @@
                 displayContent: content
             };
         }
-
+        function updateTextToolFallbackFields() {
+            const enabled = document.getElementById('config-ai-tool-text-fallback-enabled')?.checked === true;
+            const maxRoundsInput = document.getElementById('config-ai-tool-text-fallback-max-rounds');
+            if (maxRoundsInput) {
+                maxRoundsInput.disabled = !enabled;
+            }
+        }
 
         function getPresetPromptTokenCount(item = {}) {
             const content = String(item.content || '').trim();
@@ -10389,8 +10973,12 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (normalized === 'openai') {
                 return 'openai';
             }
-            if (normalized === 'deepseek' || normalized === 'claude' || normalized === 'gemini' || normalized === 'ollama' || normalized === 'custom') {
+            if (normalized === 'deepseek' || normalized === 'anthropic' || normalized === 'gemini' || normalized === 'ollama' || normalized === 'custom') {
                 return normalized;
+            }
+            // 向后兼容：claude 映射到 anthropic
+            if (normalized === 'claude') {
+                return 'anthropic';
             }
             return 'openai-compatible';
         }
@@ -10428,7 +11016,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 'openai-compatible': 'OpenAI Compatible',
                 openai: 'OpenAI',
                 deepseek: 'DeepSeek',
-                claude: 'Claude',
+                anthropic: 'Anthropic',
                 gemini: 'Gemini',
                 ollama: 'Ollama',
                 custom: 'Custom'
@@ -10597,18 +11185,36 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
         }
 
         function refreshAIModelSelectOptions() {
-            const options = getAllAIProviderModels({ enabledOnly: true, chatOnly: true });
-            const optionHtml = '<option value="">选择模型</option>' + options.map((model) => `
-                <option value="${escapeHtml(model.value)}">${escapeHtml(model.providerName)} / ${escapeHtml(model.id)}</option>
-            `).join('');
-            ['config-chat-model-ref', 'config-memory-participant-profile-model'].forEach((selectId) => {
+            const providers = (aiProviderEntries || []).filter(e => e.baseUrl);
+            const targetIds = ['config-chat-model-ref', 'config-memory-participant-profile-model'];
+            targetIds.forEach((selectId) => {
                 const select = document.getElementById(selectId);
-                if (!select) {
-                    return;
-                }
+                if (!select) return;
                 const currentValue = select.value;
-                select.innerHTML = optionHtml;
-                select.value = options.some((model) => model.value === currentValue) ? currentValue : '';
+                select.innerHTML = '';
+                providers.forEach(entry => {
+                    const chatModels = (entry.models || []).filter(m => {
+                        const n = normalizeAIModelEntry(m);
+                        return n && n.enabled !== false && isChatModel(n.id);
+                    });
+                    if (chatModels.length === 0) return;
+                    const group = document.createElement('optgroup');
+                    group.label = entry.name || entry.id;
+                    chatModels.forEach(m => {
+                        const n = normalizeAIModelEntry(m);
+                        const opt = document.createElement('option');
+                        opt.value = `${entry.id}::${n.id}`;
+                        opt.textContent = n.id;
+                        group.appendChild(opt);
+                    });
+                    select.appendChild(group);
+                });
+                const matchingOption = currentValue ? Array.from(select.options).find(o => o.value === currentValue) : null;
+                if (matchingOption) {
+                    select.value = currentValue;
+                } else if (select.options.length > 0) {
+                    select.options[0].selected = true;
+                }
             });
         }
 
@@ -10745,7 +11351,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             syncActiveAIProviderFromInputs();
             const entry = normalizeAIProviderEntry({
                 id: createAIProviderId(),
-                name: `模型供应${aiProviderEntries.length + 1}`,
+                name: `模型供应商 ${aiProviderEntries.length + 1}`,
                 provider: 'openai-compatible',
                 models: []
             }, aiProviderEntries.length);
@@ -10753,7 +11359,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             activeAIProviderId = entry.id;
             renderAIProviderList();
             renderActiveAIProviderFields();
-            markConfigDirty('未提供额外元数据');
+            markConfigDirty('新增模型供应商');
         }
 
         function duplicateAIProviderEntry() {
@@ -10775,7 +11381,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             activeAIProviderId = entry.id;
             renderAIProviderList();
             renderActiveAIProviderFields();
-            markConfigDirty('未提供额外元数据');
+            markConfigDirty('复制模型供应商');
         }
 
         function deleteAIProviderEntry() {
@@ -10790,7 +11396,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             activeAIProviderId = aiProviderEntries[Math.max(0, index - 1)]?.id || aiProviderEntries[0]?.id || '';
             renderAIProviderList();
             renderActiveAIProviderFields();
-            markConfigDirty('未提供额外元数据');
+            markConfigDirty('删除模型供应商');
         }
 
         function initializeAIProviderEntries(aiConfig = {}) {
@@ -10798,7 +11404,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 ? aiConfig.providers
                 : [{
                     id: 'default',
-                    name: '? 1',
+                    name: '默认供应商 1',
                     provider: aiConfig.provider || 'openai-compatible',
                     baseUrl: aiConfig.baseUrl || '',
                     apiKey: aiConfig.apiKey || '',
@@ -11330,13 +11936,13 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             }
 
             document.getElementById('config-ai-maxtokens').value = detected;
-            showToast(`已应用推Tokens: ${detected}`);
+            showToast(`已应用推荐 Tokens: ${detected}`);
         }
 
         async function fetchAIModels() {
             const draft = buildResolvedAIConfig(getAIConfigDraft());
             if (!draft.baseUrl) {
-                showToast('请先选择 provider，或在模型供应商中填AI Base URL', true);
+                showToast('请先选择 provider，或在模型供应商中填写 AI Base URL', true);
                 return;
             }
 
@@ -11354,7 +11960,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 syncAIModelList(data.models || []);
                 renderAIModelMeta({ summaryText: summarizeModelList(data.models || []) });
                 renderModelQuickList(availableAIModels);
-                showToast(`已拉${(data.models || []).length} 个模型，请手动启用需要使用的模型`);
+                showToast(`已拉取 ${(data.models || []).length} 个模型，请手动启用需要使用的模型`);
             } catch (e) {
                 showToast(`拉取模型失败: ${e.message}`, true);
                 setConfigSaveStatus('error', `模型拉取失败: ${e.message}`);
@@ -11364,11 +11970,11 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
         async function probeAIModel() {
             const draft = buildResolvedAIConfig(getAIConfigDraft());
             if (!draft.baseUrl) {
-                showToast('请先选择 provider，或在模型供应商中填AI Base URL', true);
+                showToast('请先选择 provider，或在模型供应商中填写 AI Base URL', true);
                 return;
             }
             if (!draft.model) {
-                showToast('请先填写或择模型', true);
+                showToast('请先填写或选择模型', true);
                 return;
             }
 
@@ -11448,6 +12054,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-command-participant-profile-enabled').checked = currentConfig.chat?.commands?.participantProfileManual?.enabled !== false;
                 document.getElementById('config-chat-command-participant-profile-command').value = currentConfig.chat?.commands?.participantProfileManual?.command || currentConfig.memory?.participantProfile?.manualCommand || '/人物档案';
                 document.getElementById('config-ai-tool-web-search-enabled').checked = currentConfig.ai?.tools?.webSearch?.enabled === true;
+                document.getElementById('config-ai-tool-text-fallback-enabled').checked = currentConfig.ai?.tools?.textToolFallback?.enabled === true;
+                document.getElementById('config-ai-tool-text-fallback-max-rounds').value = currentConfig.ai?.tools?.textToolFallback?.maxRounds ?? 3;
                 document.getElementById('config-ai-tool-web-search-provider').value = currentConfig.ai?.tools?.webSearch?.provider || 'duckduckgo';
                 document.getElementById('config-ai-tool-web-search-apikey').value = '';
                 document.getElementById('config-ai-tool-web-search-fallback-enabled').checked = currentConfig.ai?.tools?.webSearch?.fallbackEnabled === true;
@@ -11460,6 +12068,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-ai-tool-web-search-max-snippet-length').value = currentConfig.ai?.tools?.webSearch?.maxSnippetLength ?? 800;
                 document.getElementById('config-ai-tool-web-search-allowed-domains').value = (currentConfig.ai?.tools?.webSearch?.allowedDomains || []).join(',');
                 document.getElementById('config-ai-tool-web-search-blocked-domains').value = (currentConfig.ai?.tools?.webSearch?.blockedDomains || []).join(',');
+                updateTextToolFallbackFields();
                 updateWebSearchProviderFields();
 
                 document.getElementById('config-memory-db-path').value = currentConfig.memory?.storage?.path || './data/chats/memory-store.sqlite';
@@ -11736,6 +12345,10 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                             allowedDomains: document.getElementById('config-ai-tool-web-search-allowed-domains').value.split(',').map(v => v.trim()).filter(Boolean),
                             blockedDomains: document.getElementById('config-ai-tool-web-search-blocked-domains').value.split(',').map(v => v.trim()).filter(Boolean)
                         },
+                        textToolFallback: {
+                            enabled: document.getElementById('config-ai-tool-text-fallback-enabled').checked,
+                            maxRounds: parseInt(document.getElementById('config-ai-tool-text-fallback-max-rounds').value) || 3
+                        },
                         sendMention: {
                             enabled: document.getElementById('config-ai-tool-send-mention-enabled').checked
                         }
@@ -11884,6 +12497,53 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             event.preventDefault();
             event.returnValue = '';
         });
+        // === 配置备份/恢复 ===
+        async function backupAllConfig() {
+            try {
+                const res = await fetch('/api/config/backup');
+                if (!res.ok) throw new Error('备份失败');
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `mimirlink-backup-${new Date().toISOString().slice(0,10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast('配置已备份');
+            } catch(e) { showToast('备份失败: ' + e.message, true); }
+        }
+        async function handleRestoreFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
+                showToast('请选择 .tar.gz 备份文件', true);
+                event.target.value = '';
+                return;
+            }
+            if (!confirm(`确定要恢复备份 "${file.name}" 吗？\n恢复前会自动备份当前状态。`)) {
+                event.target.value = ''; return;
+            }
+            try {
+                const res = await fetch('/api/config/restore', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: file
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const c = data.changes;
+                    const parts = [];
+                    if (c.replaced?.length) parts.push(`替换: ${c.replaced.length}项`);
+                    if (c.merged?.length) parts.push(`合并: ${c.merged.length}项`);
+                    if (c.added?.length) parts.push(`新增: ${c.added.length}项`);
+                    showToast(`恢复完成！${parts.join(' | ')}。自动备份: ${data.autoBackup}。即将刷新...`);
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showToast('恢复失败: ' + data.error, true);
+                }
+            } catch(e) { showToast('恢复失败: ' + e.message, true); }
+            event.target.value = '';
+        }
         // OneBot 重连
         async function reconnectOneBot() {
             try {
@@ -12241,6 +12901,14 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             if (ttsProvider) {
                 ttsProvider.addEventListener('change', updateTTSProviderFields);
             }
+
+            const textToolFallbackToggle = document.getElementById('config-ai-tool-text-fallback-enabled');
+            if (textToolFallbackToggle) {
+                textToolFallbackToggle.addEventListener('change', () => {
+                    updateTextToolFallbackFields();
+                    markConfigDirty('文本工具兜底配置已修改');
+                });
+            }
         });
 
         // ========== 提示词优化靶场 ==========
@@ -12310,25 +12978,47 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
         let rangeTestQueue = [];
         let rangeTestBusy = false;
         let rangeOptBusy = false;
+        let _rangeRestoringPrefs = false;
+        let rangeJsonMode = true;
+        let _rangeLastTestScored = false;
 
         async function loadPromptRange() {
             const wasLoaded = rangeModels.providers && rangeModels.providers.length > 0;
+            _rangeRestoringPrefs = true;
             await loadRangeModels();
+            populateAllModelsDropdown('range-model');
+            populateAllModelsDropdown('range-opt-model');
             await populateRangeCharacters();
             await populateRangePresets();
             await loadCorpusFromServer();
             loadRangeSessions();
             RE.sessionSidebar?.classList.add('collapsed');
-            const lastUsed = loadRangeLastUsed();
-            if (lastUsed.provider) RE.provider.value = lastUsed.provider;
-            onRangeProviderChange();
-            if (lastUsed.model) RE.model.value = lastUsed.model;
-            if (lastUsed.optProvider) RE.optProvider.value = lastUsed.optProvider;
-            onRangeOptProviderChange();
-            if (lastUsed.optModel) RE.optModel.value = lastUsed.optModel;
+            const lastUsed = await loadRangeLastUsed();
+            // 恢复上次选择的模型（含供应商信息）
+            if (lastUsed.provider && lastUsed.model) {
+                const combined = lastUsed.provider + '||' + lastUsed.model;
+                RE.model.value = combined;
+                RE.provider.value = lastUsed.provider;
+                rangeModels.activeModel = lastUsed.model;
+            } else if (RE.model.options.length > 0) {
+                RE.model.options[0].selected = true;
+                onRangeModelChange();
+            }
+            if (lastUsed.optProvider && lastUsed.optModel) {
+                const combinedOpt = lastUsed.optProvider + '||' + lastUsed.optModel;
+                RE.optModel.value = combinedOpt;
+                RE.optProvider.value = lastUsed.optProvider;
+            } else if (RE.optModel.options.length > 0) {
+                RE.optModel.options[0].selected = true;
+                onRangeOptModelChange();
+            }
             if (lastUsed.character) RE.character.value = lastUsed.character;
             if (lastUsed.worldbook) RE.worldbook.value = lastUsed.worldbook;
             if (lastUsed.preset) RE.preset.value = lastUsed.preset;
+            if (lastUsed.jsonMode !== undefined) { rangeJsonMode = !!lastUsed.jsonMode; } else { rangeJsonMode = true; }
+            const jsonCb = document.getElementById('range-json-mode');
+            if (jsonCb) jsonCb.checked = rangeJsonMode;
+            _rangeRestoringPrefs = false;
             await onRangeCharacterChange();
             await onRangeWorldBookChange();
             await onRangePresetChange();
@@ -12338,7 +13028,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     rangeActiveSessionId = Object.keys(rangeSessions).sort((a,b) => (rangeSessions[b].updatedAt||0) - (rangeSessions[a].updatedAt||0))[0];
                     switchRangeSession(rangeActiveSessionId);
                 } else {
-                    newRangeSession();
+                    await newRangeSession();
                 }
             }
             refreshSessionSelect();
@@ -12358,6 +13048,9 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             RE.stateEl.className = 'range-state-indicator idle';
             RE.stateText.textContent = '就绪';
             RE.iterCount.textContent = '-';
+            // 移动端：初始化默认Tab，注入折叠按钮
+            if (isMobileRange()) switchRangeMobileTab('test');
+            ensureRangeHeaderToggleBtns();
             RE.iterLog.innerHTML = '<div class="empty-state">等待开始...</div>';
             RE.diffContainer.innerHTML = '';
             RE.diffCard.style.display = 'none';
@@ -12390,8 +13083,30 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     case 'reset-chat': resetRangeChat(); break;
                     case 'clear-test-round': clearRangeTestRound(); break;
                     case 'clear-opt-round': clearRangeOptRound(); break;
+                    case 'close-tools': closeRangeMobileTools(); break;
+                    case 'toggle-header': toggleRangeHeader(e.target.closest('.range-chat-header')); break;
                 }
             });
+            // 移动端底部Tab切换
+            const mobileTabs = document.getElementById('range-mobile-tabs');
+            if (mobileTabs) {
+                mobileTabs.addEventListener('click', e => {
+                    const tab = e.target.closest('[data-range-mobile-tab]');
+                    if (!tab) return;
+                    switchRangeMobileTab(tab.dataset.rangeMobileTab);
+                });
+            }
+            // 侧边栏遮罩点击关闭（仅侧边栏，工具抽屉不需要遮罩）
+            const overlay = document.getElementById('range-sidebar-overlay');
+            if (overlay) {
+                overlay.addEventListener('click', () => {
+                    if (RE.sessionSidebar && !RE.sessionSidebar.classList.contains('collapsed')) {
+                        toggleRangeSessionSidebar();
+                    }
+                });
+            }
+            // 侧边栏滑动打开（移动端）
+            setupRangeSidebarSwipe();
             panel.addEventListener('change', e => {
                 const sel = e.target.closest('[data-range-action]');
                 if (!sel) return;
@@ -12405,6 +13120,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     case 'opt-model-change': onRangeOptModelChange(); break;
                     case 'embed-model-change': onRangeEmbedModelChange(); break;
                     case 'rerank-model-change': onRangeRerankModelChange(); break;
+                    case 'json-mode-change': onRangeJsonModeChange(); break;
                 }
             });
             panel.addEventListener('keydown', e => {
@@ -12418,6 +13134,33 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             // file input change
             const fileInput = $r('range-corpus-file');
             if (fileInput) fileInput.addEventListener('change', e => handleCorpusFile(e));
+            // 设备旋转 / 窗口缩放时重置移动端状态
+            let _rangeResizeDebounce;
+            window.addEventListener('resize', () => {
+                clearTimeout(_rangeResizeDebounce);
+                _rangeResizeDebounce = setTimeout(() => {
+                    if (!isMobileRange()) {
+                        // 退出移动端：收起所有浮层，清理移动端元素
+                        closeRangeMobileTools();
+                        document.querySelectorAll('.range-header-toggle-btn').forEach(b => b.remove());
+                        document.querySelectorAll('.range-chat-header.range-header-open').forEach(h => h.classList.remove('range-header-open'));
+                        const overlay = document.getElementById('range-sidebar-overlay');
+                        if (overlay) overlay.classList.remove('show');
+                        document.body.classList.remove('range-sidebar-open');
+                        // 恢复所有列的显示
+                        document.querySelectorAll('[data-range-col]').forEach(col => {
+                            col.classList.remove('range-col-active');
+                            col.style.display = '';
+                        });
+                    } else {
+                        // 进入移动端：确保默认Tab为测试，注入折叠按钮
+                        const activeTab = document.querySelector('[data-range-mobile-tab].active');
+                        if (!activeTab) switchRangeMobileTab('test');
+                        ensureRangeHeaderToggleBtns();
+                        updateRangeSidebarOverlay();
+                    }
+                }, 200);
+            });
         }
 
         let rangeSelectedEmbedModel = '';
@@ -12445,21 +13188,23 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 const chars = await res.json();
                 const list = Array.isArray(chars) ? chars : (chars.characters || []);
                 const sel = RE.character;
-                sel.innerHTML = '<option value="">当前角色</option>';
+                sel.innerHTML = '';
                 list.forEach(c => {
                     const name = typeof c === 'string' ? c : (c.name || c.filename || '');
                     if (name) sel.innerHTML += `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
                 });
+                if (!sel.value && sel.options.length > 0) sel.options[0].selected = true;
 
                 const wbRes = await fetch('/api/worldbooks');
                 const wbList = await wbRes.json();
                 const wbArr = Array.isArray(wbList) ? wbList : (wbList.worldbooks || []);
                 const wbSel = RE.worldbook;
-                wbSel.innerHTML = '<option value="">当前世界书</option>';
+                wbSel.innerHTML = '';
                 wbArr.forEach(w => {
                     const name = typeof w === 'string' ? w : (w.name || w.filename || '');
                     if (name) wbSel.innerHTML += `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
                 });
+                if (!wbSel.value && wbSel.options.length > 0) wbSel.options[0].selected = true;
             } catch(e) {}
         }
 
@@ -12500,11 +13245,12 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 const config = await res.json();
                 const presetFiles = config.imports?.presetFiles || [];
                 const sel = RE.preset;
-                sel.innerHTML = '<option value="">当前预设</option>';
+                sel.innerHTML = '';
                 presetFiles.forEach(pf => {
                     const name = pf.filename || pf.label || pf.importedPreset?.name || pf.id || '';
                     if (name) sel.innerHTML += `<option value="${escapeHtml(pf.id || '')}">${escapeHtml(name.replace(/\.json$/i,''))}</option>`;
                 });
+                if (!sel.value && sel.options.length > 0) sel.options[0].selected = true;
             } catch(e) {}
         }
 
@@ -12518,18 +13264,50 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
         }
 
         function populateModelDropdown(selId, prov, filterCap) {
+            // 保留兼容旧调用，但不再使用
+        }
+
+        function populateAllModelsDropdown(selId) {
             const mSel = document.getElementById(selId);
-            mSel.innerHTML = '<option value="">默认</option>';
-            if (prov && Array.isArray(prov.models)) {
-                const filtered = filterCap ? prov.models.filter(m => m.capability === 'chat') : prov.models;
-                filtered.forEach(m => { mSel.innerHTML += `<option value="${escapeHtml(m.id||m.name||'')}">${escapeHtml(m.name||m.id||'')}</option>`; });
-            }
+            mSel.innerHTML = '';
+            const providers = (rangeModels.providers || []);
+            providers.forEach(prov => {
+                const chatModels = (prov.models || []).filter(m => (m.capability || classifyModelLocal(m.id||m.name||'')) === 'chat');
+                if (chatModels.length === 0) return;
+                const group = document.createElement('optgroup');
+                group.label = prov.name || prov.id;
+                chatModels.forEach(m => {
+                    const rawId = (m.id || m.name || '');
+                    const cleanId = rawId.replace(/^\[[^\]]*\]\s*/, '');
+                    const val = (prov.id || '') + '||' + cleanId;
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.textContent = m.name || m.id || '';
+                    group.appendChild(opt);
+                });
+                mSel.appendChild(group);
+            });
+        }
+
+        function parseRangeModelValue(val) {
+            const idx = (val || '').indexOf('||');
+            if (idx < 0) return { providerId: '', modelId: val };
+            return { providerId: val.slice(0, idx), modelId: val.slice(idx + 2) };
+        }
+
+        function classifyModelLocal(id = '') {
+            const s = String(id).toLowerCase();
+            if (/(?:text-embedding|embed|bge-|e5-|gte-|voyage-|jina-embeddings|llm2vec|retrieval|uae-)/i.test(s)) return 'embedding';
+            if (/(?:rerank|re-rank|bge-rerank|cohere.*rerank|jina.*rerank)/i.test(s)) return 'rerank';
+            if (/(?:vision|vl|gemini-2\.5|claude-3|gpt-4o|pixtral|qwen-vl|glm-4v|cogview|dall-e|flux|imagen)/i.test(s)) return 'vision';
+            return 'chat';
         }
 
         function onRangeProviderChange() {
+            // 全供应商模型下拉已在 loadRangeModels 中填充，此处仅做兼容
             const pid = RE.provider.value;
+            if (!pid) return;
             const prov = rangeModels.providers.find(p=>p.id===pid);
-            populateModelDropdown('range-model', prov, true);
             rangeModels.activeProviderId = pid;
 
             const embSel = RE.embedModel;
@@ -12547,18 +13325,27 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             saveRangeLastUsed();
             saveCurrentSession();
         }
-        function onRangeModelChange() { rangeModels.activeModel = RE.model.value; saveRangeLastUsed(); saveCurrentSession(); }
+        function onRangeModelChange() {
+            const parsed = parseRangeModelValue(RE.model.value);
+            RE.provider.value = parsed.providerId;
+            rangeModels.activeModel = parsed.modelId;
+            saveRangeLastUsed();
+            saveCurrentSession();
+        }
         function onRangeEmbedModelChange() { rangeSelectedEmbedModel = RE.embedModel.value; }
         function onRangeRerankModelChange() { rangeSelectedRerankModel = RE.rerankModel.value; }
 
         function onRangeOptProviderChange() {
-            const pid = RE.optProvider.value;
-            const prov = rangeModels.providers.find(p=>p.id===pid);
-            populateModelDropdown('range-opt-model', prov, true);
+            // 全供应商模型下拉已在 loadRangeModels 中填充
             saveRangeLastUsed();
             saveCurrentSession();
         }
-        function onRangeOptModelChange() { saveRangeLastUsed(); saveCurrentSession(); }
+        function onRangeOptModelChange() {
+            const parsed = parseRangeModelValue(RE.optModel.value);
+            RE.optProvider.value = parsed.providerId;
+            saveRangeLastUsed();
+            saveCurrentSession();
+        }
 
         function getRangeOverrides(prefix = '') {
             const o = {};
@@ -12567,11 +13354,16 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             const pid = document.getElementById(sel).value;
             if (pid) { const p = rangeModels.providers.find(x=>x.id===pid); if (p) { o.baseUrl = p.baseUrl; o.apiKey = p.apiKey; } }
             const m = document.getElementById(mSel).value;
-            if (m) o.model = m;
+            if (m) o.model = parseRangeModelValue(m).modelId;
             return o;
         }
 
         function onRangeContextChange() {}
+        function onRangeJsonModeChange() {
+            rangeJsonMode = document.getElementById('range-json-mode')?.checked !== false;
+            saveCurrentSession();
+            saveRangeLastUsed();
+        }
 
         function getRangeContextConfig() {
             const el = id => document.getElementById(id);
@@ -12706,6 +13498,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 const data = await res.json();
                 if (!data.success) throw new Error(data.error||'请求失败');
                 rangeIterState.lastResult = data;
+                _rangeLastTestScored = false;
                 rangePromptConfig = data.promptConfigSnapshot;
                 if (data.aiResponse) {
                     const segs = data.aiResponse.segments || [];
@@ -12753,6 +13546,14 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
         // ===== 优化师 Agent =====
         const AGENT_SYSTEM_PROMPT = `你是靶场写卡优化 Agent，融合明月秋青/萧谴/A.U.T.O 三套写卡方法论。
 
+## 核心使命
+你的职责是**主动诊断问题、自主决策修改、推动优化进程**，而不是被动观察或泛泛而谈。
+
+**重要**：当你输出 modify 决策时，系统会自动生成具体修改方案并应用，无需用户手动确认。因此你必须：
+1. 发现问题后立即输出 modify，不要等待用户指令
+2. 即使用户只说"优化一下"这样的宽泛指令，你也要主动分析并决策
+3. 不要问"是否需要修改"，直接输出 modify 决策
+
 ## 写卡创作原则(明月秋青)
 
 ### 性格调色盘
@@ -12781,21 +13582,232 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
 QQ群聊: 砍冗长,砍动作描写,目标≤2条消息每段≤80字,像真人水群
 角色扮演: 校准语气,去八股,用行为+语料替代形容词描述
 
+## 强制执行规则(核心约束)
+
+### 1. 决策输出强制要求
+- 第一句话必须是完整的 JSON 对象，不允许任何前置解释或后置说明
+- 每轮必须输出一个可执行决策，禁止”观察一下””再看看””等待反馈”等无动作回复
+- 禁止输出 Markdown 代码块、禁止包裹 \`\`\`json 标记
+
+### 2. 评分时必须执行的检查清单
+当 decision 为 “score” 时，reason 字段必须包含以下至少3项的具体检查结果：
+- 八股词统计：似乎/几乎/仿佛/宛如/小兽/涟漪/投石 出现次数
+- 冗余描写：微表情(嘴角/眼神/指尖)/语气描写(带着xx口吻)/大段内心活动 是否存在
+- 角色偏离：回复是否符合人设中的性格底色和主色调
+- QQ群聊专项(如适用)：是否超过80字/是否过于文学化/是否像真人水群
+- 语料匹配度：回复风格是否与语料库样本一致
+
+### 3. 修改建议必须可执行
+当 decision 为 “modify” 时，summary 字段必须包含具体操作，禁止模糊建议：
+- ✅ 正确示例：”删除 first_mes 第2-3行的微表情描写”、”将 personality 中的'似乎有些内向'改为'不爱说话'”
+- ❌ 错误示例：”优化语言表达”、”改进人物描写”、”提升质量”
+
+### 4. 防循环机制(强制推进)
+- 如果连续3轮评分发现同一问题(focusIssue相同)但未输出 modify → 本轮必须输出 modify
+- 如果连续2轮 modify 针对同一字段但问题未解决 → 必须升级策略(改其他字段)或输出 next_phase
+- 如果连续3轮无实质推进(无 modify 无 next_phase) → 必须输出 next_phase 或 done
+
+### 5. 决策优先级规则(自动判断)
+按以下优先级选择 decision：
+1. 有测试结果 + 未评分 → 必须 score
+2. 已评分 + 发现问题(八股词>0 或 冗余描写存在 或 角色偏离) → **立即 modify，不要等待用户确认**
+3. 已修改 + 未验证新效果 → 必须 test
+4. 连续3轮无实质推进 → 必须 next_phase 或 done
+5. 当前阶段目标已达成 → next_phase
+6. 所有阶段已完成且验证通过 → done
+
+**关键**：当评分发现问题时，不要输出"建议修改"或"是否需要修改"，直接输出 modify 决策。系统会自动执行修改并应用。
+
 ## 回复格式(必须严格遵守)
-只输出ACTION行,不要多余的解释文字:
-ACTION: TEST|10-30字的测试消息
-ACTION: SCORE|ELO结果和理由
-ACTION: MODIFY|修改了什么
+
+你不能假装已经执行了测试、评分、修改或进入下一阶段。你只能输出”下一步决策”，实际执行由系统完成。
+
+如果左侧已经有最新测试结果，且当前没有新证据表明必须重新出题，优先输出 score，而不是重复输出 test。
+
+每次只输出一个主决策，不要同时要求多个动作一起执行。
+
+允许的 decision 只有：
+- “test”
+- “score”
+- “modify”
+- “next_phase”
+- “done”
+
+JSON 格式如下：
+
+1. 发起测试
+{
+  “decision”: “test”,
+  “phase”: “diagnose”,
+  “reason”: “为什么这轮要测试(必须说明测试目标)”,
+  “focusIssue”: “当前最关注的问题(具体到字段或行为)”,
+  “testMessage”: “10-30字测试消息”,
+  “nextStep”: “score_after_reply”
+}
+
+2. 进行评分
+{
+  “decision”: “score”,
+  “phase”: “diagnose”,
+  “reason”: “检查清单结果：八股词X处/冗余描写Y处/角色偏离Z项/QQ群聊不符合W点”,
+  “focusIssue”: “当前最严重的问题(具体到字段)”,
+  “nextStep”: “none”
+}
+
+3. 进入修改建议
+{
+  “decision”: “modify”,
+  “phase”: “tune”,
+  “reason”: “评分发现问题：八股词3处(似乎2次/仿佛1次)，需要立即修改”,
+  “focusIssue”: “personality字段中的八股词”,
+  “summary”: “删除personality中的'似乎有些内向'改为'不爱说话'，删除'仿佛'等模糊词”,
+  “nextStep”: “none”
+}
+
+**注意**：modify 决策会触发系统自动生成具体修改方案并应用，你只需要在 summary 中说明修改目标即可。
+
+4. 进入下一阶段
+{
+  “decision”: “next_phase”,
+  “phase”: “tune”,
+  “reason”: “当前阶段目标已达成/连续N轮无推进需要切换策略”,
+  “focusIssue”: “下一阶段关注点”,
+  “nextStep”: “none”
+}
+
+5. 结束流程
+{
+  “decision”: “done”,
+  “phase”: “verify”,
+  “reason”: “所有阶段已完成且验证通过，具体达标指标：XX”,
+  “focusIssue”: “最终状态总结”,
+  “nextStep”: “none”
+}
+
+只有在你实在无法输出 JSON 时，才允许退回旧格式：
+ACTION: TEST|...
+ACTION: SCORE|...
+ACTION: MODIFY|...
 ACTION: NEXT_PHASE
+ACTION: DONE`;
+
+        const AGENT_SYSTEM_PROMPT_NO_JSON = `你是靶场写卡优化 Agent，融合明月秋青/萧谴/A.U.T.O 三套写卡方法论。
+
+## 核心使命
+你的职责是**主动诊断问题、自主决策修改、推动优化进程**，而不是被动观察或泛泛而谈。
+
+**重要**：当你输出 modify 决策时，系统会自动生成具体修改方案并应用，无需用户手动确认。因此你必须：
+1. 发现问题后立即输出 modify，不要等待用户指令
+2. 即使用户只说"优化一下"这样的宽泛指令，你也要主动分析并决策
+3. 不要问"是否需要修改"，直接输出 modify 决策
+
+## 写卡创作原则(明月秋青)
+
+### 性格调色盘
+底色+主色调+点缀+衍生构建复杂性格。衍生在场景中展开为行为,跨性格关联产生化学反应。用行为展现性格,非定义性格。
+
+### 绝对零度写作
+白描:只写事实,不修饰。用名词动词,避形容词。语料展现性格:让对话说话,不描述语气。
+
+### 八股检测(必须砍)
+模糊词→似乎/几乎/仿佛/宛如 | 劣质比喻→小兽/涟漪/投石
+微表情→嘴角上扬/闪过光芒/指尖泛白 | 语气描写→带着xx的口吻
+极端词→极大恐惧/极度羞耻 | 大段内心活动 | 模板句
+
+### 产出标准
+角色卡: description/personality/scenario/first_mes/mes_example/system_prompt/post_history_instructions — 非说明书,是行为语料
+世界书: key(触发词覆盖角色称呼/特征) | order(重要性排序) | position(角色前=人设,角色后=行为约束)
+预设: 修改prompt的content字段,不改marker和name
+
+## 结构化工作流(参考A.U.T.O+萧谴)
+阶段1 DIAGNOSE: 用语料库消息测试→分析回复中的八股/冗余/角色偏离
+阶段2 TUNE: 按性格调色盘+绝对零度修改→ELO对战验证(B连胜2次=达标)
+阶段3 VERIFY: 换不同语料验证→确保没改坏→输出绑定到角色卡/世界书/预设
+每阶段完成→ACTION: NEXT_PHASE→刷新测试对话
+
+## 场景策略(自动)
+QQ群聊: 砍冗长,砍动作描写,目标≤2条消息每段≤80字,像真人水群
+角色扮演: 校准语气,去八股,用行为+语料替代形容词描述
+
+## 强制执行规则(核心约束)
+
+### 1. 决策输出强制要求
+- **使用 ACTION: 格式输出决策**，允许在 ACTION: 行之前写出详细的分析推理（不限字数），充分展开你的思路和判断依据
+- 每轮必须输出一个可执行决策，禁止"观察一下""再看看""等待反馈"等无动作回复
+- 每轮只输出一个 ACTION: 行，不要同时输出多个 ACTION
+- 分析内容中不要夹带 JSON，直接使用自然语言描述
+
+### 2. 评分时必须执行的检查清单
+当输出 SCORE 决策时，分析中必须包含以下至少3项的具体检查结果：
+- 八股词统计：似乎/几乎/仿佛/宛如/小兽/涟漪/投石 出现次数
+- 冗余描写：微表情(嘴角/眼神/指尖)/语气描写(带着xx口吻)/大段内心活动 是否存在
+- 角色偏离：回复是否符合人设中的性格底色和主色调
+- QQ群聊专项(如适用)：是否超过80字/是否过于文学化/是否像真人水群
+- 语料匹配度：回复风格是否与语料库样本一致
+
+### 3. 修改建议必须可执行
+当输出 MODIFY 决策时，摘要中必须包含具体操作，禁止模糊建议：
+- ✅ 正确示例："删除 first_mes 第2-3行的微表情描写"、"将 personality 中的'似乎有些内向'改为'不爱说话'"
+- ❌ 错误示例："优化语言表达"、"改进人物描写"、"提升质量"
+
+### 4. 防循环机制(强制推进)
+- 如果连续3轮评分发现同一问题(focusIssue相同)但未输出 modify → 本轮必须输出 modify
+- 如果连续2轮 modify 针对同一字段但问题未解决 → 必须升级策略(改其他字段)或输出 next_phase
+- 如果连续3轮无实质推进(无 modify 无 next_phase) → 必须输出 next_phase 或 done
+
+### 5. 决策优先级规则(自动判断)
+按以下优先级选择 decision：
+1. 有测试结果 + 未评分 → 必须 score
+2. 已评分 + 发现问题(八股词>0 或 冗余描写存在 或 角色偏离) → **立即 modify，不要等待用户确认**
+3. 已修改 + 未验证新效果 → 必须 test
+4. 连续3轮无实质推进 → 必须 next_phase 或 done
+5. 当前阶段目标已达成 → next_phase
+6. 所有阶段已完成且验证通过 → done
+
+**关键**：当评分发现问题时，不要输出"建议修改"或"是否需要修改"，直接输出 modify 决策。系统会自动执行修改并应用。
+
+## 回复格式（必须严格遵守）
+
+你不能假装已经执行了测试、评分、修改或进入下一阶段。你只能输出"下一步决策"，实际执行由系统完成。
+
+如果左侧已经有最新测试结果，且当前没有新证据表明必须重新出题，优先输出 score，而不是重复输出 test。
+
+每次只输出一个主决策，不要同时要求多个动作一起执行。
+
+允许的 decision 只有：test / score / modify / next_phase / done
+
+使用 ACTION: 格式输出决策。在 ACTION: 行之前可以自由写出详细分析（推荐 100-300 字），最后一行必须是 ACTION: 行。
+
+1. 发起测试：
+（先写出分析：当前处于什么阶段、需要验证什么假设、为什么选这条测试消息）
+ACTION: TEST | 10-30字测试消息
+原因：为什么这轮要测试（必须说明测试目标）
+焦点问题：当前最关注的问题（具体到字段或行为）
+
+2. 进行评分：
+（先写出详细检查清单：八股词X处/冗余描写Y处/角色偏离Z项/QQ群聊不符W点/语料匹配度评估，每项给出具体证据）
+ACTION: SCORE
+原因：列出具体评分依据和数据
+焦点问题：当前最严重的问题（具体到字段）
+
+3. 进入修改：
+（先分析评分结果，明确要改什么、怎么改、为什么这样改）
+ACTION: MODIFY | 修改目标简述
+原因：评分发现的问题
+焦点问题：要修改的字段
+摘要：具体操作说明（必须可执行，如"删除 first_mes 第2-3行的微表情描写"）
+
+4. 进入下一阶段：
+（总结当前阶段成果，说明为什么需要切换阶段，下一阶段重点）
+ACTION: NEXT_PHASE
+原因：当前阶段目标已达成/连续N轮无推进
+焦点问题：下一阶段关注点
+
+5. 结束流程：
+（总结所有阶段的优化成果，列出关键改进指标）
 ACTION: DONE
-
-错误示例❌: 好的我来测试一下。TEST|你好
-正确示例✅:
-ACTION: TEST|你又在群里发破风火轮截图了？
-
-收到角色回复后:
-ACTION: SCORE|B_wins 旧版冗长新版精炼
-ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
+原因：所有阶段已完成且验证通过，具体达标指标
+焦点问题：最终状态总结`;
 
         async function sendRangeOptMessage() {
             const input = RE.optInput;
@@ -12871,23 +13883,32 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                 statusText += `\n[场景] ${scenarioInfo}\n[嵌入] ${embedStatus}\n[当前] 轮次=${rangeIterState.iteration}/${parseInt(RE.maxIter.value)||5} 阶段=${rangeCurrentPhase||0}`;
                 statusText += memCtx || '\n[记忆] 无历史';
 
-                // 有左侧结果且用户没明确要求重新出题 → 先评分而非新测试
+                // 自动评分：仅自动循环 或 用户明确要求评分 时触发，且本轮测试尚未评分
                 const hasResult = lastResult?.aiResponse?.text;
                 const userMsg = text.toLowerCase();
+                const isAutoContinue = text === '继续优化';
                 const wantsNewTest = /重新测试|新测试|出题|再来一题|发题|测试一下|先测/.test(userMsg);
-                if (hasResult && !wantsNewTest) {
+                const wantsScore = /^(评分|分析|怎么样|所以呢|评价|打分|检查|看看|如何|结果|ok|好|行|嗯|1|y|yes|score)\b/i.test(userMsg) || userMsg.length <= 2;
+                if (hasResult && (isAutoContinue || wantsScore) && !wantsNewTest && !_rangeLastTestScored) {
                     addChatBubble('range-opt-chat', 'bot', '📊 检测到左侧测试结果，自动进入评分分析', '系统');
                     setRangeState('running', '正在评分...');
                     await fetchAndDisplayScore();
+                    _rangeLastTestScored = true;
                     rangeOptBusy = false;
                     stopRangeStatusTimer();
                     RE.optStatus.style.display = 'none';
                     setRangeState('idle', '就绪');
+                    if (isAutoContinue && rangeIterState.iteration < parseInt(RE.maxIter.value||5)) {
+                        await new Promise(r => setTimeout(r, 1500));
+                        RE.optInput.value = '继续优化';
+                        await sendRangeOptMessage();
+                    }
                     return;
                 }
 
+                const systemPrompt = rangeJsonMode ? AGENT_SYSTEM_PROMPT : AGENT_SYSTEM_PROMPT_NO_JSON;
                 const messages = [
-                    { role: 'system', content: AGENT_SYSTEM_PROMPT + statusText },
+                    { role: 'system', content: systemPrompt + statusText },
                     ...history.slice(-6)
                 ];
 
@@ -12898,15 +13919,27 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                     ? `\n\n<details class="reasoning-fold"><summary>🧠 展开思维链 (${aiResult.reasoningContent.length}字)</summary>${escapeHtml(aiResult.reasoningContent)}</details>`
                     : '';
 
-                // 解析并执行 Agent 行动（用原始 reply 解析，不用 reasoningFold）
-                const actions = parseAgentActions(reply);
+                const actions = Array.isArray(aiResult?.agentDecision)
+                    ? aiResult.agentDecision.map(normalizeAgentDecision)
+                    : aiResult?.agentDecision
+                        ? [normalizeAgentDecision(aiResult.agentDecision)]
+                        : parseAgentActions(reply);
                 for (const action of actions) {
+                    rememberRangeAgentDecision(action);
                     if (action.type === 'test') {
                         rangeIterState.iteration++;
                         RE.iterCount.textContent = rangeIterState.iteration;
                         addRangeRoundSeparator(rangeIterState.iteration);
                         if (rangeCurrentPhase === 0) { rangeCurrentPhase = 1; setRangePhase(1); }
                         let msg = action.message;
+                        if (action.focusIssue || action.reason) {
+                            addChatBubble(
+                                'range-opt-chat',
+                                'bot',
+                                `本轮目标：${action.focusIssue || '未指明'}\n原因：${action.reason || '未说明'}`,
+                                '系统'
+                            );
+                        }
                         // 空消息或无意义消息→语义搜索语料
                         if (!msg || msg.length < 3) {
                             setRangeState('running', '正在采样语料...');
@@ -12931,23 +13964,50 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                             rangeIterState.testFailed = false;
                             break;
                         }
-                        // 等角色回复后自动评分
-                        await new Promise(r => setTimeout(r, 2000));
-                        if (rangeIterState.lastResult?.aiResponse?.text) {
-                            setRangeState('running', '正在评分...');
-                            await fetchAndDisplayScore();
+                        if (action.nextStep === 'score_after_reply') {
+                            await new Promise(r => setTimeout(r, 2000));
+                            if (rangeIterState.lastResult?.aiResponse?.text) {
+                                setRangeState('running', '正在评分...');
+                                await fetchAndDisplayScore();
+                            }
                         }
                     } else if (action.type === 'score') {
                         await fetchAndDisplayScore();
                     } else if (action.type === 'next_phase') {
                         resetRangeChat();
-                        rangeCurrentPhase++;
+                        const nextPhaseMap = { diagnose: 1, tune: 2, verify: 3 };
+                        if (action.phase && nextPhaseMap[action.phase]) {
+                            rangeCurrentPhase = nextPhaseMap[action.phase];
+                        } else {
+                            rangeCurrentPhase++;
+                        }
                         setRangePhase(rangeCurrentPhase);
                         addChatBubble('range-opt-chat', 'bot', '▶ 进入下一阶段，测试对话已刷新', '系统');
                     } else if (action.type === 'modify') {
-                        addChatBubble('range-opt-chat', 'bot', `✏️ ${action.info||'修改了提示词/角色卡/世界书'}`, '系统');
+                        const modifyText = [
+                            action.info || '修改了提示词/角色卡/世界书',
+                            action.focusIssue ? `焦点: ${action.focusIssue}` : '',
+                            action.reason ? `原因: ${action.reason}` : ''
+                        ].filter(Boolean).join('\n');
+                        addChatBubble('range-opt-chat', 'bot', `✏️ ${modifyText}`, '系统');
+
+                        // 自动执行修改流程
+                        setRangeState('running', '正在生成修改方案...');
+                        await fetchAndDisplayScore();
+
+                        // 如果有修改建议，自动应用
+                        if (lastOptimizeResult?.allChanges?.length > 0 || lastOptimizeResult?.modifiedCharacter || lastOptimizeResult?.modifiedWorldBook?.entries?.length > 0) {
+                            await new Promise(r => setTimeout(r, 800));
+                            setRangeState('running', '正在应用修改...');
+                            await applyRangeChanges();
+                            addChatBubble('range-opt-chat', 'bot', '✅ 修改已自动应用', '系统');
+                        } else {
+                            addChatBubble('range-opt-chat', 'bot', '⚠️ 未生成具体修改方案', '系统');
+                        }
                     } else if (action.type === 'done') {
                         setRangeState('done', '完成');
+                        rangeAgentMemory.lastDecision = 'done';
+                        rangeAgentMemory.lastDecisionReason = action.reason || '';
                     }
                 }
 
@@ -12962,10 +14022,9 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                 // 自动续循环: 如果不是DONE且还有迭代次数,继续下一轮
                 if (!actions.some(a=>a.type==='done') && rangeIterState.iteration < parseInt(RE.maxIter.value||5)) {
                     await new Promise(r => setTimeout(r, 1500));
-                    if (!rangeOptBusy) {
-                        RE.optInput.value = '继续优化';
-                        await sendRangeOptMessage();
-                    }
+                    rangeOptBusy = false;
+                    RE.optInput.value = '继续优化';
+                    await sendRangeOptMessage();
                 }
             } catch(e) {
                 addChatBubble('range-opt-chat', 'bot', `❌ ${rangeErrorLabel(e)}\n${e.message.slice(0, 120)}`, '系统');
@@ -12974,6 +14033,18 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             rangeOptBusy = false;
             stopRangeStatusTimer();
             RE.optStatus.style.display = 'none';
+        }
+
+        function normalizeAgentDecision(decision = {}) {
+            return {
+                type: String(decision.type || '').trim().toLowerCase(),
+                phase: String(decision.phase || '').trim().toLowerCase(),
+                reason: String(decision.reason || '').trim(),
+                focusIssue: String(decision.focusIssue || '').trim(),
+                message: String(decision.testMessage || decision.message || '').trim().slice(0, 60),
+                info: String(decision.summary || decision.info || '').trim(),
+                nextStep: String(decision.nextStep || '').trim().toLowerCase()
+            };
         }
 
         async function aiClientChatForAgent(messages, overrides) {
@@ -13027,7 +14098,11 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             });
             const data = await res.json();
             if (!data.success) throw new Error(data.error||'调用失败');
-            return { reply: data.reply, reasoningContent: data.reasoningContent || null };
+            return {
+                reply: data.reply,
+                reasoningContent: data.reasoningContent || null,
+                agentDecision: data.agentDecision || null
+            };
         }
 
         function addRangeRoundSeparator(round) {
@@ -13052,44 +14127,121 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             return `<div class="range-flow-bar">${stepsHtml}</div>`;
         }
 
+        function rememberRangeAgentDecision(action = {}) {
+            rangeAgentMemory.lastDecision = action.type || '';
+            rangeAgentMemory.lastDecisionReason = action.reason || action.info || '';
+            rangeAgentMemory.lastPhase = action.phase || '';
+            rangeAgentMemory.activeFocusIssues = action.focusIssue ? [action.focusIssue] : [];
+            rangeAgentMemory.lastNextStep = action.nextStep || '';
+        }
+
         function cleanAgentReply(raw) {
-            // 尝试解析整段 JSON
-            if (/^\s*\{/.test(raw.trim())) {
+            const trimmed = String(raw || '').trim();
+            if (/^\s*\{/.test(trimmed)) {
                 try {
-                    const parsed = JSON.parse(raw.trim());
-                    if (parsed.reply && typeof parsed.reply === 'string') return parsed.reply;
-                    if (parsed.content && typeof parsed.content === 'string') return parsed.content;
+                    const parsed = JSON.parse(trimmed);
+                    if (typeof parsed.reply === 'string' && parsed.reply.trim()) return parsed.reply.trim();
+                    if (typeof parsed.content === 'string' && parsed.content.trim()) return parsed.content.trim();
+                    const lines = [];
+                    if (parsed.decision) lines.push(`决策: ${parsed.decision}`);
+                    if (parsed.focusIssue) lines.push(`焦点问题: ${parsed.focusIssue}`);
+                    if (parsed.reason) lines.push(`原因: ${parsed.reason}`);
+                    if (parsed.testMessage) lines.push(`测试消息: ${parsed.testMessage}`);
+                    if (parsed.summary) lines.push(parsed.summary);
+                    if (lines.length > 0) return lines.join('\n');
                 } catch(e) {}
             }
-            // 去掉 ACTION 行，保留其余内容
             let cleaned = raw.replace(/^ACTION:.*$/gm, '').trim();
             return cleaned || '(优化师未输出文本)';
         }
 
         function parseAgentActions(reply) {
             const actions = [];
-            // 过滤:只保留ACTION行,去掉空行和纯解释文字
-            const lines = reply.split('\n').filter(l => /^ACTION:/i.test(l.trim()));
+            const raw = String(reply || '').trim();
+            if (!raw) return actions;
+
+            if (/^\s*\{/.test(raw)) {
+                try {
+                    const parsed = JSON.parse(raw);
+                    const decision = String(parsed.decision || parsed.action || '').trim().toLowerCase();
+                    const phase = String(parsed.phase || '').trim().toLowerCase();
+                    const reason = String(parsed.reason || '').trim();
+                    const focusIssue = String(parsed.focusIssue || '').trim();
+                    const nextStep = String(parsed.nextStep || '').trim().toLowerCase();
+
+                    if (decision === 'test') {
+                        actions.push({
+                            type: 'test',
+                            message: String(parsed.testMessage || parsed.message || '').trim().slice(0, 60),
+                            phase,
+                            reason,
+                            focusIssue,
+                            nextStep
+                        });
+                        return actions;
+                    }
+
+                    if (decision === 'score') {
+                        actions.push({
+                            type: 'score',
+                            phase,
+                            reason,
+                            focusIssue,
+                            nextStep
+                        });
+                        return actions;
+                    }
+
+                    if (decision === 'modify') {
+                        actions.push({
+                            type: 'modify',
+                            info: String(parsed.summary || parsed.info || reason).trim(),
+                            phase,
+                            reason,
+                            focusIssue,
+                            nextStep
+                        });
+                        return actions;
+                    }
+
+                    if (decision === 'next_phase') {
+                        actions.push({
+                            type: 'next_phase',
+                            phase,
+                            reason,
+                            focusIssue,
+                            nextStep
+                        });
+                        return actions;
+                    }
+
+                    if (decision === 'done') {
+                        actions.push({
+                            type: 'done',
+                            phase,
+                            reason,
+                            focusIssue,
+                            nextStep
+                        });
+                        return actions;
+                    }
+                } catch(e) {}
+            }
+
+            const lines = raw.split('\n').filter(l => /^ACTION:/i.test(l.trim()));
             if (lines.length === 0) {
-                // 没有ACTION行→根据上下文决定兜底行为
                 const hasResult = rangeIterState.lastResult?.aiResponse?.text;
-                const cleanReply = reply.replace(/好的|我来|收到|明白|了解|可以/g, '').trim();
-                // 有明确 ACTION: TEST|xxx 才触发测试
-                if (/^ACTION:\s*TEST\s*\|/im.test(reply)) {
-                    const m = reply.match(/^ACTION:\s*TEST\s*\|?\s*(.*)/im);
-                    if (m) actions.push({ type: 'test', message: (m[1]||'').trim().slice(0, 60) });
-                } else if (hasResult) {
-                    // 有左侧结果 → 默认评分
+                const cleanReply = raw.replace(/好的|我来|收到|明白|了解|可以/g, '').trim();
+                if (hasResult) {
                     actions.push({ type: 'score' });
                 } else if (cleanReply.length < 80 && cleanReply.length > 3 && !cleanReply.includes('\n')) {
-                    // 无结果且是短句 → 当测试消息
                     actions.push({ type: 'test', message: cleanReply.slice(0, 60) });
                 } else {
-                    // 兜底：没有明确指令也没结果，给提示
                     actions.push({ type: 'test', message: '' });
                 }
                 return actions;
             }
+
             for (const line of lines) {
                 const m = line.match(/^ACTION:\s*(TEST|SCORE|MODIFY|DONE|NEXT_PHASE)\s*\|?\s*(.*)/i);
                 if (!m) continue;
@@ -13119,7 +14271,8 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                 currentPromptConfig: rangePromptConfig,
                 currentCharacter: rangeCharacterData,
                 currentWorldBook: rangeWorldBookData,
-                testCorpus: getCorpusText()
+                testCorpus: getCorpusText(),
+                noJsonMode: !rangeJsonMode
             };
             const ov = getRangeOverrides('opt');
             if (ov.baseUrl) body.modelProviderId = RE.optProvider.value;
@@ -13132,7 +14285,7 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             if (!data.success) return;
             lastOptimizeResult = data;
 
-            const { elo, evaluation, allChanges, modifiedCharacter, nextTestMessage, changeSummary } = data;
+            const { elo, evaluation, allChanges, modifiedCharacter, modifiedWorldBook, nextTestMessage, changeSummary } = data;
             const eloResult = elo?.result || 'draw';
             const eloReasoning = elo?.reasoning || '';
             const eloEmoji = eloResult === 'B_wins' ? '🏆 新版胜' : eloResult === 'A_wins' ? '📉 旧版胜' : '🤝 平局';
@@ -13164,6 +14317,35 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                     if (last) last.appendChild(btnDiv);
                 }, 50);
             }
+
+            rangeAgentMemory.latestScoreResult = eloResult;
+            rangeAgentMemory.latestScoreReasoning = eloReasoning || '';
+            rangeAgentMemory.latestScoreIssues = Array.isArray(issues) ? [...issues] : [];
+            rangeAgentMemory.latestScoreHighlights = Array.isArray(highlights) ? [...highlights] : [];
+            rangeAgentMemory.activeFocusIssues = (Array.isArray(issues) ? issues.slice(0, 2) : []);
+            rangeAgentMemory.lastDecision = 'score';
+            rangeAgentMemory.lastDecisionReason = eloReasoning || '';
+            rangeAgentMemory.latestTestUserMessage = lastResult?.segments?.find(s=>s.kind==='user_input')?.content || '';
+            rangeAgentMemory.latestTestReply = lastResult?.aiResponse?.text || '';
+            rangeAgentMemory.hasPendingChanges = changeCount > 0;
+            rangeAgentMemory.pendingChangeCount = changeCount || 0;
+            rangeAgentMemory.focusIssueSource = 'latest_score';
+
+            const normalizedIssues = Array.isArray(issues)
+                ? issues.map(item => String(item || '').trim()).filter(Boolean)
+                : [];
+            const currentIssuesKey = normalizedIssues.join('|');
+            if (rangeAgentMemory.lastIssuesKey === currentIssuesKey && currentIssuesKey) {
+                rangeAgentMemory.repeatedFailureCount = (rangeAgentMemory.repeatedFailureCount || 0) + 1;
+            } else {
+                rangeAgentMemory.repeatedFailureCount = 0;
+            }
+            rangeAgentMemory.lastIssuesKey = currentIssuesKey;
+
+            const normalizedHighlights = Array.isArray(highlights)
+                ? highlights.map(item => String(item || '').trim()).filter(Boolean)
+                : [];
+            rangeAgentMemory.latestHighlightsKey = normalizedHighlights.join('|');
 
             // 记录跨轮记忆(参考A.U.T.O变量系统)——补全所有关键字段
             rangeAgentMemory.lastScore = eloResult;
@@ -13208,6 +14390,10 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                 const data = await res.json();
                 if (data.success) {
                     showToast(`已应用 ${data.results.length} 项修改，备份在 ${data.backupDir}`);
+                    rangeAgentMemory.hasPendingChanges = false;
+                    rangeAgentMemory.pendingChangeCount = 0;
+                    rangeAgentMemory.lastAppliedChangeCount = data.results?.length || 0;
+                    rangeAgentMemory.lastApplyAt = Date.now();
                     const btns = document.querySelectorAll('#range-opt-chat button');
                     btns.forEach(b => b.disabled = true);
                 } else {
@@ -13218,6 +14404,9 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
 
         function declineRangeChanges() {
             lastOptimizeResult = null;
+            rangeAgentMemory.hasPendingChanges = false;
+            rangeAgentMemory.pendingChangeCount = 0;
+            rangeAgentMemory.lastDeclineAt = Date.now();
             RE.diffContainer.innerHTML = '';
             RE.diffCard.style.display = 'none';
             showToast('已放弃本次修改');
@@ -13305,6 +14494,105 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             localStorage.setItem(RANGE_SESSION_SIDEBAR_KEY, collapsed ? '1' : '0');
         }
 
+        // ====== 移动端方法 ======
+        const isMobileRange = () => window.matchMedia('(max-width: 768px)').matches;
+
+        function ensureRangeHeaderToggleBtns() {
+            if (!isMobileRange()) return;
+            document.querySelectorAll('#prompt-range .range-chat-header').forEach(header => {
+                // Agent头部控件少，不需要折叠
+                if (header.querySelector('.range-header-toggle-btn') || header.querySelector('.range-iter-input')) return;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'range-header-toggle-btn';
+                btn.dataset.rangeAction = 'toggle-header';
+                btn.innerHTML = '⚙ 设置';
+                // 插在 label 后面
+                const label = header.querySelector('.range-chat-header-label');
+                if (label) {
+                    label.after(btn);
+                } else {
+                    header.prepend(btn);
+                }
+            });
+        }
+
+        function toggleRangeHeader(header) {
+            if (!header) return;
+            header.classList.toggle('range-header-open');
+            const btn = header.querySelector('.range-header-toggle-btn');
+            if (btn) btn.innerHTML = header.classList.contains('range-header-open') ? '✕ 收起' : '⚙ 设置';
+        }
+
+        function switchRangeMobileTab(tabName) {
+            // 更新Tab激活态
+            document.querySelectorAll('[data-range-mobile-tab]').forEach(t => {
+                t.classList.toggle('active', t.dataset.rangeMobileTab === tabName);
+            });
+            // 切换列显隐
+            document.querySelectorAll('[data-range-col]').forEach(col => {
+                col.classList.toggle('range-col-active', col.dataset.rangeCol === tabName);
+            });
+            // 工具面板：弹出/收起抽屉（无遮罩，直接滑上）
+            const infoPanel = document.getElementById('range-info-panel');
+            if (!infoPanel) return;
+            if (tabName === 'tools') {
+                infoPanel.classList.add('drawer-open');
+            } else {
+                infoPanel.classList.remove('drawer-open');
+            }
+        }
+
+        function closeRangeMobileTools() {
+            const infoPanel = document.getElementById('range-info-panel');
+            if (infoPanel) infoPanel.classList.remove('drawer-open');
+            // 切回测试Tab
+            const activeTab = document.querySelector('[data-range-mobile-tab].active');
+            if (activeTab && activeTab.dataset.rangeMobileTab === 'tools') {
+                switchRangeMobileTab('test');
+            }
+        }
+
+        function setupRangeSidebarSwipe() {
+            const sidebar = RE.sessionSidebar;
+            if (!sidebar) return;
+            let touchStartX = 0, touchStartY = 0, swiping = false;
+
+            document.addEventListener('touchstart', e => {
+                if (!isMobileRange()) return;
+                const t = e.touches[0];
+                touchStartX = t.clientX;
+                touchStartY = t.clientY;
+                swiping = false;
+            }, { passive: true });
+
+            document.addEventListener('touchmove', e => {
+                if (!isMobileRange()) return;
+                const dx = e.touches[0].clientX - touchStartX;
+                const dy = e.touches[0].clientY - touchStartY;
+                // 右滑超过30px且大于垂直位移 → 打开侧边栏
+                if (dx > 30 && Math.abs(dx) > Math.abs(dy) && !swiping) {
+                    swiping = true;
+                    if (sidebar.classList.contains('collapsed') && touchStartX < 40) {
+                        toggleRangeSessionSidebar();
+                    }
+                }
+            }, { passive: true });
+
+            document.addEventListener('touchend', () => { swiping = false; });
+        }
+
+        // 侧边栏遮罩管理
+        function updateRangeSidebarOverlay() {
+            const overlay = document.getElementById('range-sidebar-overlay');
+            if (!overlay || !isMobileRange()) return;
+            const sidebar = RE.sessionSidebar;
+            if (!sidebar) return;
+            const isOpen = !sidebar.classList.contains('collapsed');
+            overlay.classList.toggle('show', isOpen);
+            document.body.classList.toggle('range-sidebar-open', isOpen);
+        }
+
         function toggleRangeSessionSidebar(forceExpanded = false) {
             const sidebar = RE.sessionSidebar;
             if (!sidebar) return;
@@ -13313,23 +14601,37 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             sidebar.classList.toggle('collapsed', nextCollapsed);
             const btn = sidebar.querySelector('.range-sidebar-toggle-btn');
             if (btn) btn.title = nextCollapsed ? '展开侧边栏' : '收起侧边栏';
+            updateRangeSidebarOverlay();
         }
 
-        function loadRangeLastUsed() {
-            try { return JSON.parse(localStorage.getItem(RANGE_LAST_USED_KEY) || '{}'); } catch(e) { return {}; }
+        async function loadRangeLastUsed() {
+            try {
+                const res = await fetch('/api/prompt-range/prefs');
+                const json = await res.json();
+                return (json && json.prefs) ? json.prefs : {};
+            } catch(e) { return {}; }
         }
 
         function saveRangeLastUsed() {
+            if (_rangeRestoringPrefs) return;
+            const testParsed = parseRangeModelValue(RE.model?.value || '');
+            const optParsed = parseRangeModelValue(RE.optModel?.value || '');
             const data = {
-                provider: RE.provider?.value || '',
-                model: RE.model?.value || '',
-                optProvider: RE.optProvider?.value || '',
-                optModel: RE.optModel?.value || '',
+                provider: RE.provider?.value || testParsed.providerId || '',
+                model: testParsed.modelId || RE.model?.value || '',
+                optProvider: RE.optProvider?.value || optParsed.providerId || '',
+                optModel: optParsed.modelId || RE.optModel?.value || '',
                 character: RE.character?.value || '',
                 worldbook: RE.worldbook?.value || '',
-                preset: RE.preset?.value || ''
+                preset: RE.preset?.value || '',
+                jsonMode: rangeJsonMode ? true : false
             };
-            localStorage.setItem(RANGE_LAST_USED_KEY, JSON.stringify(data));
+            fetch('/api/prompt-range/prefs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data),
+                keepalive: true
+            }).catch(() => {});
         }
 
         function normalizeRangeSessionLabel(text = '') {
@@ -13411,6 +14713,7 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                 label: deriveRangeSessionLabel(),
                 rounds: rangeIterState.iteration || 0,
                 hasError,
+                jsonMode: rangeJsonMode ? true : false,
                 displayModel: activeModel || (activeProviderName ? activeProviderName : ''),
             };
             saveRangeLastUsed();
@@ -13431,7 +14734,7 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             showToast('会话已删除');
         }
 
-        function newRangeSession() {
+        async function newRangeSession() {
             saveCurrentSession();
             const id = 'sess_' + Date.now();
             rangeActiveSessionId = id;
@@ -13440,16 +14743,21 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             rangeCurrentPhase = 0; rangeAgentMemory = {}; rangeIterState.iteration = 0; rangeIterState.testFailed = false;
             RE.phaseBar.style.display = 'none';
             RE.iterCount.textContent = '-';
-            const lastUsed = loadRangeLastUsed();
+            const lastUsed = await loadRangeLastUsed();
             if (lastUsed.provider) RE.provider.value = lastUsed.provider;
-            onRangeProviderChange();
-            if (lastUsed.model) RE.model.value = lastUsed.model;
+            if (lastUsed.provider && lastUsed.model) {
+                RE.model.value = lastUsed.provider + '||' + lastUsed.model;
+            }
             if (lastUsed.optProvider) RE.optProvider.value = lastUsed.optProvider;
-            onRangeOptProviderChange();
-            if (lastUsed.optModel) RE.optModel.value = lastUsed.optModel;
+            if (lastUsed.optProvider && lastUsed.optModel) {
+                RE.optModel.value = lastUsed.optProvider + '||' + lastUsed.optModel;
+            }
             if (lastUsed.character) RE.character.value = lastUsed.character;
             if (lastUsed.worldbook) RE.worldbook.value = lastUsed.worldbook;
             if (lastUsed.preset) RE.preset.value = lastUsed.preset;
+            if (lastUsed.jsonMode !== undefined) { rangeJsonMode = !!lastUsed.jsonMode; } else { rangeJsonMode = true; }
+            const jsonCb2 = document.getElementById('range-json-mode');
+            if (jsonCb2) jsonCb2.checked = rangeJsonMode;
             onRangeCharacterChange();
             onRangeWorldBookChange();
             onRangePresetChange();
@@ -13470,14 +14778,17 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
             if (s.worldbook) RE.worldbook.value = s.worldbook;
             if (s.preset) RE.preset.value = s.preset;
             if (s.provider) RE.provider.value = s.provider;
-            onRangeProviderChange();
-            if (s.model) RE.model.value = s.model;
+            if (s.provider && s.model) RE.model.value = s.provider + '||' + s.model;
+            else if (s.model) RE.model.value = s.model;
             if (s.optProvider) RE.optProvider.value = s.optProvider;
-            onRangeOptProviderChange();
-            if (s.optModel) RE.optModel.value = s.optModel;
+            if (s.optProvider && s.optModel) RE.optModel.value = s.optProvider + '||' + s.optModel;
+            else if (s.optModel) RE.optModel.value = s.optModel;
             onRangeCharacterChange();
             onRangeWorldBookChange();
             onRangePresetChange();
+            if (s.jsonMode !== undefined) { rangeJsonMode = !!s.jsonMode; } else { rangeJsonMode = true; }
+            const jsonCb3 = document.getElementById('range-json-mode');
+            if (jsonCb3) jsonCb3.checked = rangeJsonMode;
             RE.phaseBar.style.display = 'none';
             rangeCurrentPhase = 0;
             saveRangeLastUsed();
@@ -13800,6 +15111,20 @@ ACTION: MODIFY|缩减first_mes去除啰嗦开场`;
                 el.textContent = txt;
             }).catch(()=>{});
         }
+
+        window.copyBubbleText = copyBubbleText;
+        window.deleteBubble = deleteBubble;
+        window.updateRangeQueueUI = updateRangeQueueUI;
+        window.stopRangeAI = stopRangeAI;
+        window.applyRangeChanges = applyRangeChanges;
+        window.declineRangeChanges = declineRangeChanges;
+        window.restoreRangeSnapshot = restoreRangeSnapshot;
+        window.deleteRangeSnapshot = deleteRangeSnapshot;
+        window.deleteCorpusLine = deleteCorpusLine;
+        window.expandAllCorpus = expandAllCorpus;
+        window.switchRangeSession = switchRangeSession;
+        window.deleteRangeSession = deleteRangeSession;
+
     </script>
 </body>
 </html>

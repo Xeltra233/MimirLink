@@ -4,13 +4,19 @@ node_modules/
 # Configuration (contains sensitive data)
 config.json
 
-# Data files (user-specific)
+# Data files (user-specific — 全部不提交)
 data/characters/
 data/character_overrides/
 data/worldbooks/
 data/worlds/
 data/chats/
 data/sessions/
+data/backups/
+data/restore-backups/
+data/range-corpus.json
+data/range-prefs.json
+data/range-embeddings.json
+data/range-snapshots/
 
 # Keep data directory structure
 !data/.gitkeep
@@ -45,3 +51,12 @@ docs/superpowers/
 # Environment
 .env
 .env.local
+
+# Claude Code project settings (contains MCP config)
+.claude/
+
+# Temp script artifacts
+tmp-bracket-check.py
+tmp-part.js
+tmp_prompt_range_*.txt
+tmp-*.py

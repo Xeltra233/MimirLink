@@ -231,27 +231,27 @@ function toPositiveInteger(value, fallback) {
 
 const AI_PROVIDER_DEFAULTS = {
     'openai-compatible': {
-        baseUrl: 'https://api.openai.com/v1',
+        baseUrl: 'https://api.openai.com',
         model: 'gpt-4o-mini'
     },
     openai: {
-        baseUrl: 'https://api.openai.com/v1',
+        baseUrl: 'https://api.openai.com',
         model: 'gpt-4o-mini'
     },
     deepseek: {
-        baseUrl: 'https://api.deepseek.com/v1',
+        baseUrl: 'https://api.deepseek.com',
         model: 'deepseek-chat'
     },
-    claude: {
-        baseUrl: 'https://api.openai-proxy.org/anthropic/v1',
+    anthropic: {
+        baseUrl: 'https://api.anthropic.com',
         model: 'claude-sonnet-4-5'
     },
     gemini: {
-        baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+        baseUrl: 'https://generativelanguage.googleapis.com',
         model: 'gemini-2.5-flash'
     },
     ollama: {
-        baseUrl: 'http://127.0.0.1:11434/v1',
+        baseUrl: 'http://127.0.0.1:11434',
         model: 'qwen3:8b'
     },
     custom: {
@@ -265,8 +265,12 @@ function normalizeAIProvider(provider) {
     if (normalized === 'openai') {
         return 'openai';
     }
-    if (normalized === 'deepseek' || normalized === 'claude' || normalized === 'gemini' || normalized === 'ollama' || normalized === 'custom') {
+    if (normalized === 'deepseek' || normalized === 'anthropic' || normalized === 'gemini' || normalized === 'ollama' || normalized === 'custom') {
         return normalized;
+    }
+    // 向后兼容：claude 映射到 anthropic
+    if (normalized === 'claude') {
+        return 'anthropic';
     }
     return 'openai-compatible';
 }
@@ -330,6 +334,7 @@ function ensureCommandAndToolConfig(config) {
     config.memory.participantProfile.manualCommand = config.chat.commands.participantProfileManual.command;
 
     const webSearchProvider = String(webSearch.provider || '').toLowerCase();
+    const textToolFallback = config.ai.tools.textToolFallback || {};
 
     config.ai.tools.webSearch = {
         enabled: typeof webSearch.enabled === 'boolean' ? webSearch.enabled : false,
@@ -342,6 +347,11 @@ function ensureCommandAndToolConfig(config) {
         maxSnippetLength: clampInteger(webSearch.maxSnippetLength, 100, 4000, 800),
         allowedDomains: normalizeStringList(webSearch.allowedDomains),
         blockedDomains: normalizeStringList(webSearch.blockedDomains)
+    };
+
+    config.ai.tools.textToolFallback = {
+        enabled: typeof textToolFallback.enabled === 'boolean' ? textToolFallback.enabled : false,
+        maxRounds: clampInteger(textToolFallback.maxRounds, 1, 8, 3)
     };
 
     config.ai.tools.sendMention = {
@@ -2496,7 +2506,7 @@ async function processBatch(batch) {
 
 const runtime = new MessageRuntime(config, logger, processBatch);
 
-setupRoutes(app, config, saveConfig, {
+const managers = {
     characterManager,
     worldBookManager,
     sessionManager,
@@ -2523,7 +2533,8 @@ setupRoutes(app, config, saveConfig, {
         ...getDashboardMetricsSnapshot(),
         composition: sessionManager.getDashboardCompositionStats()
     })
-});
+};
+setupRoutes(app, config, saveConfig, managers);
 
 app.use('/api', (error, req, res, next) => {
     logger.error(`[API ${req?.requestId || 'no-id'}] 未捕获错误`, {
@@ -2609,6 +2620,11 @@ bot.on('connected', () => {
 bot.on('disconnected', () => {
     logger.warn('OneBot 连接断开，将自动重连...');
 });
+
+// --- MCP 端点 (外部 AI 工具接口) ---
+const { createMCPHandler } = await import('./mcp.js');
+app.post('/mcp', createMCPHandler(managers, config, saveConfig));
+logger.info('MCP 端点已挂载: /mcp');
 
 server.listen(config.server.port, config.server.host, () => {
     logger.info(`服务器已启动: http://${config.server.host}:${config.server.port}`);

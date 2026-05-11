@@ -1293,6 +1293,39 @@ function buildMentionGenerationMessages({ groupId, targetUserId, targetName, pro
     ];
 }
 
+function buildTextToolFallbackHint({ tools = [], maxRounds = 3 } = {}) {
+    if (!Array.isArray(tools) || tools.length === 0) {
+        return '';
+    }
+
+    const toolSpecs = tools.map((tool) => {
+        const fn = tool?.function || {};
+        return {
+            name: sanitizeText(fn.name),
+            description: sanitizeText(fn.description),
+            parameters: fn.parameters || { type: 'object', properties: {}, required: [] }
+        };
+    }).filter((tool) => tool.name);
+
+    if (toolSpecs.length === 0) {
+        return '';
+    }
+
+    return [
+        '当当前模型不支持原生 tool_calls 时，你必须改用“文本工具兜底协议”。',
+        `最多允许 ${Math.max(1, Number(maxRounds) || 3)} 轮工具调用；若拿到足够信息就直接结束。`,
+        '需要调用工具时，整条回复必须只输出一个 JSON 对象，禁止输出解释、Markdown、代码块、前后缀。',
+        '调用工具格式：',
+        '{"action":"tool_calls","tool_calls":[{"name":"工具名","arguments":{}}]}',
+        '拿到工具结果后，如果还需要继续调用工具，继续按同样格式只输出 JSON。',
+        '最终回答格式：',
+        '{"action":"final","content":"这里放最终回复正文"}',
+        '禁止输出不存在的工具名；arguments 必须是 JSON 对象。',
+        '可用工具清单：',
+        JSON.stringify(toolSpecs, null, 2)
+    ].join('\n');
+}
+
 export function buildAIToolDefinitions(config = {}, options = {}) {
     const webSearchConfig = config.ai?.tools?.webSearch || {};
     const sendMentionConfig = config.ai?.tools?.sendMention || {};
@@ -1615,6 +1648,7 @@ export async function generateRealtimeAnswer({ aiClient, config = {}, query = ''
 
 export function buildAIToolContext({ config = {}, aiClient, bot, logger, defaultGroupId = null, defaultTargetUserId = null, defaultTargetName = null, allowSendMention = true, mentionGenerator = null } = {}) {
     const webSearchConfig = config.ai?.tools?.webSearch || {};
+    const textToolFallbackConfig = config.ai?.tools?.textToolFallback || {};
     const tools = buildAIToolDefinitions(config, { allowSendMention });
     const toolHints = [];
 
@@ -1638,9 +1672,21 @@ export function buildAIToolContext({ config = {}, aiClient, bot, logger, default
         ].join('\n'));
     }
 
+    const textToolFallback = {
+        enabled: textToolFallbackConfig.enabled === true,
+        maxRounds: clampInteger(textToolFallbackConfig.maxRounds, 1, 8, 3),
+        instruction: textToolFallbackConfig.enabled === true
+            ? buildTextToolFallbackHint({
+                tools,
+                maxRounds: clampInteger(textToolFallbackConfig.maxRounds, 1, 8, 3)
+            })
+            : ''
+    };
+
     return {
         tools,
         toolHints,
+        textToolFallback,
         buildRealtimeSearchPrompt: (query = '') => buildRealtimeSearchPrompt(query, webSearchConfig.provider || 'duckduckgo'),
         isRealtimeQuery,
         matchRealtimeIntent,

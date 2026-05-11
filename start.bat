@@ -5,7 +5,8 @@ title MimirLink
 
 cd /d "%~dp0"
 
-set "WEB_PORT=18001"
+set "WEB_PORT=8001"
+set "PORT_LINE="
 if exist "config.json" (
     for /f "usebackq delims=" %%L in (`findstr /r /c:"\"port\"[ ]*:" "config.json"`) do (
         set "PORT_LINE=%%L"

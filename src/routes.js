@@ -1343,6 +1343,183 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     // ==================== 角色卡管理 ====================
 
+    // === 配置备份/恢复（tar.gz 全量打包） ===
+    app.get('/api/config/backup', requireAuth, async (req, res) => {
+        const tmpDir = path.join(__dirname, '..', 'data', '_backup_tmp');
+        const archiveName = `mimirlink-fullbackup-${new Date().toISOString().slice(0,10)}.tar.gz`;
+        try {
+            const { pack } = await import('tar-fs');
+            const { createGzip } = await import('zlib');
+            // 构建临时目录
+            fsSync.rmSync(tmpDir, { recursive: true, force: true });
+            fsSync.mkdirSync(tmpDir, { recursive: true });
+            // config.json
+            fsSync.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
+            // 复制 data 目录（排除 _backup_tmp 自身和过大的 chats 数据库）
+            const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
+            copyDirSync(dataDir, path.join(tmpDir, 'data'), new Set(['_backup_tmp', 'restore-backups']));
+            // 流式打包下载
+            res.setHeader('Content-Type', 'application/gzip');
+            res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
+            const gzip = createGzip();
+            const tarStream = pack(tmpDir);
+            tarStream.pipe(gzip).pipe(res);
+            res.on('finish', () => { try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {} });
+            logger.info(`[备份] 开始流式打包: ${archiveName}`);
+        } catch (e) {
+            try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+            logger.error('[备份] 导出失败:', e.message);
+            if (!res.headersSent) res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    app.post('/api/config/restore', requireAuth, async (req, res) => {
+        const tmpDir = path.join(__dirname, '..', 'data', '_restore_tmp');
+        const changes = { replaced: [], merged: [], added: [], skipped: [] };
+        try {
+            const { extract } = await import('tar-fs');
+            const { createGunzip } = await import('zlib');
+            const { Writable } = await import('stream');
+            // 接收 tar.gz 流，解压到临时目录
+            fsSync.rmSync(tmpDir, { recursive: true, force: true });
+            fsSync.mkdirSync(tmpDir, { recursive: true });
+
+            await new Promise((resolve, reject) => {
+                const gunzip = createGunzip();
+                const tarExtract = extract(tmpDir);
+                req.pipe(gunzip).pipe(tarExtract);
+                tarExtract.on('finish', resolve);
+                tarExtract.on('error', reject);
+                gunzip.on('error', reject);
+                req.on('error', reject);
+            });
+
+            // === 恢复前自动备份 ===
+            const autoBackupDir = path.join(__dirname, '..', 'data', 'restore-backups');
+            fsSync.mkdirSync(autoBackupDir, { recursive: true });
+            const autoBackupFile = `pre-restore-${new Date().toISOString().replace(/[:.]/g, '-')}.tar.gz`;
+            const { pack, createGzip } = await import('tar-fs');
+            const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
+            fsSync.writeFileSync(path.join(tmpDir, '_current_config.json'), JSON.stringify(config, null, 2), 'utf8');
+            const autoStream = pack(tmpDir).pipe(createGzip()).pipe(fsSync.createWriteStream(path.join(autoBackupDir, autoBackupFile)));
+
+            // 读取备份中的 config.json
+            const backupConfigPath = path.join(tmpDir, 'config.json');
+            if (fsSync.existsSync(backupConfigPath)) {
+                const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+                const merged = deepMergeConfig(config, backupConfig);
+                Object.keys(config).forEach(k => delete config[k]);
+                Object.assign(config, merged);
+                saveConfig(config);
+                changes.replaced.push('config.json');
+            }
+
+            // 复制备份中的 data 目录内容（智能合并）
+            const backupDataDir = path.join(tmpDir, 'data');
+            if (fsSync.existsSync(backupDataDir)) {
+                const currentDataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
+                const skipDirs = new Set(['_backup_tmp', '_restore_tmp', 'restore-backups', 'chats']);
+                mergeDirSync(backupDataDir, currentDataDir, skipDirs, changes);
+            }
+
+            // 清理
+            await new Promise(r => autoStream.on('finish', r));
+            fsSync.rmSync(tmpDir, { recursive: true, force: true });
+            characterManager.clearCache?.();
+
+            logger.info('[恢复] 完成:', JSON.stringify(changes));
+            res.json({ success: true, changes, autoBackup: autoBackupFile });
+        } catch (e) {
+            try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+            logger.error('[恢复] 导入失败:', e.message);
+            if (!res.headersSent) res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
+    // 递归复制目录（跳过指定目录名）
+    function copyDirSync(src, dest, skipNames = new Set()) {
+        fsSync.mkdirSync(dest, { recursive: true });
+        for (const entry of fsSync.readdirSync(src, { withFileTypes: true })) {
+            if (skipNames.has(entry.name)) continue;
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            if (entry.isDirectory()) {
+                copyDirSync(srcPath, destPath, skipNames);
+            } else {
+                fsSync.copyFileSync(srcPath, destPath);
+            }
+        }
+    }
+
+    // 智能合并目录：备份文件覆盖当前，但保留当前独有的文件
+    function mergeDirSync(src, dest, skipNames, changes) {
+        fsSync.mkdirSync(dest, { recursive: true });
+        for (const entry of fsSync.readdirSync(src, { withFileTypes: true })) {
+            if (skipNames.has(entry.name)) continue;
+            const srcPath = path.join(src, entry.name);
+            const destPath = path.join(dest, entry.name);
+            if (entry.isDirectory()) {
+                mergeDirSync(srcPath, destPath, skipNames, changes);
+            } else {
+                const existed = fsSync.existsSync(destPath);
+                fsSync.copyFileSync(srcPath, destPath);
+                const relPath = path.relative(path.dirname(dest), destPath);
+                changes[existed ? 'replaced' : 'added'].push(relPath);
+            }
+        }
+    }
+
+    // 安全深度合并 config：保护 API key，数组以备份为准但保留当前独有的项
+    function deepMergeConfig(current, backup) {
+        const merged = JSON.parse(JSON.stringify(current)); // 深拷贝当前
+        for (const key of Object.keys(backup)) {
+            if (key === 'ai' && backup.ai && current.ai) {
+                // AI 配置特殊处理：保护 API keys
+                merged.ai = { ...current.ai, ...backup.ai };
+                if (current.ai.apiKey && backup.ai.apiKey === '******') {
+                    merged.ai.apiKey = current.ai.apiKey;
+                }
+                // 合并 providers：备份的替换，但保留 key
+                if (Array.isArray(backup.ai.providers) && Array.isArray(current.ai.providers)) {
+                    const currentMap = new Map(current.ai.providers.map(p => [p.id, p]));
+                    const backupMap = new Map(backup.ai.providers.map(p => [p.id, p]));
+                    const mergedProviders = [];
+                    // 备份中的 provider 覆盖当前
+                    for (const bp of backup.ai.providers) {
+                        const cp = currentMap.get(bp.id);
+                        if (cp && bp.apiKey === '******') bp.apiKey = cp.apiKey;
+                        mergedProviders.push(bp);
+                    }
+                    // 当前独有的 provider 保留
+                    for (const cp of current.ai.providers) {
+                        if (!backupMap.has(cp.id)) mergedProviders.push(cp);
+                    }
+                    merged.ai.providers = mergedProviders;
+                }
+                continue;
+            }
+            if (key === 'imports' && backup.imports && current.imports) {
+                // 预设文件合并：去重 + 备份优先
+                merged.imports = { ...current.imports, ...backup.imports };
+                if (Array.isArray(backup.imports.presetFiles) && Array.isArray(current.imports.presetFiles)) {
+                    const bIds = new Set(backup.imports.presetFiles.map(p => p.id));
+                    merged.imports.presetFiles = [
+                        ...current.imports.presetFiles.filter(p => !bIds.has(p.id)),
+                        ...backup.imports.presetFiles
+                    ];
+                }
+                continue;
+            }
+            // 普通字段：直接覆盖
+            if (typeof backup[key] === 'object' && backup[key] !== null && !Array.isArray(backup[key])) {
+                merged[key] = { ...(current[key] || {}), ...backup[key] };
+            } else {
+                merged[key] = backup[key];
+            }
+        }
+        return merged;
+    }
+
     // 获取角色列表（需要认证）
     app.get('/api/characters', requireAuth, async (req, res) => {
         try {
@@ -3660,7 +3837,7 @@ ${promptListText}
                         ? (config.ai?.providers || []).find((item) => item.id === modelProviderId)
                         : null;
                     if (provider) { overrides.baseUrl = provider.baseUrl; overrides.apiKey = provider.apiKey; }
-                    if (model) overrides.model = model;
+                    if (model) overrides.model = String(model).includes('||') ? String(model).split('||').pop() : model;
 
                     const debugBaseUrl = String(overrides.baseUrl || config.ai?.baseUrl || '').replace(/\/+$/, '');
                     const debugApiKey = overrides.apiKey || config.ai?.apiKey || '';
@@ -3768,18 +3945,219 @@ ${promptListText}
                 }
             }
 
-            const replyResult = await aiClient.chat(normalizedMessages, { baseUrl, apiKey, model });
+            const safeModel = (typeof model === 'string' && model.includes('||')) ? model.split('||').pop() : model;
+            const replyResult = await aiClient.chat(normalizedMessages, { baseUrl, apiKey, model: safeModel });
             const reply = aiClient.getVisibleResponseContent(replyResult);
+            const agentDecision = resolveRangeAgentDecision(reply, rangeContext);
             res.json({
                 success: true,
                 reply,
-                reasoningContent: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent : null
+                reasoningContent: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent : null,
+                agentDecision
             });
         } catch (error) {
             logger.error('[靶场] Agent对话失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });
+
+    // --- 非 JSON 模式：评分 prompt 构建 ---
+    function buildNoJsonOptimizePrompt({ goal, iterationNumber, maxIterations, lastResultText, promptsSummary, charSummary, wbSummary, corpusSection }) {
+        return `你是 SillyTavern 写卡优化专家，融合明月秋青/萧谴/A.U.T.O 三套方法论。${corpusSection}
+
+## 创作方法论(明月秋青)
+性格调色盘: 底色+主色调+点缀+衍生,用行为展现性格,非贴标签
+绝对零度: 白描事实,不修饰渲染,用名词动词避形容词,语料展现性格
+八股检测(必须砍): 模糊词(似乎/仿佛/宛如) | 劣质比喻(小兽/涟漪/投石) | 微表情(嘴角上扬/闪过光芒) | 语气描写 | 大段内心 | 模板句
+
+## 产出标准
+角色卡字段: description/personality/scenario/first_mes/mes_example/system_prompt/post_history_instructions
+世界书: key(触发词覆盖角色称呼/特征) | order(核心设定>细节) | position(角色前=人设,后=行为约束)
+预设: 修改prompt的content字段,不改marker和name
+
+## 场景策略
+QQ群聊→砍冗长,砍动作,≤2条消息每段≤80字,如真人水群
+角色扮演→去八股,用语料+行为替代形容词
+
+## 当前任务
+优化目标: ${goal} | 轮次: ${iterationNumber}/${maxIterations}
+
+## 测试结果
+${lastResultText}
+
+## 当前配置
+提示词: ${promptsSummary || '(无)'}
+角色卡: ${charSummary || '(未提供)'}
+世界书: ${wbSummary || '(未提供)'}
+
+请按以下格式输出你的分析（使用自然语言，严格按分隔线分段）：
+
+---ELO---
+A_wins / B_wins / draw
+理由：（从性格调色盘/绝对零度/八股角度具体说明判断依据）
+
+---评估---
+问题：
+- 具体问题1（必须引用原文证据，如"第X句出现了..."）
+- 具体问题2
+亮点：
+- 亮点1（必须引用原文证据）
+
+---修改---
+决策: modify 或 stop
+
+仅在决策=modify时输出以下内容（否则留空）：
+
+提示词修改:
+标识: <prompt的identifier>
+旧内容: <原文>
+新内容: <修改后文字>
+
+角色卡修改:
+字段: <personality|description|scenario|first_mes|mes_example|system_prompt|post_history_instructions>
+旧内容: <原文>
+新内容: <修改后文字>
+
+世界书修改:
+索引: <条目编号,新增填-1>
+操作: <update|add|delete>
+key: <触发词,逗号分隔>
+content: <新内容>
+
+下一条测试消息: <10-30字>
+修改摘要: <一句话>`;
+    }
+
+    // --- 非 JSON 模式：文本响应解析 ---
+    function parseOptimizeTextResponse(text, prompts) {
+        const result = {
+            decision: 'stop',
+            elo: { result: 'draw', reasoning: '' },
+            evaluation: { issues: [], highlights: [] },
+            modifiedPrompts: [],
+            modifiedCharacter: null,
+            modifiedWorldBook: [],
+            nextTestMessage: '',
+            changeSummary: ''
+        };
+
+        // 提取 ELO
+        const eloMatch = text.match(/---ELO---\s*([\s\S]*?)(?=---评估---|---修改---|$)/i);
+        if (eloMatch) {
+            const eloBlock = eloMatch[1].trim();
+            if (/B_wins/i.test(eloBlock)) result.elo.result = 'B_wins';
+            else if (/A_wins/i.test(eloBlock)) result.elo.result = 'A_wins';
+            const reasonMatch = eloBlock.match(/理由[：:]\s*([\s\S]*)/i);
+            if (reasonMatch) result.elo.reasoning = reasonMatch[1].trim().slice(0, 500);
+        }
+
+        // 提取 评估
+        const evalMatch = text.match(/---评估---\s*([\s\S]*?)(?=---修改---|$)/i);
+        if (evalMatch) {
+            const evalBlock = evalMatch[1];
+            const issuesSection = evalBlock.match(/问题[：:]\s*([\s\S]*?)(?=亮点[：:]|$)/i);
+            if (issuesSection) {
+                result.evaluation.issues = issuesSection[1]
+                    .split(/\n\s*[-•]\s*/).filter(s => s.trim())
+                    .map(s => s.trim()).filter(Boolean);
+            }
+            const highlightsSection = evalBlock.match(/亮点[：:]\s*([\s\S]*)/i);
+            if (highlightsSection) {
+                result.evaluation.highlights = highlightsSection[1]
+                    .split(/\n\s*[-•]\s*/).filter(s => s.trim())
+                    .map(s => s.trim()).filter(Boolean);
+            }
+        }
+
+        // 提取 修改
+        const modMatch = text.match(/---修改---\s*([\s\S]*)/i);
+        if (modMatch) {
+            const modBlock = modMatch[1];
+            if (/决策\s*[：:]\s*modify/i.test(modBlock)) {
+                result.decision = 'modify';
+            }
+
+            // 解析提示词修改
+            const promptSections = modBlock.split(/提示词修改[：:]/i).slice(1);
+            for (const section of promptSections) {
+                const endIdx = Math.min(
+                    ...[section.indexOf('\n角色卡修改'), section.indexOf('\n世界书修改'), section.indexOf('\n下一条测试消息')].filter(i => i >= 0)
+                );
+                const block = endIdx >= 0 ? section.slice(0, endIdx) : section;
+                const idMatch = block.match(/标识\s*[：:]\s*(.+)/i);
+                const oldMatch = block.match(/旧内容\s*[：:]\s*([\s\S]*?)(?=\n新内容[：:]|$)/i);
+                const newMatch = block.match(/新内容\s*[：:]\s*([\s\S]*?)(?=\n(?:标识|字段|索引|下一条测试消息|修改摘要|$)|\n\s*$)/i);
+                if (idMatch && newMatch) {
+                    const identifier = idMatch[1].trim();
+                    const oldContent = oldMatch ? oldMatch[1].trim() : '';
+                    const newContent = newMatch[1].trim();
+                    if (newContent && newContent !== oldContent) {
+                        result.modifiedPrompts.push({ identifier, oldContent, newContent });
+                    }
+                }
+            }
+
+            // 解析角色卡修改
+            const charSections = modBlock.split(/角色卡修改[：:]/i).slice(1);
+            if (charSections.length > 0 && result.decision === 'modify') {
+                result.modifiedCharacter = [];
+                for (const section of charSections) {
+                    const endIdx = Math.min(
+                        ...[section.indexOf('\n提示词修改'), section.indexOf('\n世界书修改'), section.indexOf('\n下一条测试消息')].filter(i => i >= 0)
+                    );
+                    const block = endIdx >= 0 ? section.slice(0, endIdx) : section;
+                    const fieldMatch = block.match(/字段\s*[：:]\s*(.+)/i);
+                    const oldMatch = block.match(/旧内容\s*[：:]\s*([\s\S]*?)(?=\n新内容[：:]|$)/i);
+                    const newMatch = block.match(/新内容\s*[：:]\s*([\s\S]*?)(?=\n(?:字段|标识|索引|下一条测试消息|修改摘要|$)|\n\s*$)/i);
+                    if (fieldMatch && newMatch) {
+                        const field = fieldMatch[1].trim();
+                        const oldContent = oldMatch ? oldMatch[1].trim() : '';
+                        const newContent = newMatch[1].trim();
+                        if (newContent && newContent !== oldContent) {
+                            result.modifiedCharacter.push({ field, oldContent, newContent });
+                        }
+                    }
+                }
+                if (result.modifiedCharacter.length === 0) result.modifiedCharacter = null;
+            }
+
+            // 解析世界书修改
+            const wbSections = modBlock.split(/世界书修改[：:]/i).slice(1);
+            for (const section of wbSections) {
+                const endIdx = Math.min(
+                    ...[section.indexOf('\n提示词修改'), section.indexOf('\n角色卡修改'), section.indexOf('\n下一条测试消息')].filter(i => i >= 0)
+                );
+                const block = endIdx >= 0 ? section.slice(0, endIdx) : section;
+                const idxMatch = block.match(/索引\s*[：:]\s*(-?\d+)/i);
+                const actionMatch = block.match(/操作\s*[：:]\s*(update|add|delete)/i);
+                const keyMatch = block.match(/key\s*[：:]\s*(.+)/i);
+                const contentMatch = block.match(/content\s*[：:]\s*([\s\S]*?)(?=\n(?:索引|操作|key|content|标识|字段|下一条测试消息|修改摘要|$)|\n\s*$)/i);
+                if (actionMatch) {
+                    const idx = idxMatch ? parseInt(idxMatch[1]) : -1;
+                    const entry = {};
+                    if (keyMatch) entry.key = keyMatch[1].split(/[,，]/).map(s => s.trim()).filter(Boolean);
+                    if (contentMatch) entry.content = contentMatch[1].trim();
+                    result.modifiedWorldBook.push({
+                        index: idx,
+                        action: actionMatch[1],
+                        entry,
+                        oldContent: '',
+                        newContent: entry.content || ''
+                    });
+                }
+            }
+
+            // 下一条测试消息
+            const nextMatch = modBlock.match(/下一条测试消息\s*[：:]\s*(.+)/i);
+            if (nextMatch) result.nextTestMessage = nextMatch[1].trim().slice(0, 100);
+
+            // 修改摘要
+            const summaryMatch = modBlock.match(/修改摘要\s*[：:]\s*(.+)/i);
+            if (summaryMatch) result.changeSummary = summaryMatch[1].trim().slice(0, 200);
+        }
+
+        return result;
+    }
 
     app.post('/api/prompt-range/optimize-step', requireAuth, async (req, res) => {
         try {
@@ -3788,7 +4166,7 @@ ${promptListText}
                 lastUserMessage, lastAIResponse,
                 currentPromptConfig, currentCharacter, currentWorldBook,
                 modelProviderId, model, dryRun = false,
-                testCorpus = ''
+                testCorpus = '', noJsonMode = false
             } = req.body || {};
 
             if (!goal) {
@@ -3850,7 +4228,9 @@ ${promptListText}
             optimizeMetrics.corpusSampleMs = Date.now() - corpusStartedAt;
 
             const promptStartedAt = Date.now();
-            const optimizePrompt = `你是 SillyTavern 写卡优化专家，融合明月秋青/萧谴/A.U.T.O 三套方法论。${corpusSection}
+            const optimizePrompt = noJsonMode
+                ? buildNoJsonOptimizePrompt({ goal, iterationNumber, maxIterations, lastResultText, promptsSummary, charSummary, wbSummary, corpusSection })
+                : `你是 SillyTavern 写卡优化专家，融合明月秋青/萧谴/A.U.T.O 三套方法论。${corpusSection}
 
 ## 创作方法论(明月秋青)
 性格调色盘: 底色+主色调+点缀+衍生,用行为展现性格,非贴标签
@@ -3904,7 +4284,7 @@ ${lastResultText}
                 const provider = (config.ai?.providers || []).find(p => p.id === modelProviderId);
                 if (provider) { overrides.baseUrl = provider.baseUrl; overrides.apiKey = provider.apiKey; }
             }
-            if (model) overrides.model = model;
+            if (model) overrides.model = String(model).includes('||') ? String(model).split('||').pop() : model;
 
             const modelStartedAt = Date.now();
             const aiResult = await aiClient.chat([{ role: 'user', content: optimizePrompt }], overrides);
@@ -3913,20 +4293,24 @@ ${lastResultText}
 
             const parseStartedAt = Date.now();
             let parsed;
-            const tryParse = (text) => {
-                const trimmed = text.trim();
-                const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
-                const jsonText = fence ? fence[1].trim() : trimmed;
-                const bracketStart = jsonText.indexOf('{');
-                const bracketEnd = jsonText.lastIndexOf('}');
-                if (bracketStart >= 0 && bracketEnd > bracketStart) {
-                    return JSON.parse(jsonText.slice(bracketStart, bracketEnd + 1));
-                }
-                return JSON.parse(jsonText);
-            };
-            try { parsed = tryParse(rawText); } catch {
-                try { parsed = JSON.parse(rawText); } catch {
-                    parsed = { decision: 'stop', evaluation: { score: 5, reasoning: '无法解析AI返回', meetsExpectation: false }, modifiedPrompts: [], changeSummary: 'AI返回格式异常' };
+            if (noJsonMode) {
+                parsed = parseOptimizeTextResponse(rawText, prompts);
+            } else {
+                const tryParse = (text) => {
+                    const trimmed = text.trim();
+                    const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+                    const jsonText = fence ? fence[1].trim() : trimmed;
+                    const bracketStart = jsonText.indexOf('{');
+                    const bracketEnd = jsonText.lastIndexOf('}');
+                    if (bracketStart >= 0 && bracketEnd > bracketStart) {
+                        return JSON.parse(jsonText.slice(bracketStart, bracketEnd + 1));
+                    }
+                    return JSON.parse(jsonText);
+                };
+                try { parsed = tryParse(rawText); } catch {
+                    try { parsed = JSON.parse(rawText); } catch {
+                        parsed = { decision: 'stop', evaluation: { score: 5, reasoning: '无法解析AI返回', meetsExpectation: false }, modifiedPrompts: [], changeSummary: 'AI返回格式异常' };
+                    }
                 }
             }
 
@@ -4018,6 +4402,7 @@ ${lastResultText}
             });
 
             res.json({
+                success: true,
                 elo: {
                     result: eloResult.result || 'draw',
                     reasoning: String(eloResult.reasoning || ''),
@@ -4084,6 +4469,20 @@ ${lastResultText}
             promptSnapshots.delete(id);
             res.json({ success: true, message: '已删除快照' });
         }
+    });
+
+    // 靶场偏好持久化
+    const RANGE_PREFS_PATH = path.join(__dirname, '..', 'data', 'range-prefs.json');
+    function loadRangePrefs() { try { return JSON.parse(fsSync.readFileSync(RANGE_PREFS_PATH, 'utf8')); } catch(e) { return {}; } }
+    function saveRangePrefs(prefs) { fsSync.writeFileSync(RANGE_PREFS_PATH, JSON.stringify(prefs, null, 2), 'utf8'); }
+
+    app.get('/api/prompt-range/prefs', requireAuth, (req, res) => {
+        res.json({ success: true, prefs: loadRangePrefs() });
+    });
+    app.post('/api/prompt-range/prefs', requireAuth, (req, res) => {
+        const prefs = req.body || {};
+        saveRangePrefs(prefs);
+        res.json({ success: true });
     });
 
     app.get('/api/prompt-range/models', requireAuth, (req, res) => {
@@ -4278,6 +4677,296 @@ ${lastResultText}
             res.status(500).json({ success: false, error: error.message });
         }
     });
+
+    function parseRangeAgentDecision(reply = '') {
+        const raw = String(reply || '').trim();
+        if (!raw) return null;
+
+        if (/^\s*\{/.test(raw)) {
+            try {
+                const parsed = JSON.parse(raw);
+                const type = String(parsed.decision || parsed.action || '').trim().toLowerCase();
+                if (!type) return null;
+                return {
+                    type,
+                    phase: String(parsed.phase || '').trim().toLowerCase(),
+                    reason: String(parsed.reason || '').trim(),
+                    focusIssue: String(parsed.focusIssue || '').trim(),
+                    testMessage: String(parsed.testMessage || parsed.message || '').trim(),
+                    summary: String(parsed.summary || parsed.info || '').trim(),
+                    nextStep: String(parsed.nextStep || '').trim().toLowerCase()
+                };
+            } catch {
+                // 继续走自然语言兜底
+            }
+        }
+
+        const normalized = raw
+            .replace(/\r/g, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const lower = normalized.toLowerCase();
+
+        const extractFocusIssue = (text) => {
+            const patterns = [
+                /焦点问题[:：]\s*([^\n。；;]+)/i,
+                /当前最关注的问题[:：]\s*([^\n。；;]+)/i,
+                /主要问题[:：]\s*([^\n。；;]+)/i
+            ];
+            for (const pattern of patterns) {
+                const match = String(text || '').match(pattern);
+                if (match?.[1]) return match[1].trim();
+            }
+            return '';
+        };
+
+        const extractReason = (text) => {
+            const patterns = [
+                /原因[:：]\s*([^\n]+)/i,
+                /理由[:：]\s*([^\n]+)/i,
+                /判断[:：]\s*([^\n]+)/i
+            ];
+            for (const pattern of patterns) {
+                const match = String(text || '').match(pattern);
+                if (match?.[1]) return match[1].trim();
+            }
+            return String(text || '').split('\n').map(line => line.trim()).find(Boolean) || '';
+        };
+
+        if (/\baction\s*:\s*test\b/i.test(raw)) {
+            const match = raw.match(/ACTION:\s*TEST\s*\|?\s*(.*)/i);
+            return {
+                type: 'test',
+                phase: '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: String(match?.[1] || '').trim(),
+                summary: '',
+                nextStep: /score_after_reply/i.test(raw) ? 'score_after_reply' : ''
+            };
+        }
+
+        if (/\baction\s*:\s*score\b/i.test(raw)) {
+            return {
+                type: 'score',
+                phase: '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (/\baction\s*:\s*modify\b/i.test(raw)) {
+            const match = raw.match(/ACTION:\s*MODIFY\s*\|?\s*(.*)/i);
+            return {
+                type: 'modify',
+                phase: '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: String(match?.[1] || '').trim(),
+                nextStep: ''
+            };
+        }
+
+        if (/\baction\s*:\s*next_phase\b/i.test(raw)) {
+            return {
+                type: 'next_phase',
+                phase: '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (/\baction\s*:\s*done\b/i.test(raw)) {
+            return {
+                type: 'done',
+                phase: '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (normalized === '评分') {
+            return {
+                type: 'score',
+                phase: lower.includes('verify') ? 'verify' : lower.includes('tune') ? 'tune' : 'diagnose',
+                reason: '模型返回了极短评分动作词',
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (normalized === '测试') {
+            return {
+                type: 'test',
+                phase: lower.includes('verify') ? 'verify' : lower.includes('tune') ? 'tune' : 'diagnose',
+                reason: '模型返回了极短测试动作词',
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (normalized === '修改') {
+            return {
+                type: 'modify',
+                phase: lower.includes('tune') ? 'tune' : '',
+                reason: '模型返回了极短修改动作词',
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (normalized === '下一阶段') {
+            return {
+                type: 'next_phase',
+                phase: '',
+                reason: '模型返回了极短阶段推进动作词',
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (normalized === '完成') {
+            return {
+                type: 'done',
+                phase: lower.includes('verify') ? 'verify' : '',
+                reason: '模型返回了极短完成动作词',
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (/优先输出 score|先评分|应该先评分|应当先评分|建议先评分|先进行评分|先做评分|需要评分|进行评分|应先评分|先给评分|先根据现有结果评分|先分析当前回复|先分析当前结果|先对当前回复评分/.test(normalized)) {
+            return {
+                type: 'score',
+                phase: lower.includes('verify') ? 'verify' : lower.includes('tune') ? 'tune' : 'diagnose',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (/先测试|应该测试|应当测试|建议测试|重新测试|出一条测试|发一条测试|给一条测试|验证消息|测试消息|先出题|先测一轮|再测一轮|需要测试/.test(normalized)) {
+            return {
+                type: 'test',
+                phase: lower.includes('verify') ? 'verify' : lower.includes('tune') ? 'tune' : 'diagnose',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: /评分|score/.test(normalized) ? 'score_after_reply' : ''
+            };
+        }
+
+        if (/进入下一阶段|下一阶段|转入调优|转入验证|进入调优|进入验证/.test(normalized)) {
+            return {
+                type: 'next_phase',
+                phase: /验证|verify/.test(normalized) ? 'verify' : /调优|tune/.test(normalized) ? 'tune' : '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (/结束流程|可以结束|达标|无需继续|停止迭代|完成优化/.test(normalized)) {
+            return {
+                type: 'done',
+                phase: /验证|verify/.test(normalized) ? 'verify' : '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: '',
+                nextStep: ''
+            };
+        }
+
+        if (/修改建议|建议修改|需要修改|进入修改|应该修改|优化建议/.test(normalized)) {
+            return {
+                type: 'modify',
+                phase: /调优|tune/.test(normalized) ? 'tune' : '',
+                reason: extractReason(raw),
+                focusIssue: extractFocusIssue(raw),
+                testMessage: '',
+                summary: normalized.slice(0, 200),
+                nextStep: ''
+            };
+        }
+
+        return null;
+    }
+
+    function inferRangeAgentDecisionFromNarrative(reply = '', rangeContext = {}) {
+        const raw = String(reply || '').trim();
+        if (!raw) return null;
+        const normalized = raw.replace(/\r/g, '').replace(/\s+/g, ' ').trim();
+        const lines = String(reply || '').split('\n').map(line => line.trim()).filter(Boolean);
+        const hasLatestTest = !!rangeContext?.latestTest?.userMessage && !!rangeContext?.latestTest?.aiResponse;
+
+        const detectPhase = () => {
+            if (/验证|verify/i.test(raw)) return 'verify';
+            if (/调优|修改|改写|优化建议|tune/i.test(raw)) return 'tune';
+            return 'diagnose';
+        };
+        const extractFocusIssue = () => {
+            for (const p of [/焦点问题[:：]\s*([^\n。；;]+)/i, /当前最关注的问题[:：]\s*([^\n。；;]+)/i, /主要问题[:：]\s*([^\n。；;]+)/i, /问题集中在[:：]\s*([^\n。；;]+)/i, /问题[:：]\s*([^\n。；;]+)/i]) {
+                const m = raw.match(p);
+                if (m?.[1]) return m[1].trim();
+            }
+            return '';
+        };
+        const extractReason = () => { return lines[0] || ''; };
+        const extractSuggestedTest = () => {
+            for (const p of [/测试消息[:：]\s*([^\n]+)/i, /下一条测试(?:可以是)?[:：]?\s*([^\n]+)/i, /建议先发[:：]?\s*([^\n]+)/i]) {
+                const m = raw.match(p);
+                if (m?.[1]) return m[1].trim().slice(0, 60);
+            }
+            return '';
+        };
+
+        if (/^\[?评分\]?/m.test(raw) || /综合得分|评分[:：]|改写建议|当前应先评分|应该先评分|应当先评分|建议先评分|先根据现有结果评分|先分析当前回复|先分析当前结果/.test(raw) || (hasLatestTest && /问题[:：]|建议[:：]|当前回复/.test(raw))) {
+            return { type: 'score', phase: detectPhase(), reason: extractReason(), focusIssue: extractFocusIssue(), testMessage: '', summary: '', nextStep: '' };
+        }
+        if (/测试消息|建议先测试|应该测试|应当测试|重新测试|再测一轮|先出题|先测一轮|给一条测试|发一条测试|可以先发一句|可以发一句/.test(raw)) {
+            return { type: 'test', phase: detectPhase(), reason: extractReason(), focusIssue: extractFocusIssue(), testMessage: extractSuggestedTest(), summary: '', nextStep: /评分|score/.test(raw) ? 'score_after_reply' : '' };
+        }
+        if (/修改建议|建议改成|改写如下|可以改成|优化建议|建议改写/.test(raw)) {
+            return { type: 'modify', phase: 'tune', reason: extractReason(), focusIssue: extractFocusIssue(), testMessage: '', summary: lines.slice(0, 4).join(' ').slice(0, 200), nextStep: '' };
+        }
+        if (/进入下一阶段|转入下一阶段|进入调优|进入验证|转入调优|转入验证/.test(raw)) {
+            return { type: 'next_phase', phase: /验证/.test(raw) ? 'verify' : 'tune', reason: extractReason(), focusIssue: extractFocusIssue(), testMessage: '', summary: '', nextStep: '' };
+        }
+        if (/可以结束|结束流程|无需继续|停止迭代|完成优化|已经达标/.test(raw)) {
+            return { type: 'done', phase: detectPhase(), reason: extractReason(), focusIssue: extractFocusIssue(), testMessage: '', summary: '', nextStep: '' };
+        }
+        return null;
+    }
+
+    function resolveRangeAgentDecision(reply = '', rangeContext = {}) {
+        return parseRangeAgentDecision(reply) || inferRangeAgentDecisionFromNarrative(reply, rangeContext) || null;
+    }
 
     app.post('/api/prompt-range/corpus-clear', requireAuth, (req, res) => {
         rangeCorpusStore = { lines: [], stats: null, updatedAt: 0, embeddings: null };

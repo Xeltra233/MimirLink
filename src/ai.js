@@ -91,6 +91,9 @@ export class AIClient {
                     if (item && typeof item.reasoning === 'string') {
                         return item.reasoning;
                     }
+                    if (item && item.type === 'text' && typeof item.text === 'string') {
+                        return item.text;
+                    }
                     if (item && Array.isArray(item.parts)) {
                         return this.extractTextContent(item.parts) || '';
                     }
@@ -100,12 +103,27 @@ export class AIClient {
         }
 
         if (content && typeof content === 'object') {
+            // OpenAI 标准格式
             if (typeof content.text === 'string') {
                 return content.text;
             }
             if (typeof content.content === 'string') {
                 return content.content;
             }
+            // Gemini 格式
+            if (Array.isArray(content.parts)) {
+                const partsText = this.extractTextContent(content.parts);
+                if (partsText !== null) {
+                    return partsText;
+                }
+            }
+            if (Array.isArray(content.candidates)) {
+                const firstCandidate = content.candidates[0];
+                if (firstCandidate?.content) {
+                    return this.extractTextContent(firstCandidate.content);
+                }
+            }
+            // 其他可能的格式
             if (typeof content.output_text === 'string') {
                 return content.output_text;
             }
@@ -124,17 +142,15 @@ export class AIClient {
                     return summaryText;
                 }
             }
-            if (Array.isArray(content.parts)) {
-                const partsText = this.extractTextContent(content.parts);
-                if (partsText !== null) {
-                    return partsText;
-                }
-            }
             if (Array.isArray(content.items)) {
                 const itemsText = this.extractTextContent(content.items);
                 if (itemsText !== null) {
                     return itemsText;
                 }
+            }
+            // Claude 格式
+            if (typeof content.type === 'string' && content.type === 'text' && typeof content.text === 'string') {
+                return content.text;
             }
         }
 
@@ -175,11 +191,16 @@ export class AIClient {
         const content = message?.content;
         const reasoningContent = message?.reasoning_content;
 
+        // Gemini 格式检测
+        const isGeminiFormat = data?.candidates && Array.isArray(data.candidates);
+        const geminiCandidate = isGeminiFormat ? data.candidates[0] : null;
+        const geminiContent = geminiCandidate?.content;
+
         return {
             choiceCount: Array.isArray(data?.choices) ? data.choices.length : 0,
             requestedModel: this.config.model || null,
             responseModel: data?.model || null,
-            finishReason: choice?.finish_reason || null,
+            finishReason: choice?.finish_reason || geminiCandidate?.finishReason || null,
             messageKeys: Object.keys(message),
             contentType: Array.isArray(content) ? 'array' : typeof content,
             contentPreview: this.buildContentPreview(content),
@@ -187,24 +208,59 @@ export class AIClient {
             reasoningContentPreview: this.buildContentPreview(reasoningContent),
             hasToolCalls: Array.isArray(message?.tool_calls) && message.tool_calls.length > 0,
             refusal: typeof message?.refusal === 'string' ? message.refusal.slice(0, 200) : null,
+            // Gemini 格式诊断
+            isGeminiFormat,
+            geminiCandidateCount: isGeminiFormat ? data.candidates.length : 0,
+            geminiContentType: geminiContent ? (Array.isArray(geminiContent) ? 'array' : typeof geminiContent) : null,
+            geminiContentPreview: geminiContent ? this.buildContentPreview(geminiContent) : null,
+            // 原始数据
             rawContent: content,
             rawReasoningContent: reasoningContent,
+            rawGeminiContent: geminiContent,
             rawMessage: message,
             rawChoice: choice,
-            rawResponse: data
+            rawGeminiCandidate: geminiCandidate,
+            rawResponseKeys: Object.keys(data)
         };
     }
 
     buildChatExtractionResult(data) {
         const message = data?.choices?.[0]?.message || {};
+
+        // Gemini 格式兼容：检查是否是 Gemini 原生响应
+        const isGeminiFormat = data?.candidates && Array.isArray(data.candidates);
+        const geminiCandidate = isGeminiFormat ? data.candidates[0] : null;
+        const geminiContent = geminiCandidate?.content;
+
         this.logPipelineStage('开始提取回复内容', {
             responseModel: data?.model || null,
+            isGeminiFormat,
             messageKeys: Object.keys(message),
             contentType: Array.isArray(message.content) ? 'array' : typeof message.content,
             reasoningContentType: Array.isArray(message.reasoning_content) ? 'array' : typeof message.reasoning_content,
-            toolCallCount: Array.isArray(message.tool_calls) ? message.tool_calls.length : 0
+            toolCallCount: Array.isArray(message.tool_calls) ? message.tool_calls.length : 0,
+            geminiContentType: geminiContent ? (Array.isArray(geminiContent) ? 'array' : typeof geminiContent) : null
         });
 
+        // 优先尝试 Gemini 格式
+        if (isGeminiFormat && geminiContent) {
+            const geminiText = this.extractTextContent(geminiContent);
+            if (geminiText !== null) {
+                this.logPipelineStage('Gemini 格式内容提取成功', {
+                    contentLength: geminiText.length,
+                    contentPreview: geminiText.slice(0, 200)
+                });
+                return {
+                    content: geminiText,
+                    reasoningContent: null,
+                    rawReasoningContent: null,
+                    rawContent: geminiContent,
+                    rawMessage: geminiCandidate
+                };
+            }
+        }
+
+        // OpenAI 标准格式
         const content = this.extractTextContent(message.content);
         const reasoningContent = this.extractTextContent(
             message.reasoning_content
@@ -316,7 +372,13 @@ export class AIClient {
             return this.config.apiUrl;
         }
 
-        return `${normalizedBaseUrl}${path}`;
+        // 如果 baseUrl 已经包含 /v1，直接拼接 path；否则添加 /v1 前缀
+        if (normalizedBaseUrl.endsWith('/v1')) {
+            return `${normalizedBaseUrl}${path}`;
+        }
+
+        const normalizedPath = path.startsWith('/v1') ? path : `/v1${path}`;
+        return `${normalizedBaseUrl}${normalizedPath}`;
     }
 
     resolveChatOptions(overrides = {}) {
@@ -534,6 +596,8 @@ export class AIClient {
                 }
 
                 lastChunk = parsed;
+
+                // OpenAI 标准格式
                 const delta = parsed?.choices?.[0]?.delta || {};
                 if (typeof delta.reasoning_content === 'string') {
                     reasoningContent += delta.reasoning_content;
@@ -543,6 +607,23 @@ export class AIClient {
                 }
                 if (typeof delta.content === 'string') {
                     content += delta.content;
+                }
+
+                // Gemini 格式
+                const geminiCandidate = parsed?.candidates?.[0];
+                if (geminiCandidate?.content) {
+                    const geminiText = this.extractTextContent(geminiCandidate.content);
+                    if (geminiText) {
+                        content += geminiText;
+                    }
+                }
+
+                // Claude 格式（content 数组）
+                if (Array.isArray(delta.content)) {
+                    const deltaText = this.extractTextContent(delta.content);
+                    if (deltaText) {
+                        content += deltaText;
+                    }
                 }
             }
         };
@@ -768,80 +849,252 @@ export class AIClient {
         ];
     }
 
-    async executeSingleToolCall(toolCall, toolContext = {}) {
-        const handlers = toolContext.handlers || {};
-        const handler = handlers[toolCall.name];
-        if (typeof handler !== 'function') {
-            throw new Error(`未找到工具处理器: ${toolCall.name}`);
+    buildTextToolFallbackMessages(messages, instruction) {
+        const normalizedMessages = Array.isArray(messages)
+            ? messages.map((message) => ({ ...message }))
+            : [];
+        const normalizedInstruction = String(instruction || '').trim();
+        if (!normalizedInstruction) {
+            return normalizedMessages;
         }
 
-        this.logPipelineStage('开始执行工具调用', {
-            toolName: toolCall.name,
-            toolCallId: toolCall.id,
-            arguments: toolCall.arguments
-        });
-
-        const result = await handler(toolCall.arguments, {
-            toolCall,
-            toolContext,
-            aiClient: this
-        });
-
-        this.logPipelineStage('工具调用执行完成', {
-            toolName: toolCall.name,
-            toolCallId: toolCall.id,
-            resultPreview: this.buildContentPreview(JSON.stringify(result).slice(0, 500))
-        });
-
-        return result;
+        return [
+            {
+                role: 'system',
+                content: normalizedInstruction,
+                meta: { source: 'text_tool_fallback' }
+            },
+            ...normalizedMessages
+        ];
     }
 
+    extractJsonObjectCandidates(text = '') {
+        const source = String(text || '');
+        const candidates = [];
+        const pushCandidate = (value) => {
+            const normalized = String(value || '').trim();
+            if (normalized && !candidates.includes(normalized)) {
+                candidates.push(normalized);
+            }
+        };
+
+        pushCandidate(source);
+        const codeBlockMatches = source.match(/```(?:json)?\s*([\s\S]*?)```/ig) || [];
+        for (const block of codeBlockMatches) {
+            const cleaned = block.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+            pushCandidate(cleaned);
+        }
+
+        const firstBrace = source.indexOf('{');
+        const lastBrace = source.lastIndexOf('}');
+        if (firstBrace >= 0 && lastBrace > firstBrace) {
+            pushCandidate(source.slice(firstBrace, lastBrace + 1));
+        }
+
+        return candidates;
+    }
+
+    parseTextToolFallbackResponse(rawText = '') {
+        const candidates = this.extractJsonObjectCandidates(rawText);
+        for (const candidate of candidates) {
+            try {
+                const parsed = JSON.parse(candidate);
+                if (parsed && typeof parsed === 'object') {
+                    return parsed;
+                }
+            } catch {
+                continue;
+            }
+        }
+        throw new Error('文本工具兜底解析失败：模型未返回合法 JSON');
+    }
+
+    normalizeTextToolFallbackCalls(payload = {}) {
+        const rawCalls = Array.isArray(payload?.tool_calls)
+            ? payload.tool_calls
+            : payload?.tool_call && typeof payload.tool_call === 'object'
+                ? [payload.tool_call]
+                : [];
+
+        return rawCalls.map((call, index) => ({
+            id: call?.id || `text-tool-call-${Date.now()}-${index + 1}`,
+            type: 'function',
+            name: String(call?.name || '').trim(),
+            arguments: call?.arguments && typeof call.arguments === 'object' ? call.arguments : {},
+            rawArguments: JSON.stringify(call?.arguments && typeof call.arguments === 'object' ? call.arguments : {})
+        })).filter((call) => call.name);
+    }
+
+    buildTextToolResultMessage(toolCall, toolResult) {
+        return {
+            role: 'user',
+            content: JSON.stringify({
+                action: 'tool_result',
+                tool_name: toolCall.name,
+                tool_call_id: toolCall.id,
+                result: toolResult
+            }, null, 2),
+            meta: { source: 'text_tool_result' }
+        };
+    }
+
+    async runTextToolFallback(messages, toolContext = {}, overrides = {}) {
+        const fallbackConfig = toolContext?.textToolFallback || {};
+        const instruction = String(fallbackConfig.instruction || '').trim();
+        const maxRounds = Number(fallbackConfig.maxRounds) || 3;
+        if (!instruction) {
+            throw new Error('文本工具兜底未提供协议说明');
+        }
+
+        let conversation = this.buildTextToolFallbackMessages(messages, instruction);
+        for (let round = 0; round < maxRounds; round += 1) {
+            const payload = this.buildChatPayload(conversation, overrides);
+            this.logPipelineStage('文本工具兜底请求开始', {
+                round: round + 1,
+                maxRounds,
+                messageCount: conversation.length,
+                payload: this.buildPayloadPreview(payload)
+            });
+
+            const result = await this.sendChatRequest(payload, overrides);
+            if (!result.ok) {
+                throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
+            }
+
+            const extracted = await this.extractChatContentWithPrefillFallback(result.data, conversation, overrides);
+            const rawReply = this.getVisibleResponseContent(extracted);
+            const parsed = this.parseTextToolFallbackResponse(rawReply);
+            const action = String(parsed?.action || '').trim().toLowerCase();
+
+            if (action === 'final') {
+                const finalContent = typeof parsed.content === 'string' ? parsed.content.trim() : '';
+                if (!finalContent) {
+                    throw new Error('文本工具兜底解析失败：final 缺少 content');
+                }
+                return {
+                    ...extracted,
+                    content: finalContent
+                };
+            }
+
+            if (action !== 'tool_calls') {
+                throw new Error('文本工具兜底解析失败：未知 action');
+            }
+
+            const toolCalls = this.normalizeTextToolFallbackCalls(parsed);
+            if (toolCalls.length === 0) {
+                throw new Error('文本工具兜底解析失败：tool_calls 为空');
+            }
+
+            conversation.push({
+                role: 'assistant',
+                content: rawReply,
+                meta: { source: 'text_tool_fallback_reply' }
+            });
+
+            for (const toolCall of toolCalls) {
+                const toolResult = await this.executeSingleToolCall(toolCall, toolContext);
+                conversation.push(this.buildTextToolResultMessage(toolCall, toolResult));
+            }
+        }
+
+        throw new Error('文本工具兜底轮次过多，已停止继续请求');
+    }
     async chatWithTools(messages, toolContext = {}, overrides = {}) {
-        const tools = Array.isArray(toolContext.tools) ? toolContext.tools.filter(Boolean) : [];
+        const tools = Array.isArray(toolContext?.tools) ? toolContext.tools : [];
+        const handlers = toolContext?.handlers || {};
+        const textToolFallbackEnabled = toolContext?.textToolFallback?.enabled === true;
+
         if (tools.length === 0) {
             return this.chat(messages, overrides);
         }
 
-        this.logPipelineStage('开始执行 chatWithTools', {
-            model: this.resolveChatOptions(overrides).model || null,
-            toolNames: tools.map((tool) => tool?.function?.name || tool?.name || 'unknown'),
-            messageCount: Array.isArray(messages) ? messages.length : 0,
-            messageTrace: this.summarizeMessages(messages)
-        });
+        let conversation = Array.isArray(messages) ? messages.map((message) => ({ ...message })) : [];
 
-        const firstPayload = this.buildToolsChatPayload(messages, tools, overrides);
-        this.logPipelineStage('已构建工具请求 payload', this.buildPayloadPreview(firstPayload));
+        for (let round = 0; round < 4; round += 1) {
+            const payload = this.buildToolsChatPayload(conversation, tools, overrides);
+            this.logPipelineStage('开始执行 chatWithTools', {
+                round: round + 1,
+                toolCount: tools.length,
+                messageCount: conversation.length,
+                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean),
+                textToolFallbackEnabled
+            });
 
-        const firstResult = await this.sendChatRequest(firstPayload, overrides);
-        if (!firstResult.ok) {
-            throw new Error(`AI API 错误: ${firstResult.status} - ${firstResult.errorText}`);
+            const result = await this.sendChatRequest(payload, overrides);
+            if (!result.ok) {
+                if (textToolFallbackEnabled && this.isDegradedFunctionError(result.errorText)) {
+                    this.logPipelineStage('原生工具调用失败，切换文本工具兜底', {
+                        round: round + 1,
+                        status: result.status,
+                        errorText: String(result.errorText || '').slice(0, 500)
+                    });
+                    return this.runTextToolFallback(messages, toolContext, overrides);
+                }
+                throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
+            }
+
+            const assistantMessage = result.data?.choices?.[0]?.message || {};
+            const toolCalls = Array.isArray(assistantMessage.tool_calls) ? assistantMessage.tool_calls : [];
+            const assistantContent = this.extractTextContent(assistantMessage.content);
+
+            if (toolCalls.length === 0) {
+                let extractedError = null;
+                try {
+                    return await this.extractChatContentWithPrefillFallback(result.data, conversation, overrides);
+                } catch (error) {
+                    extractedError = error;
+                }
+
+                if (!this.isEmptyMessageContentError(extractedError)) {
+                    throw extractedError;
+                }
+
+                this.logPipelineStage('chatWithTools 检测到非流式空回复，尝试流式提取兜底', {
+                    round: round + 1,
+                    diagnostic: extractedError?.diagnostic || null
+                });
+
+                const streamingResult = await this.sendStreamingChatRequest(payload, overrides);
+                if (!streamingResult.ok) {
+                    throw new Error(`AI API 错误: ${streamingResult.status} - ${streamingResult.errorText}`);
+                }
+
+                return await this.extractChatContentWithPrefillFallback(streamingResult.data, conversation, overrides);
+            }
+
+            conversation.push({
+                role: 'assistant',
+                content: assistantContent || '',
+                tool_calls: toolCalls
+            });
+
+            for (const toolCall of toolCalls) {
+                const toolName = toolCall?.function?.name || '';
+                const handler = handlers[toolName];
+                let toolResult;
+
+                if (typeof handler !== 'function') {
+                    toolResult = { ok: false, error: `未找到工具处理器: ${toolName}` };
+                } else {
+                    let parsedArgs = {};
+                    try {
+                        parsedArgs = toolCall?.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
+                    } catch {
+                        parsedArgs = {};
+                    }
+                    toolResult = await handler(parsedArgs);
+                }
+
+                conversation.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify(toolResult, null, 2)
+                });
+            }
         }
 
-        const firstMessage = this.extractAssistantMessage(firstResult.data);
-        const rawToolCalls = Array.isArray(firstMessage.tool_calls) ? firstMessage.tool_calls : [];
-        if (rawToolCalls.length === 0) {
-            return this.extractChatContentWithPrefillFallback(firstResult.data, messages, overrides);
-        }
-
-        const toolCall = this.normalizeToolCall(rawToolCalls[0]);
-        if (!toolCall.name) {
-            throw new Error('模型返回了缺少名称的工具调用');
-        }
-
-        const toolResult = await this.executeSingleToolCall(toolCall, toolContext);
-        const followupMessages = [
-            ...messages,
-            ...this.buildToolMessages(toolCall, toolResult)
-        ];
-        const secondPayload = this.buildToolsChatPayload(followupMessages, tools, overrides);
-        this.logPipelineStage('工具结果已注入，准备第二轮请求', this.buildPayloadPreview(secondPayload));
-
-        const secondResult = await this.sendChatRequest(secondPayload, overrides);
-        if (!secondResult.ok) {
-            throw new Error(`AI API 错误: ${secondResult.status} - ${secondResult.errorText}`);
-        }
-
-        return this.extractChatContentWithPrefillFallback(secondResult.data, followupMessages, overrides);
+        throw new Error('工具调用轮次过多，已停止继续请求');
     }
 
     normalizeModel(model = {}) {

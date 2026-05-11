@@ -60,6 +60,10 @@
         "blockedDomains": [],
         "fallbackEnabled": false
       },
+      "textToolFallback": {
+        "enabled": false,
+        "maxRounds": 3
+      },
       "sendMention": {
         "enabled": false
       }
