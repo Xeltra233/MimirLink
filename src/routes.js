@@ -15,6 +15,7 @@ import { inspectMemoryDatabase } from './session.js';
 import { buildChatRuntimePreview } from './runtime/chat-preview.js';
 import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
 import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, generateRealtimeAnswer, runConfiguredWebSearch } from './tools.js';
+import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 
 function estimateTokenCount(text) {
     if (!text) return 0;
@@ -501,10 +502,58 @@ export function setupRoutes(app, config, saveConfig, managers) {
         if (finalOptions.importWorldBook && metadata.hasEmbeddedWorldBook && metadata.worldBook) {
             const worldbookFilename = `${sanitizeFilename(metadata.name)}'s Lorebook.json`;
             const worldbookPath = path.join(config.chat.dataDir || './data', 'worlds', worldbookFilename);
+
+            // 读取已存在的独立世界书（保留之前合并的变量条目等）
+            let extraEntries = [];
+            try {
+                const existingRaw = await fs.readFile(worldbookPath, 'utf-8');
+                const existing = JSON.parse(existingRaw);
+                const existingKeys = new Set((metadata.worldBook.entries || []).map(e => JSON.stringify(e.keys || e.key || '')));
+                extraEntries = (existing.entries || []).filter(e => {
+                    const ek = JSON.stringify(e.keys || e.key || '');
+                    return !existingKeys.has(ek);
+                });
+            } catch { /* 文件不存在, 无额外条目 */ }
+
+            // 扫描卡内变量, 自动生成变量初始化条目
+            try {
+                const cardSources = buildCharacterVariableSources(characterName, metadata);
+                const varScan = scanVariableUsage(cardSources);
+                if (!extraEntries.some(e => (e.id || e.uid) === 1001) && varScan.writes.length === 0) {
+                    // 生成通用变量追踪条目
+                    const initVars = ['好感度', '关系状态', '心情', '今日互动次数'];
+                    const initContent = initVars.map(k => `{{setvar::${k}::0}}`).join('');
+                    extraEntries.push({
+                        id: 1001,
+                        keys: [`${sanitizeFilename(metadata.name)}_变量初始化`],
+                        secondary_keys: [],
+                        content: initContent,
+                        constant: true,
+                        enabled: true,
+                        selective: false,
+                        position: 'before_char',
+                        insertion_order: 1000,
+                        comment: '自动生成的通用变量初始化'
+                    });
+                    extraEntries.push({
+                        id: 1002,
+                        keys: [`${sanitizeFilename(metadata.name)}_变量更新`],
+                        secondary_keys: [],
+                        content: `[变量更新规则]\n在回复末尾如有变化，输出：\n<UpdateVariable>\n[{"op":"replace","path":"/变量名","value":数值}]\n</UpdateVariable>\n跟踪变量：${initVars.join('、')}`,
+                        constant: true,
+                        enabled: true,
+                        selective: false,
+                        position: 'after_char',
+                        insertion_order: 999,
+                        comment: '自动生成的变量更新规则'
+                    });
+                }
+            } catch { /* 变量扫描失败不影响世界书提取 */ }
+
             const worldbook = {
                 name: `${metadata.name} 世界书`,
                 description: `从角色卡 ${metadata.name} 自动提取的世界书`,
-                entries: metadata.worldBook.entries || []
+                entries: [...(metadata.worldBook.entries || []), ...extraEntries]
             };
 
             await fs.writeFile(worldbookPath, JSON.stringify(worldbook, null, 2), 'utf-8');
@@ -600,6 +649,88 @@ export function setupRoutes(app, config, saveConfig, managers) {
             binding
         };
     };
+
+    const buildCharacterVariableSources = (characterName, metadata = {}) => {
+        const character = characterManager.readFromPng(characterName);
+        const preferredPreset = metadata?.preferredPreset || {};
+        const worldBookEntries = Array.isArray(metadata?.worldBook?.entries)
+            ? metadata.worldBook.entries
+            : Object.values(metadata?.worldBook?.entries || {});
+
+        const sources = [
+            { name: 'character.description', content: character.description || character.data?.description || '' },
+            { name: 'character.personality', content: character.personality || character.data?.personality || '' },
+            { name: 'character.scenario', content: character.scenario || character.data?.scenario || '' },
+            { name: 'character.first_mes', content: character.first_mes || character.data?.first_mes || '' },
+            { name: 'character.mes_example', content: character.mes_example || character.data?.mes_example || '' },
+            { name: 'character.system_prompt', content: character.system_prompt || character.data?.system_prompt || '' },
+            { name: 'character.post_history_instructions', content: character.post_history_instructions || character.data?.post_history_instructions || '' },
+            { name: 'preset.systemPrompt', content: preferredPreset.systemPrompt || '' },
+            { name: 'preset.postHistoryInstructions', content: preferredPreset.postHistoryInstructions || '' },
+            { name: 'preset.assistantPrefill', content: preferredPreset.assistantPrefill || '' }
+        ];
+
+        for (let index = 0; index < worldBookEntries.length; index += 1) {
+            const entry = worldBookEntries[index] || {};
+            sources.push({
+                name: `worldbook.${index}`,
+                content: typeof entry.content === 'string' ? entry.content : ''
+            });
+        }
+
+        // 也扫描独立的已加载世界书（如变量追踪世界书）
+        try {
+            const standaloneWb = worldBookManager.readWorldBook(characterName);
+            if (standaloneWb) {
+                const standaloneEntries = Array.isArray(standaloneWb.entries)
+                    ? standaloneWb.entries
+                    : Object.values(standaloneWb.entries || {});
+                for (let index = 0; index < standaloneEntries.length; index += 1) {
+                    const entry = standaloneEntries[index] || {};
+                    sources.push({
+                        name: `standalone_wb.${index}`,
+                        content: typeof entry.content === 'string' ? entry.content : ''
+                    });
+                }
+            }
+        } catch { /* 无独立世界书，跳过 */ }
+
+        for (const rule of Array.isArray(metadata?.regexScripts) ? metadata.regexScripts : []) {
+            const text = [rule?.findRegex, rule?.replaceString, rule?.prompt, rule?.comment]
+                .filter((item) => typeof item === 'string' && item.trim())
+                .join('\n');
+            if (text) {
+                sources.push({ name: `regex.${rule?.scriptName || rule?.name || 'rule'}`, content: text });
+            }
+        }
+
+        return sources;
+    };
+
+    const applyCharacterVariableInitializers = (characterName, metadata = {}) => {
+        const hasActualPreset = !!(metadata?.preferredPreset?.systemPrompt || metadata?.preferredPreset?.postHistoryInstructions);
+        const scopeOptions = normalizeKnowledgeScopeInput({
+            scopeType: config.chat?.sessionMode || 'user_persistent',
+            scopeKey: 'default',
+            characterName,
+            presetName: hasActualPreset ? (metadata?.preferredPreset?.name || '') : ''
+        });
+        const scanResult = scanVariableUsage(buildCharacterVariableSources(characterName, metadata));
+        const applied = applyScannedVariableInitializers(scanResult, sessionManager, scopeOptions, { skipExisting: true });
+        return {
+            scopeOptions,
+            scanResult,
+            applied,
+            summary: {
+                readCount: scanResult.reads.length,
+                writeCount: scanResult.writes.length,
+                appliedCount: applied.length,
+                unsupportedCount: scanResult.unsupported.length,
+                updateProtocol: scanResult.updateProtocol
+            }
+        };
+    };
+
 
     const normalizeOptionalText = (value) => {
         const text = typeof value === 'string' ? value.trim() : '';
@@ -1346,26 +1477,28 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // === 配置备份/恢复（tar.gz 全量打包） ===
     app.get('/api/config/backup', requireAuth, async (req, res) => {
         const tmpDir = path.join(__dirname, '..', 'data', '_backup_tmp');
-        const archiveName = `mimirlink-fullbackup-${new Date().toISOString().slice(0,10)}.tar.gz`;
+        const includeKeys = req.query.includeKeys === 'true';
+        const dateStr = new Date().toISOString().slice(0,10);
+        const suffix = includeKeys ? 'full' : 'safe';
+        const archiveName = `mimirlink-backup-${dateStr}-${suffix}.tar.gz`;
         try {
             const { pack } = await import('tar-fs');
             const { createGzip } = await import('zlib');
-            // 构建临时目录
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             fsSync.mkdirSync(tmpDir, { recursive: true });
-            // config.json
-            fsSync.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
-            // 复制 data 目录（排除 _backup_tmp 自身和过大的 chats 数据库）
+            // config.json：根据 includeKeys 决定是否脱敏
+            const exportConfig = includeKeys ? config : maskConfigSecrets(config);
+            fsSync.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(exportConfig, null, 2), 'utf8');
+            // 复制 data 目录
             const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
             copyDirSync(dataDir, path.join(tmpDir, 'data'), new Set(['_backup_tmp', 'restore-backups']));
-            // 流式打包下载
+            // 流式打包
             res.setHeader('Content-Type', 'application/gzip');
             res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
             const gzip = createGzip();
-            const tarStream = pack(tmpDir);
-            tarStream.pipe(gzip).pipe(res);
+            pack(tmpDir).pipe(gzip).pipe(res);
             res.on('finish', () => { try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {} });
-            logger.info(`[备份] 开始流式打包: ${archiveName}`);
+            logger.info(`[备份] ${includeKeys ? '含密钥' : '安全'}模式: ${archiveName}`);
         } catch (e) {
             try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
             logger.error('[备份] 导出失败:', e.message);
@@ -1527,6 +1660,24 @@ export function setupRoutes(app, config, saveConfig, managers) {
         return merged;
     }
 
+    // 脱敏 config：把 apiKey/accessToken/password/sessionSecret 替换为 ******
+    function maskConfigSecrets(cfg) {
+        const masked = JSON.parse(JSON.stringify(cfg));
+        const maskKeys = ['apiKey', 'accessToken', 'password', 'sessionSecret', 'secret'];
+        function walk(obj) {
+            if (!obj || typeof obj !== 'object') return;
+            for (const key of Object.keys(obj)) {
+                if (maskKeys.includes(key) && typeof obj[key] === 'string' && obj[key].length > 0) {
+                    obj[key] = '******';
+                } else if (typeof obj[key] === 'object') {
+                    walk(obj[key]);
+                }
+            }
+        }
+        walk(masked);
+        return masked;
+    }
+
     // 获取角色列表（需要认证）
     app.get('/api/characters', requireAuth, async (req, res) => {
         try {
@@ -1600,16 +1751,36 @@ export function setupRoutes(app, config, saveConfig, managers) {
             }
             saveConfig(config);
             
-            logger.info(`已选择角色: ${characterName}`);
+            // 自动加载角色绑定的世界书
+            if (characterMeta.applied?.some(a => a.includes('内嵌世界书'))) {
+                const binding = getCharacterBinding(characterName);
+                const wbFile = binding.importedFromCard?.worldbook || binding.worldbook;
+                if (wbFile) {
+                    try {
+                        worldBookManager.loadWorldBook(wbFile);
+                        logger.info(`已自动加载世界书: ${wbFile}`);
+                    } catch (e) { logger.warn(`加载世界书失败: ${wbFile}`, e.message); }
+                }
+            }
+
+            const varInit = applyCharacterVariableInitializers(characterName, characterMeta.metadata);
+            logger.info(`已选择角色: ${characterName}`, {
+                varReads: varInit.summary.readCount,
+                varWrites: varInit.summary.appliedCount,
+                varUnsupported: varInit.summary.unsupportedCount
+            });
             res.json({
                 success: true,
                 character,
                 importedMetadata: characterMeta.metadata,
                 metadataSummary: summarizeCharacterMetadata(characterMeta.metadata),
-                appliedActions: characterMeta.applied,
+                appliedActions: [...characterMeta.applied, ...varInit.applied.map(i =>
+                    `变量初始化: ${i.key} = ${String(i.parsedValue).slice(0, 40)}`
+                )],
                 importPlan: characterMeta.plan,
                 importOptions: characterMeta.options,
-                bindingSummary: getBindingSummary(characterName)
+                bindingSummary: getBindingSummary(characterName),
+                variableInit: varInit.summary
             });
         } catch (error) {
             logger.error('选择角色失败', error);
@@ -1642,6 +1813,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const characterName = req.file.filename.replace(/\.png$/i, '');
             const characterMeta = characterManager.extractSillyTavernMetadata(characterName);
             const plan = buildCharacterMetadataPlan(characterName);
+            const varInit = characterManager.readFromPng(characterName) ? applyCharacterVariableInitializers(characterName, characterMeta.metadata) : null;
             res.json({
                 success: true,
                 message: '角色卡上传成功',
@@ -1650,7 +1822,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 importedMetadata: characterMeta.metadata,
                 metadataSummary: summarizeCharacterMetadata(characterMeta.metadata),
                 importPlan: plan.plan,
-                bindingSummary: getBindingSummary(characterName)
+                bindingSummary: getBindingSummary(characterName),
+                variableInit: varInit?.summary || null
             });
         } catch (error) {
             logger.error('上传角色卡失败', error);
@@ -1717,7 +1890,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 importedMetadata: characterMeta.metadata,
                 metadataSummary: summarizeCharacterMetadata(characterMeta.metadata),
                 importPlan: buildCharacterMetadataPlan(characterName).plan,
-                bindingSummary: getBindingSummary(characterName)
+                bindingSummary: getBindingSummary(characterName),
+                variableScanSummary: scanVariableUsage(buildCharacterVariableSources(characterName, characterMeta.metadata))
             });
         } catch (error) {
             logger.error('获取角色卡详情失败', error);
@@ -3872,14 +4046,21 @@ ${promptListText}
                     } catch {}
                     const upstreamMessage = upstreamParsed?.choices?.[0]?.message || {};
                     const rawText = aiClient.extractTextContent(upstreamMessage.content) || '';
+                    // 清洗 ST 卡常见内部标签
+                    let cleanedText = rawText;
+                    try {
+                        const { stripInternalTags } = await import('./variable-bridge.js');
+                        cleanedText = stripInternalTags(rawText);
+                    } catch {}
+
                     const reasoningContent = aiClient.extractTextContent(upstreamMessage.reasoning_content) || null;
 
                     // 模拟QQ分段下发
                     const splitEnabled = config.chat.splitMessage !== false;
                     const mentionPrefix = messageType === 'group' && config.chat.mentionSenderOnReply !== false ? `[CQ:at,qq=${userId || '000000'}] ` : '';
                     const rawSegments = splitEnabled
-                        ? rawText.split(/\n\n+/).filter(s => s.trim())
-                        : [rawText];
+                        ? cleanedText.split(/\n\n+/).filter(s => s.trim())
+                        : [cleanedText];
                     const qqSegments = rawSegments.map((seg, idx) => ({
                         index: idx,
                         text: seg.trim(),
@@ -3890,7 +4071,7 @@ ${promptListText}
                     }));
 
                     aiResponse = {
-                        text: rawText,
+                        text: cleanedText,
                         reasoningContent,
                         rawReasoningContent: upstreamMessage.reasoning_content ?? null,
                         rawContent: upstreamMessage.content ?? null,

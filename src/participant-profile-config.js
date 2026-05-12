@@ -3,7 +3,8 @@ const DEFAULT_IDLE_MS = 2 * 60 * 1000;
 const DEFAULT_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_MAX_SOURCE_MESSAGES = 50;
 const DEFAULT_TRIGGER_MODE = 'idle';
-const DEFAULT_ANALYSIS_MODE = 'profile_plus_messages';
+const DEFAULT_ANALYSIS_MODE = 'bot_only_profile';
+const VALID_ANALYSIS_MODES = ['messages_only', 'profile_plus_messages', 'bot_only_messages', 'bot_only_profile'];
 const DEFAULT_MANUAL_COMMAND = '/人物档案';
 
 function toPositiveInteger(value, fallback) {
@@ -52,10 +53,9 @@ function normalizeTriggerMode(value) {
 
 function normalizeAnalysisMode(value) {
     const normalized = typeof value === 'string' ? value.trim().toLowerCase() : '';
-    if (normalized === 'messages_only' || normalized === 'profile_plus_messages') {
+    if (VALID_ANALYSIS_MODES.includes(normalized)) {
         return normalized;
     }
-
     return DEFAULT_ANALYSIS_MODE;
 }
 

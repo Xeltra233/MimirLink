@@ -3,14 +3,23 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      platforms:
+        - linux/amd64
+        - linux/arm64
     container_name: mimirlink
     restart: unless-stopped
     ports:
       - "8001:8001"
     environment:
-      NODE_ENV: production
+      - NODE_ENV=production
     volumes:
       - ./config.json:/app/config.json
       - ./data:/app/data
       - ./logs:/app/logs
       - ./audio:/app/audio
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:8001/api/status',r=>{process.exit(r.statusCode===200?0:1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

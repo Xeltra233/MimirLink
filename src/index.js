@@ -1539,12 +1539,16 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
     });
 
     try {
+        const analysisMode = participantProfileConfig.analysisMode;
+        const sourceFilter = (analysisMode === 'bot_only_messages' || analysisMode === 'bot_only_profile')
+            ? 'bot_only' : 'all';
         const source = sessionManager.collectParticipantProfileSource(
             speakerIdentity.participantId,
             namespaceOptions,
             {
                 threshold: participantProfileConfig.threshold,
-                limit: participantProfileConfig.sourceMessageLimit
+                limit: participantProfileConfig.sourceMessageLimit,
+                sourceFilter
             }
         );
         updateParticipantProfileProgress({
@@ -2282,6 +2286,43 @@ async function processBatch(batch) {
                 runtimeContext
             );
 
+            // 变量桥接：静态 setvar 初始化 + 解析宏 + 注入当前变量状态到 prompt
+            try {
+                const { applyStaticSetvarsFromText, buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
+                const ns = runtimeContext?.recallNamespace;
+                if (ns) {
+                    // 变量按人隔离（userId），不按群隔离
+                    const varScopeKey = event.user_id ? `user:${event.user_id}` : ns.scopeKey;
+                    const scopeOpts = {
+                        scopeType: 'user_persistent', scopeKey: varScopeKey,
+                        characterName: ns.characterName, presetName: ns.presetName
+                    };
+                    // 第一步：执行静态 setvar，把初始化值写入变量存储
+                    for (const msg of messages) {
+                        if (typeof msg.content === 'string') {
+                            const r = applyStaticSetvarsFromText(msg.content, sessionManager, scopeOpts, { keepMacros: false });
+                            msg.content = r.cleanedText;
+                        }
+                    }
+                    // 第二步：解析所有消息中的 {{get_message_variable::}} / {{getvar::}} 宏
+                    for (const msg of messages) {
+                        if (typeof msg.content === 'string') {
+                            msg.content = resolveVariableMacros(msg.content, sessionManager, scopeOpts);
+                        }
+                    }
+                    // 注入 <status_current_variable> 状态块
+                    const statusBlock = buildVariableStatusBlock(sessionManager, scopeOpts);
+                    if (statusBlock) {
+                        const firstSysIdx = messages.findIndex(m => m.role === 'system');
+                        if (firstSysIdx >= 0) {
+                            messages[firstSysIdx].content += '\n' + statusBlock;
+                        } else {
+                            messages.unshift({ role: 'system', content: statusBlock });
+                        }
+                    }
+                }
+            } catch (e) { logger.warn('[变量] 宏解析失败:', e.message); }
+
             logger.info('[执行] Prompt 构建完成', {
                 sessionId,
                 messageCount: messages.length,
@@ -2425,7 +2466,28 @@ async function processBatch(batch) {
                 replyPreview: reply.slice(0, 200),
                 reasoningLength: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent.length : 0
             });
-            const processedReply = regexProcessor.processOutput(reply);
+            let processedReply = regexProcessor.processOutput(reply);
+            // 清洗 ST 卡常见内部标签（draft_notes / thinking / cot 等）
+            try {
+                const { stripInternalTags } = await import('./variable-bridge.js');
+                processedReply = stripInternalTags(processedReply);
+            } catch (e) { logger.warn('[变量] 标签清洗失败:', e.message); }
+            // 变量桥接：提取 <UpdateVariable> 块并写入变量存储
+            try {
+                const { extractAndApplyVariables } = await import('./variable-bridge.js');
+                const ns = runtimeContext?.recallNamespace;
+                if (ns) {
+                    const varScopeKey = event.user_id ? `user:${event.user_id}` : ns.scopeKey;
+                    const result = extractAndApplyVariables(processedReply, sessionManager, {
+                        scopeType: 'user_persistent', scopeKey: varScopeKey,
+                        characterName: ns.characterName, presetName: ns.presetName
+                    });
+                    processedReply = result.cleanedOutput;
+                    if (result.applied.length > 0) {
+                        logger.info('[变量] 已应用', { count: result.applied.length, patches: result.applied });
+                    }
+                }
+            } catch (e) { logger.warn('[变量] 提取失败:', e.message); }
             logger.info('[执行] 输出后处理完成', {
                 sessionId,
                 processedReplyLength: typeof processedReply === 'string' ? processedReply.length : 0,

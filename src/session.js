@@ -1521,6 +1521,13 @@ export class SessionManager {
         return true;
     }
 
+    deleteVariableByName(namespaceOptions, key) {
+        const existing = this.getVariable(namespaceOptions, key);
+        if (!existing) return false;
+        this.statements.deleteMemoryEntry.run(existing.id);
+        return true;
+    }
+
     listParticipantProfiles(limit = 50) {
         return this.statements.listParticipantProfiles.all(limit).map(mapParticipantProfileRow);
     }
@@ -1624,6 +1631,25 @@ export class SessionManager {
             since,
             limit: options.limit || 50
         });
+
+        // bot_only 过滤：只保留 bot 参与了会话的消息
+        const sourceFilter = options.sourceFilter || 'all';
+        if (sourceFilter === 'bot_only' && messages.length > 0) {
+            const botSessionIds = new Set();
+            for (const msg of messages) {
+                if (msg.role === 'assistant') {
+                    botSessionIds.add(msg.sessionId);
+                }
+            }
+            const filtered = messages.filter(msg => botSessionIds.has(msg.sessionId));
+            return {
+                existing,
+                since,
+                messages: filtered,
+                hasEnoughNewInfo: filtered.length >= (options.threshold || 8),
+                filteredCount: messages.length - filtered.length
+            };
+        }
 
         return {
             existing,

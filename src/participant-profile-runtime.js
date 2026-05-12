@@ -46,12 +46,17 @@ export function buildParticipantProfilePrompt(source, analysisMode) {
         .map((item) => `[${item.sessionId}] ${item.role}: ${item.content}`)
         .join('\n');
 
-    if (analysisMode === 'messages_only') {
-        return `请基于以下真实聊天内容更新人物档案。仅允许依据这些新增消息总结，不要臆测未出现的信息。\n\n新增消息如下：\n${messageText}\n\n输出格式：\n稳定画像: ...\n当前状态: ...`;
+    const isBotOnly = analysisMode === 'bot_only_messages' || analysisMode === 'bot_only_profile';
+    const isMessagesOnly = analysisMode === 'messages_only' || analysisMode === 'bot_only_messages';
+
+    const scopeHint = isBotOnly ? '（以下仅包含用户与 Bot 的直接对话记录，不含第三方聊天）\n' : '';
+
+    if (isMessagesOnly) {
+        return `${scopeHint}请基于以下真实聊天内容更新人物档案。仅允许依据这些新增消息总结，不要臆测未出现的信息。\n\n新增消息如下：\n${messageText}\n\n输出格式：\n稳定画像: ...\n当前状态: ...`;
     }
 
     const priorProfile = source.existing?.content || '无';
-    return `请基于以下真实聊天内容增量更新人物档案。已有档案如下：\n${priorProfile}\n\n新增消息如下：\n${messageText}\n\n输出格式：\n稳定画像: ...\n当前状态: ...`;
+    return `${scopeHint}请基于以下真实聊天内容增量更新人物档案。已有档案如下：\n${priorProfile}\n\n新增消息如下：\n${messageText}\n\n输出格式：\n稳定画像: ...\n当前状态: ...`;
 }
 
 export function buildParticipantProfileAIOverrides(participantProfileConfig) {

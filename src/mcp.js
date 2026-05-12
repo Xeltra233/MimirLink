@@ -7,6 +7,58 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export function createMCPHandler(managers, config, saveConfig) {
     const { aiClient, promptBuilder, characterManager, worldBookManager, logger } = managers;
 
+    // === ST 格式校验 ===
+    const ST_WORLDBOOK_ENTRY_FIELDS = {
+        required: ['id', 'keys', 'content'],
+        standard: ['id', 'keys', 'secondary_keys', 'comment', 'content', 'constant', 'selective', 'insertion_order', 'enabled', 'position', 'use_regex', 'extensions'],
+        position_values: ['before_char', 'after_char', 'before_character', 'after_character', 0, 1]
+    };
+
+    function validateWorldbookEntry(entry, index) {
+        const issues = [];
+        // 必填字段
+        for (const field of ST_WORLDBOOK_ENTRY_FIELDS.required) {
+            if (entry[field] === undefined) {
+                issues.push(`条目#${index} 缺少必要字段: ${field}`);
+            }
+        }
+        // 非标字段警告
+        for (const key of Object.keys(entry)) {
+            if (!ST_WORLDBOOK_ENTRY_FIELDS.standard.includes(key)) {
+                issues.push(`条目#${index} 含非 ST 标准字段: "${key}"（导出 ST 时可能被忽略）`);
+            }
+        }
+        // 旧字段名警告
+        if (entry.uid !== undefined && entry.id === undefined) issues.push(`条目#${index}: 使用了旧字段 uid，应改为 id`);
+        if (entry.order !== undefined && entry.insertion_order === undefined) issues.push(`条目#${index}: 使用了旧字段 order，应改为 insertion_order`);
+        if (entry.position !== undefined && typeof entry.position === 'number') issues.push(`条目#${index}: position 应为字符串 "before_char"/"after_char"`);
+        return issues;
+    }
+
+    function validateWorldbookFormat(wb, name) {
+        const allIssues = [];
+        const entries = wb?.entries || [];
+        if (!Array.isArray(entries)) {
+            allIssues.push(`世界书 "${name}" 的 entries 不是数组`);
+            return { valid: false, issues: allIssues };
+        }
+        for (let i = 0; i < entries.length; i++) {
+            allIssues.push(...validateWorldbookEntry(entries[i], i));
+        }
+        return { valid: allIssues.length === 0, issues: allIssues, entryCount: entries.length };
+    }
+
+    // 自动修复：把非标字段转 ST 格式
+    function normalizeToSTFormat(entry) {
+        const fixed = { ...entry };
+        if (fixed.uid !== undefined && fixed.id === undefined) { fixed.id = fixed.uid; delete fixed.uid; }
+        if (fixed.order !== undefined && fixed.insertion_order === undefined) { fixed.insertion_order = fixed.order; delete fixed.order; }
+        if (typeof fixed.position === 'number') { fixed.position = fixed.position === 0 ? 'before_char' : 'after_char'; }
+        fixed.secondary_keys = fixed.secondary_keys || [];
+        fixed.selective = fixed.selective ?? false;
+        return fixed;
+    }
+
     // 工具注册表
     const tools = {
 
@@ -322,6 +374,90 @@ ${wbSummary || '(未提供)'}
                     return { content: [{ type: 'text', text: updated.length > 0 ? `已更新 ${updated.length} 个 prompt: ${updated.join(', ')}` : `未匹配到 "${namePattern}"` }] };
                 } catch (e) {
                     return { content: [{ type: 'text', text: `操作失败: ${e.message}` }] };
+                }
+            }
+        },
+
+        range_validate_worldbook: {
+            description: '校验世界书格式是否符合 SillyTavern 标准，列出非标字段和潜在兼容问题',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    characterName: { type: 'string', description: '角色名（不含 .png），不填则校验当前加载的世界书' }
+                }
+            },
+            handler: async ({ characterName }) => {
+                try {
+                    let wb = null;
+                    let wbName = '';
+                    if (characterName) {
+                        wb = worldBookManager.readWorldBook(characterName);
+                        wbName = characterName;
+                    } else {
+                        const cur = worldBookManager.getCurrentWorldBook();
+                        if (cur && cur.name) {
+                            wb = worldBookManager.readWorldBook(cur.name);
+                            wbName = cur.name;
+                        }
+                    }
+                    if (!wb) return { content: [{ type: 'text', text: '未找到世界书' }] };
+                    const result = validateWorldbookFormat(wb, wbName);
+                    const lines = [
+                        `世界书: ${wbName}`,
+                        `条目: ${result.entryCount}`,
+                        `格式: ${result.valid ? '✔ ST兼容' : '✗ 存在问题'}`,
+                        ...result.issues.map(i => `  - ${i}`)
+                    ];
+                    return { content: [{ type: 'text', text: lines.join('\n') }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `校验失败: ${e.message}` }] };
+                }
+            }
+        },
+
+        range_fix_worldbook_format: {
+            description: '自动修复世界书条目的 ST 格式问题（uid→id, order→insertion_order, position数字→字符串）',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    characterName: { type: 'string', description: '角色名（不含 .png），不填则修复当前加载的世界书' }
+                }
+            },
+            handler: async ({ characterName }) => {
+                try {
+                    const fs = await import('fs');
+                    let wbFile = null;
+                    if (characterName) {
+                        const possibleNames = [
+                            `data/worlds/${characterName}'s Lorebook.json`,
+                            `data/worlds/${characterName}'s Lorebook.json`,
+                        ];
+                        for (const n of possibleNames) {
+                            try { fs.readFileSync(resolve(process.cwd(), n)); wbFile = n; break; } catch {}
+                        }
+                    }
+                    if (!wbFile) {
+                        const cur = worldBookManager.getCurrentWorldBook();
+                        wbFile = cur?.name ? `data/worlds/${cur.name}.json` : null;
+                    }
+                    if (!wbFile) return { content: [{ type: 'text', text: '未找到世界书文件' }] };
+
+                    const content = fs.readFileSync(resolve(process.cwd(), wbFile), 'utf-8');
+                    const wb = JSON.parse(content);
+                    let fixed = 0;
+                    for (const e of (wb.entries || [])) {
+                        const before = JSON.stringify(e);
+                        const fixed_e = normalizeToSTFormat(e);
+                        if (JSON.stringify(fixed_e) !== before) {
+                            Object.assign(e, fixed_e);
+                            fixed++;
+                        }
+                    }
+                    fs.writeFileSync(resolve(process.cwd(), wbFile), JSON.stringify(wb, null, 2), 'utf-8');
+                    worldBookManager.clearCache();
+                    return { content: [{ type: 'text', text: `已修复 ${fixed} 个条目 (${wbFile})` }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `修复失败: ${e.message}` }] };
                 }
             }
         }

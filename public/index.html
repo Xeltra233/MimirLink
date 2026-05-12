@@ -4966,7 +4966,6 @@
                 <button type="button" class="config-subtab" data-config-panel="memory" onclick="setConfigSubPanel('memory')">记忆</button>
                 <button type="button" class="config-subtab" data-config-panel="model" onclick="setConfigSubPanel('model')">模型供应</button>
                 <button type="button" class="config-subtab" data-config-panel="preset" onclick="setConfigSubPanel('preset')">预设</button>
-                <button type="button" class="config-subtab" data-config-panel="context" onclick="setConfigSubPanel('context')">上下文</button>
                 <button type="button" class="config-subtab" data-config-panel="data" onclick="setConfigSubPanel('data')">数据</button>
             </div>
             <div class="grid">
@@ -5039,7 +5038,6 @@
                                     <option value="group_shared">群共享记忆</option>
                                     <option value="global_shared">全局共享记忆</option>
                                 </select>
-                                <p class="hint-text">配置会话模式</p>
                             </div>
                             <div class="form-group">
                                 <label>触发模式</label>
@@ -5061,7 +5059,6 @@
                             <div class="form-group">
                                 <label>使用最N 条历史消息作为上下文</label>
                                 <input type="number" id="config-chat-history" placeholder="30">
-                                <p class="hint-text">配置上下文消息数量</p>
                             </div>
                             <div class="form-group">
                                 <label>全局时间线容量上限</label>
@@ -5078,7 +5075,6 @@
                                 <option value="blocklist">黑名单模式</option>
                                 <option value="disabled">关闭名单控制</option>
                             </select>
-                            <p class="hint-text">选择访问控制策略</p>
                         </div>
                         <div class="form-group">
                             <label>当前生效策略摘要</label>
@@ -5100,7 +5096,6 @@
                             <div class="form-group">
                                 <label>管理QQ (逗号分隔)</label>
                                 <input type="text" id="config-chat-admin-users" placeholder="例如: 12345678,87654321">
-                                <p class="hint-text">配置管理员账号</p>
                             </div>
                             <div class="form-group">
                                 <label id="config-chat-blocked-users-label">用户黑名单(逗号分隔)</label>
@@ -5177,12 +5172,46 @@
                         </div>
                     </div>
                 </div>
+                <div class="card">
+                    <div class="config-card-header">
+                        <h3>上下文注入</h3>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="config-context-enabled" checked> 启用上下文感知增强
+                            </label>
+                        </div>
+                        <div class="config-subgrid" style="margin-top:8px">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-context-session-facts" checked> 会话事实
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-context-participants" checked> 参与者信息
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-context-reply-reference" checked> 回复引用
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-context-recent-intent" checked> 用户意图
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 </div>
                 <div class="config-subpanel" data-config-panel="tools">
                 <div class="card">
                     <div class="config-card-header">
                         <h3>指令与工具</h3>
-                        <p class="config-card-intro">这里不只是开关；你可以在这里决定管理员具体输入什么指令、AI 什么时候能调用搜索，以及模型调用这些能力后实际会执行什么动作。</p>
+                        <p class="config-card-intro">管理员指令、AI 工具与搜索配置</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">管理员指令</div>
@@ -5192,28 +5221,22 @@
                                     <input type="checkbox" id="config-chat-command-admin-mention-enabled" checked>
                                     启用 AI 主动 @ 指令
                                 </label>
-                                <p class="hint-text">用途：让管理员在群里手动下达提醒某个人的要求</p>
-                                <p class="hint-text">用法：按下面配置的指令文本输入，例如 <code>/at @小明 提醒他看群公告</code></p>
-                                <p class="hint-text">实际行为：系统不会把你输入的要求原样发出去，而是先交给 AI 生成一段更自然的正文，再由机器人以 @ 对方 的形式发送</p>
+                                <p class="hint-text">输入 <code>/at @某人 消息</code>，AI 润色后 @ 对方发送</p>
                             </div>
                             <div class="form-group">
                                 <label>AI 主动 @ 指令文本</label>
                                 <input type="text" id="config-chat-command-admin-mention-command" placeholder="/at">
-                                <p class="hint-text">这里改的是管理员实际输入的命令前缀，不改功能本身比如改<code>/提醒</code> 后，用法就会变成 <code>/提醒 @某人 催他提交作业</code></p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-command-participant-profile-enabled" checked>
                                     启用人物档案手动分析指令
                                 </label>
-                                <p class="hint-text">用：让管理员在需要时，手动指定某个人重新分析人物档案</p>
-                                <p class="hint-text">用法：按下面配置的指令文本输入，例如 <code>/人物档案 @某人</code></p>
-                                <p class="hint-text">实际行为：系统会读取该成员当前上下文与消息记录，触发一次服务端的人物档案重新分析，并把结果摘要回复到聊天里。</p>
+                                <p class="hint-text">输入 <code>/人物档案 @某人</code>，触发该成员档案重分析</p>
                             </div>
                             <div class="form-group">
                                 <label>人物档案手动分析指令文本</label>
                                 <input type="text" id="config-chat-command-participant-profile-command" placeholder="/人物档案">
-                                <p class="hint-text">这里改的是管理员触发手动建档时输入的命令文本。比如改成 <code>/重建画像</code> 后，用法就会变成 <code>/重建画像 @某人</code>。</p>
                             </div>
                         </div>
                     </div>
@@ -5225,31 +5248,26 @@
                                     <input type="checkbox" id="config-ai-tool-web-search-enabled">
                                     启用搜索引擎工具
                                 </label>
-                                <p class="hint-text">用途：AI 在回答最新消息、外部资料、实时信息这类问题时，可以先走一次受控搜索，再结合结果生成回复。</p>
-                                <p class="hint-text">实际行为：打开后，模型会额外拿到一个 <code>web_search</code> 工具；当它判断需要联网检索时，会先拿到标题、链接和摘要，再继续组织最终回复。</p>
-                                <p class="hint-text">这不是给用户新增一个固定斜杠命令，而是给 AI 一项可选能力；是否真的调用，取决于当次问题是否需要搜索。</p>
+                                <p class="hint-text">AI 判断需要联网时自动搜索，拿到标题+摘要后组织回复</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-ai-tool-send-mention-enabled">
                                     启用 AI 主动 @ 工具
                                 </label>
-                                <p class="hint-text">用途：让模型在合适的时候，自己决定 @ 某位成员并发送消息</p>
-                                <p class="hint-text">实际行为：打开后，模型会额外拿到一个 <code>send_group_mention</code> 工具；它提交的是“想提醒什么”的要求，最终发送出去的正文仍然会由服务端 AI 生成，并且只能在受控边界 @ 单个成员，不 @all。</p>
-                                <p class="hint-text">它和上面的“管理员指令”不是一回事：上面是你手动输入命令触发，这里是允许模型在回复流程里自行调用</p>
+                                <p class=”hint-text”>模型可自行决定 @ 某成员发送消息，AI 润色后发送，不 @all</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-ai-tool-text-fallback-enabled">
                                     启用文本工具兜底
                                 </label>
-                                <p class="hint-text">当模型不支持原生 tool_calls 时，追加严格 JSON 协议，让模型输出工具调用 JSON，由本地解析并执行。</p>
-                                <p class="hint-text">仍然优先走原生工具调用；只有上游明确不支持工具调用时才切到这个兜底。</p>
+                                <p class="hint-text">模型不支持原生 tool_calls 时，用 JSON 协议兜底</p>
                             </div>
                             <div class="form-group">
                                 <label>文本工具最大轮次</label>
                                 <input type="number" id="config-ai-tool-text-fallback-max-rounds" placeholder="3" min="1" max="8">
-                                <p class="hint-text">限制文本工具连续调用轮数，避免模型反复套娃。</p>
+                                <p class="hint-text">避免模型反复套娃</p>
                             </div>
                             <div class="form-group">
                                 <label>搜索方式</label>
@@ -5261,64 +5279,60 @@
                                     <option value="brave">Brave（免 Key）</option>
                                     <option value="serpapi">SerpAPI（Google 结果 API，需 Key）</option>
                                 </select>
-                                <p class="hint-text">DuckDuckGo、Bing、Brave 是免 Key 普通搜索；Google 按 Cherry Studio 思路走本地浏览器搜索，如果 Google 要人机验证就会如实失败；只有 Tavily 和 SerpAPI 需要填 Key。</p>
+                                <p class="hint-text">除 Tavily/SerpAPI 需 Key 外，其余免 Key</p>
                             </div>
+                            <details style="margin-top:8px">
+                                <summary>搜索详细配置</summary>
+                                <div style="margin-top:8px">
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-ai-tool-web-search-fallback-enabled">
-                                    搜索失败或无结果时回退到 Bing
+                                    搜索失败时回退到 Bing
                                 </label>
-                                <p class="hint-text">默认关闭：关闭时会如实显示当前搜索方式的失败或无结果；打开后才允许换用 Bing 重试。</p>
+                            </div>
                             <div class="form-group" id="config-ai-tool-web-search-apikey-row" style="display:none;">
                                 <label>API Key</label>
-                                <input type="password" id="config-ai-tool-web-search-apikey" placeholder="Tavily / SerpAPI 需填 Key，其它搜索引擎不用填">
+                                <input type="password" id="config-ai-tool-web-search-apikey" placeholder="Tavily / SerpAPI 需填 Key">
                             </div>
                             <div class="form-group" id="config-ai-tool-web-search-google-engine-row" style="display:none;">
-                                <label>Google Search Engine ID (cx)</label>
-                                <input type="text" id="config-ai-tool-web-search-google-engine-id" placeholder="Programmable Search Engine ID">
-                                <p class="hint-text">已改为免 Key Google 普通搜索，这项不再需要配置。</p>
+                                <input type="hidden" id="config-ai-tool-web-search-google-engine-id">
                             </div>
                             <div class="form-group" id="config-ai-tool-web-search-bing-endpoint-row" style="display:none;">
                                 <label>Bing Endpoint</label>
                                 <input type="text" id="config-ai-tool-web-search-bing-endpoint" placeholder="https://api.bing.microsoft.com/v7.0/search">
-                                <p class="hint-text">一般保持默认；私有 Azure Endpoint 可在这里覆盖</p>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>测试搜索</label>
                                 <div class="preset-manager-select-row">
                                     <input type="text" id="config-ai-tool-web-search-test-query" placeholder="例如: 今天 AI 行业最新消息">
-                                    <button type="button" class="secondary" onclick="testWebSearchProvider()">测试搜索</button>
+                                    <button type="button" class="secondary" onclick="testWebSearchProvider()">测试</button>
                                 </div>
-                                <div id="config-ai-tool-web-search-test-result" class="meta-box" style="margin-top: 10px;">尚未测试</div>
+                                <div id="config-ai-tool-web-search-test-result" class="meta-box" style="margin-top: 8px;">尚未测试</div>
                             </div>
                             <div class="form-group">
                                 <label>搜索结果条数</label>
                                 <input type="number" id="config-ai-tool-web-search-max-results" placeholder="5" min="1" max="8">
-                                <p class="hint-text">控制每次搜索最多返回几条结果给模型。越大，信息更多，但提示词也会更长</p>
                             </div>
                             <div class="form-group">
                                 <label>搜索超时 (毫秒)</label>
                                 <input type="number" id="config-ai-tool-web-search-timeout" placeholder="8000" min="1000">
-                                <p class="hint-text">控制单次搜索最多等多久。超时后会返回失败，避免聊天一直卡住</p>
                             </div>
                             <div class="form-group">
                                 <label>单条摘要最大长度</label>
                                 <input type="number" id="config-ai-tool-web-search-max-snippet-length" placeholder="500" min="100">
-                                <p class="hint-text">控制每条搜索结果摘要能带多少字，避免网页摘要太长把上下文挤满</p>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>允许域名（逗号分隔）</label>
-                                <textarea id="config-ai-tool-web-search-allowed-domains" placeholder="例如: wikipedia.org,developer.mozilla.org"></textarea>
-                                <p class="hint-text">留空表示不限制；填写后，搜索结果只会保留这些域名及其子域名</p>
+                                <textarea id="config-ai-tool-web-search-allowed-domains" placeholder="例如: wikipedia.org"></textarea>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>屏蔽域名（逗号分隔）</label>
                                 <textarea id="config-ai-tool-web-search-blocked-domains" placeholder="例如: example.com"></textarea>
-                                <p class="hint-text">填写后，这些域名及其子域名的结果会被过滤掉；如果同时命中允许和屏蔽，屏蔽优先</p>
                             </div>
+                                </div>
+                            </details>
                         </div>
                     </div>
-                </div>
                 </div>
                 </div>
                 <div class="config-subpanel" data-config-panel="memory">
@@ -5372,29 +5386,24 @@
                                     <input type="checkbox" id="config-memory-participant-profile-enabled">
                                     启用人物档案能力
                                 </label>
-                                <p class="hint-text">控制是否启用人物档案</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-memory-participant-profile-inject-enabled" checked>
                                     允许人物档案参与注入
                                 </label>
-                                <p class="hint-text">控制人物档案是否参与注入</p>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>人物档案黑名单 participantId（逗号分隔）</label>
                                 <textarea id="config-memory-participant-profile-blacklist" placeholder="例如: 10001,10002"></textarea>
-                                <p class="hint-text">配置不参与建档和注入的 participantId</p>
                             </div>
                             <div class="form-group">
                                 <label>管理员手动分析命令</label>
                                 <input type="text" id="config-memory-participant-profile-manual-command" placeholder="/人物档案" readonly>
-                                <p class="hint-text">这里仅展示当前生效命令，统一在上方“指令与工具”里修改</p>
                             </div>
                             <div class="form-group">
                                 <label>人物档案触发消息数</label>
                                 <input type="number" id="config-memory-participant-profile-trigger" placeholder="8" min="1">
-                                <p class="hint-text">配置建档触发阈值</p>
                             </div>
                             <div class="form-group">
                                 <label>人物档案触发模式</label>
@@ -5403,45 +5412,34 @@
                                     <option value="interval">仅定时巡检</option>
                                     <option value="both">闲时 + 定时巡检</option>
                                 </select>
-                                <p class="hint-text">配置建档调度方式</p>
                             </div>
                             <div class="form-group">
                                 <label>人物档案空闲等待时间 (毫秒)</label>
                                 <input type="number" id="config-memory-participant-profile-idle" placeholder="120000" min="1000">
-                                <p class="hint-text">配置空闲触发等待时间</p>
                             </div>
                             <div class="form-group">
                                 <label>人物档案定时巡检间隔 (毫秒)</label>
                                 <input type="number" id="config-memory-participant-profile-interval" placeholder="300000" min="1000">
-                                <p class="hint-text">配置定时巡检间隔</p>
                             </div>
                             <div class="form-group">
                                 <label>单次建档最多参考消息数</label>
                                 <input type="number" id="config-memory-participant-profile-source" placeholder="50" min="1">
-                                <p class="hint-text">配置单次建档参考消息数</p>
                             </div>
                             <div class="form-group">
-                                <label>人物档案分析模式</label>
+                                <label>分析模式</label>
                                 <select id="config-memory-participant-profile-analysis-mode">
-                                    <option value="profile_plus_messages">已有画像 + 新消息</option>
-                                    <option value="messages_only">仅新消息</option>
+                                    <option value="bot_only_profile">仅bot对话 + 已有画像（省token）</option>
+                                    <option value="bot_only_messages">仅bot对话 无画像（最省token）</option>
+                                    <option value="profile_plus_messages">全量消息 + 已有画像</option>
+                                    <option value="messages_only">全量消息 无画像</option>
                                 </select>
-                                <p class="hint-text">配置人物档案分析模式</p>
+                                <p class="hint-text">bot对话 = 只看用户和Bot直接聊天的记录（省token）；全量消息 = 自动爬用户在所有群/私聊的全部发言。有画像 = 合并已有档案增量更新；无画像 = 每次纯看新消息重新总结。</p>
                             </div>
                             <div class="form-group full">
-                                <label>&#x4EBA;&#x7269;&#x6863;&#x6848;&#x4F7F;&#x7528;&#x6A21;&#x578B;</label>
+                                <label>档案专用模型</label>
                                 <select id="config-memory-participant-profile-model" onchange="applyParticipantProfileModelSelection()"></select>
                                 <input type="hidden" id="config-memory-participant-profile-provider-id">
                                 <p class="hint-text">&#x4ECE;&#x201C;&#x6A21;&#x578B;&#x4F9B;&#x5E94;&#x5546;&#x201D;&#x91CC;&#x5DF2;&#x542F;&#x7528;&#x7684;&#x6A21;&#x578B;&#x4E2D;&#x9009;&#x62E9;&#xFF0C;Base URL &#x548C;&#x5BC6;&#x94A5;&#x81EA;&#x52A8;&#x7EE7;&#x627F;&#x5BF9;&#x5E94;&#x4F9B;&#x5E94;&#x5546;&#x3002;</p>
-                            </div>
-                            <div class="form-group">
-                                <label>人物档案专用 Base URL</label>
-                                <input type="text" id="config-memory-participant-profile-baseurl" placeholder="选择供应商后自动带出，可留空继承">
-                            </div>
-                            <div class="form-group">
-                                <label>人物档案专用 API Key</label>
-                                <input type="password" id="config-memory-participant-profile-apikey" placeholder="选择供应商时留空继承供应商密钥">
-                                <p class="hint-text" id="config-memory-participant-profile-apikey-status">已配置密钥，留空表示不修改</p>
                             </div>
                         </div>
                         </div>
@@ -5452,7 +5450,7 @@
                     <div class="card card--wide model-provider-card">
                         <div class="config-card-header">
                             <h3>模型供应</h3>
-                            <p class="config-card-intro">像 Cherry Studio 一样维护多个供应商；选择一个作为当前默认，其它功能区复用这里拉取到的模型</p>
+                            <p class="config-card-intro">管理 AI 供应商与模型</p>
                         </div>
                         <div class="model-provider-layout">
                             <aside class="model-provider-sidebar">
@@ -5588,7 +5586,7 @@
                                         <div class="form-group" style="margin: 0;">
                                             <label>AI 响应超时（秒，可自定义）</label>
                                             <input type="number" id="config-ai-timeout" placeholder="60" min="1" max="3600" step="1">
-                                            <p class="hint-text">聊天、快测和主动 @ 测试都会使用这个超时；建议 60 秒以上。</p>
+                                            <p class="hint-text">建议 60 秒以上</p>
                                         </div>
                                         <div class="form-group" style="margin: 0; display: flex; align-items: end;">
                                             <button type="button" class="secondary" style="width: 100%;" onclick="applyDetectedMaxTokens()">应用推荐 Tokens</button>
@@ -5632,48 +5630,6 @@
                                         <div class="full empty-state">点击“预览运行时 Prompt”查看后端实际构建结果</div>
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                </div>
-                <div class="config-subpanel" data-config-panel="context">
-                <div class="card">
-                    <div class="config-card-header">
-                        <h3>上下文感知增强</h3>
-                        <p class="config-card-intro">配置上下文注入项</p>
-                    </div>
-                    <div class="config-subsection">
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="config-context-enabled" checked>
-                                启用上下文感知增强
-                            </label>
-                        </div>
-                        <div class="config-subgrid">
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-context-session-facts" checked>
-                                    注入会话事实
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-context-participants" checked>
-                                    注入参与者信息
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-context-reply-reference" checked>
-                                    注入回复引用上下文
-                                </label>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-context-recent-intent" checked>
-                                    注入最近用户意图
-                                </label>
                             </div>
                         </div>
                     </div>
@@ -5949,6 +5905,13 @@
             search: '',
             limit: 100
         };
+
+        function syncVariableCharacterFilter() {
+            const currentChar = currentConfig?.chat?.defaultCharacter || currentCharacterNameForRuntimePreview || '';
+            if (currentChar && !variableFilters.characterName) {
+                variableFilters.characterName = currentChar;
+            }
+        }
         let knowledgeEntries = [];
         let selectedKnowledgeId = null;
         let knowledgeLoaded = false;
@@ -7555,15 +7518,13 @@
 
             list.innerHTML = variables.map((item) => {
                 const selectedClass = selectedVariableId === item.id ? 'selected' : '';
+                const val = item.rawValue || item.value || item.content || '';
                 return `
                     <div class="variable-item ${selectedClass}" onclick="selectVariable('${escapeInlineJsString(item.id)}')">
                         <div class="variable-item-head">
-                            <div class="variable-key">${highlightSearchText(item.key || item.title || '未命名变', variableFilters.search)}</div>
+                            <div class="variable-key">${escapeHtml(item.key || item.title || '?')}: ${escapeHtml(String(val).slice(0, 60))}</div>
                             <span class="variable-type-badge">${escapeHtml(item.valueType || 'string')}</span>
                         </div>
-                        <div class="meta" style="margin-top: 8px;">${escapeHtml(formatVariableScope(item))}</div>
-                        <div class="meta">角色: ${highlightSearchText(item.characterName || '-', variableFilters.search)} / 预设: ${highlightSearchText(item.presetName || '-', variableFilters.search)}</div>
-                        <div class="variable-preview">${highlightSearchText(getVariablePreview(item), variableFilters.search)}</div>
                     </div>
                 `;
             }).join('');
@@ -7665,6 +7626,7 @@
         }
 
         async function loadVariables(force = false) {
+            syncVariableCharacterFilter();
             syncVariableFilterInputs();
             if (variablesLoaded && !force) {
                 renderVariableList();
@@ -8694,6 +8656,11 @@
                     await loadStatus();
                     await loadMemoryDatabases();
                     loadWorldBooks();
+                    // 自动选中角色绑定的世界书
+                    const boundWb = data.bindingSummary?.worldbook?.value;
+                    if (boundWb) {
+                        setTimeout(() => selectWorldBook(boundWb), 500);
+                    }
                     await loadConfig();
 
                     currentCharacterData = data.character;
@@ -8702,6 +8669,7 @@
                     currentCharacterNameForRuntimePreview = data.character?.name || data.character?.data?.name || filename.replace(/\.png$/i, '');
                     currentCharacterMetadataSummary = data.metadataSummary || null;
                     renderCharacterDetail(data.character, filename, data.metadataSummary || null, data.bindingSummary || null);
+                    variableFilters.characterName = currentCharacterNameForRuntimePreview || '';
                     loadCharacters();
                 }
             } catch (e) {
@@ -11300,13 +11268,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (!entry) {
                 return;
             }
-            document.getElementById('config-memory-participant-profile-baseurl').value = entry.baseUrl || '';
-            document.getElementById('config-memory-participant-profile-apikey').value = '';
-            const apiKeyStatus = document.getElementById('config-memory-participant-profile-apikey-status');
-            if (apiKeyStatus) {
-                apiKeyStatus.style.display = entry.hasApiKey ? 'block' : 'none';
-            }
-            markConfigDirty('模型启用状态已修改');
+            document.getElementById('config-memory-participant-profile-provider-id').value = entry?.id || '';
+            markConfigDirty('人物档案模型已修改');
         }
 
         function applyParticipantProfileProviderSelection() {
@@ -11686,7 +11649,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 errors.push('人物档案单次参消息数必须是大0 的数字');
             }
 
-            if (draft.memory.participantProfile.analysisMode !== 'messages_only' && draft.memory.participantProfile.analysisMode !== 'profile_plus_messages') {
+            const validModes = ['messages_only', 'profile_plus_messages', 'bot_only_messages', 'bot_only_profile'];
+            if (!validModes.includes(draft.memory.participantProfile.analysisMode)) {
                 errors.push('人物档案分析模式无效');
             }
 
@@ -12104,19 +12068,13 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-memory-participant-profile-idle').value = currentConfig.memory?.participantProfile?.idleMs ?? 120000;
                 document.getElementById('config-memory-participant-profile-interval').value = currentConfig.memory?.participantProfile?.intervalMs ?? 300000;
                 document.getElementById('config-memory-participant-profile-source').value = currentConfig.memory?.participantProfile?.maxSourceMessages ?? 50;
-                document.getElementById('config-memory-participant-profile-analysis-mode').value = currentConfig.memory?.participantProfile?.analysisMode || 'profile_plus_messages';
+                document.getElementById('config-memory-participant-profile-analysis-mode').value = currentConfig.memory?.participantProfile?.analysisMode || 'bot_only_profile';
                 const participantProfileProviderId = currentConfig.memory?.participantProfile?.providerId || '';
                 const participantProfileModel = currentConfig.memory?.participantProfile?.model || '';
                 document.getElementById('config-memory-participant-profile-provider-id').value = participantProfileProviderId;
                 refreshAIModelSelectOptions();
                 document.getElementById('config-chat-model-ref').value = buildAIModelRef(currentConfig.chat?.modelProviderId || currentConfig.ai?.activeProviderId || '', currentConfig.chat?.model || currentConfig.ai?.model || '');
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
-                document.getElementById('config-memory-participant-profile-baseurl').value = currentConfig.memory?.participantProfile?.baseUrl || '';
-                document.getElementById('config-memory-participant-profile-apikey').value = '';
-                const participantProfileApiKeyStatus = document.getElementById('config-memory-participant-profile-apikey-status');
-                if (participantProfileApiKeyStatus) {
-                    participantProfileApiKeyStatus.style.display = currentConfig.memory?.participantProfile?.hasApiKey ? 'block' : 'none';
-                }
                 document.getElementById('config-memory-summary-ai').checked = currentConfig.memory?.summary?.useAI !== false;
 
                 document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
@@ -12425,14 +12383,9 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         idleMs: parseInt(document.getElementById('config-memory-participant-profile-idle').value) || 120000,
                         intervalMs: parseInt(document.getElementById('config-memory-participant-profile-interval').value) || 300000,
                         maxSourceMessages: parseInt(document.getElementById('config-memory-participant-profile-source').value) || 50,
-                        analysisMode: document.getElementById('config-memory-participant-profile-analysis-mode').value || 'profile_plus_messages',
+                        analysisMode: document.getElementById('config-memory-participant-profile-analysis-mode').value || 'bot_only_profile',
                         providerId: participantProfileModelSelection.providerId,
-                        model: participantProfileModelSelection.model,
-                        baseUrl: document.getElementById('config-memory-participant-profile-baseurl').value.trim(),
-                        apiKey: (() => {
-                            const value = document.getElementById('config-memory-participant-profile-apikey').value.trim();
-                            return value && value !== '******' ? value : '******';
-                        })()
+                        model: participantProfileModelSelection.model
                     },
                     summary: {
                         enabled: document.getElementById('config-memory-summary-enabled').checked,

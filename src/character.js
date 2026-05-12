@@ -231,7 +231,7 @@ export class CharacterManager {
                 postHistoryInstructions: character.post_history_instructions || data.post_history_instructions || '',
                 systemPrompt: character.system_prompt || data.system_prompt || '',
                 preferredPreset: {
-                    name: character.name || data.name || characterName,
+                    name: '',
                     systemPrompt: depthPrompt.prompt || character.system_prompt || data.system_prompt || '',
                     postHistoryInstructions: character.post_history_instructions || data.post_history_instructions || '',
                     assistantPrefill: explicitAssistantPrefill
