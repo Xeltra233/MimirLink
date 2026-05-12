@@ -65,9 +65,34 @@ npm start
 - 配置：模型供应商、聊天参数、搜索、备份恢复
 
 ### MCP 接口
-- `POST /mcp` — JSON-RPC 端点
-- 工具：range_test / range_analyze / range_list_characters / range_list_models / range_update_character / range_set_preset_prompt / range_validate_worldbook / range_fix_worldbook_format
-- ST 格式校验：防止世界书编辑跑偏
+`POST /mcp` — JSON-RPC 端点，供 Claude Code 等外部工具远程调用靶场能力。
+
+**Claude Code 挂载** (`.claude/settings.json`):
+```json
+{
+  "mcpServers": {
+    "mimirlink-range": {
+      "url": "http://localhost:8001/mcp"
+    }
+  }
+}
+```
+
+**可用工具**:
+
+| 工具 | 描述 |
+|---|---|
+| `range_test` | 发送测试消息到指定角色，获取 AI 回复 |
+| `range_analyze` | 评分回复质量，检测八股/冗余/角色偏离 |
+| `range_list_characters` | 列出所有可用角色 |
+| `range_list_models` | 列出所有 AI 模型及 provider |
+| `range_get_prefs` | 读取靶场当前偏好 |
+| `range_get_preset_status` | 列出预设 prompt 及启用状态 |
+| `range_update_character` | 修改角色卡字段 (system_prompt 等) |
+| `range_set_preset_prompt` | 启用/禁用/修改预设 prompt |
+| `range_batch_test` | 批量测试多条消息 |
+| `range_validate_worldbook` | 校验世界书 ST 格式兼容性 |
+| `range_fix_worldbook_format` | 自动修复非标字段 (uid→id 等) |
 
 ### 数据备份
 - 配置页 → 数据 Tab → 一键备份/恢复
