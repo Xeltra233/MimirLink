@@ -8411,10 +8411,29 @@
                 document.getElementById('onebot-status-2').classList.toggle('connected', connected);
                 const onebotUrl = onebot.url || currentConfig.onebot?.url || '-';
                 const onebotAccount = onebot.selfId ? `QQ ${onebot.selfId}` : '账号待获取';
+
+                // 诊断信息
+                let diagHint = '';
+                if (!connected) {
+                    const parts = [];
+                    parts.push(`目标: ${onebotUrl}`);
+                    parts.push(`模式: ${onebot.mode || 'ws'} | 鉴权: ${onebot.tokenMode || 'header'}`);
+                    if (!onebot.hasToken) parts.push('⚠ 未配 Token');
+                    if (onebot.lastClose) {
+                        const ago = Math.floor((Date.now() - onebot.lastClose.at) / 1000);
+                        parts.push(`断开: code=${onebot.lastClose.code} reason="${onebot.lastClose.reason}" (${ago}秒前)`);
+                    }
+                    if (onebot.lastError) {
+                        const ago = Math.floor((Date.now() - onebot.lastError.at) / 1000);
+                        parts.push(`错误: ${onebot.lastError.message} (${ago}秒前)`);
+                    }
+                    diagHint = parts.join(' | ');
+                }
+
                 const onebotStateText = connected ? `OneBot 已连接 · ${onebotAccount}` : 'OneBot 未连接';
                 const onebotDetailText = connected
                     ? `NapCat / OneBot 已连接：${onebotUrl}${onebot.selfId ? ` · QQ ${onebot.selfId}` : ''}`
-                    : `未连接：${onebotUrl}。请检查 NapCat WebSocket、Token 和鉴权方式。`;
+                    : (diagHint || `未连接：${onebotUrl}。请检查 NapCat WebSocket、Token 和鉴权方式。`);
                 const onebotStatusText = document.getElementById('onebot-status-text');
                 const dashOnebotState = document.getElementById('dash-onebot-state');
                 const dashOnebotDetail = document.getElementById('dash-onebot-detail');

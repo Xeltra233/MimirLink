@@ -116,6 +116,8 @@ export class OneBotClient extends EventEmitter {
         this.connected = false;
         this.pendingCalls = new Map();
         this.callId = 0;
+        this.lastError = null;
+        this.lastClose = null;
     }
 
     connect() {
@@ -166,12 +168,16 @@ export class OneBotClient extends EventEmitter {
         this.ws.on('close', (code, reason) => {
             this.connected = false;
             this.emit('disconnected');
-            this.logger.warn(`OneBot 连接关闭 code=${code} reason=${reason?.toString()||'无'}`);
+            const reasonStr = reason?.toString() || '';
+            this.lastClose = { code, reason: reasonStr, at: Date.now() };
+            this.logger.warn(`OneBot 连接关闭 code=${code} reason=${reasonStr||'无'}`);
             setTimeout(() => this.connect(), this.config.reconnectInterval || 5000);
         });
 
         this.ws.on('error', (err) => {
-            this.logger.error(`WebSocket 错误: ${err.message}`);
+            const msg = err.message || String(err);
+            this.lastError = { message: msg, at: Date.now() };
+            this.logger.error(`WebSocket 错误: ${msg}`);
         });
     }
 
@@ -437,9 +443,13 @@ export class OneBotClient extends EventEmitter {
         return {
             connected: this.connected,
             url: this.config?.url || '',
+            mode: this.config?.mode || 'ws',
             tokenMode: this.config?.tokenMode || 'header',
+            hasToken: !!this.getNormalizedToken(),
             selfId: this.selfId || null,
-            readyState: this.ws?.readyState ?? null
+            readyState: this.ws?.readyState ?? null,
+            lastError: this.lastError,
+            lastClose: this.lastClose
         };
     }
 
