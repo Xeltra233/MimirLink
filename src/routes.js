@@ -3904,7 +3904,9 @@ ${promptListText}
                 modelProviderId, model,
                 worldbookName, presetId,
                 context = {},
-                contextConfig: contextOverrides = {}
+                contextConfig: contextOverrides = {},
+                injectVariables = true,
+                injectProfiles = true
             } = req.body || {};
 
             const normalizedMessage = String(userMessage || '').trim();
@@ -4011,7 +4013,8 @@ ${promptListText}
                 messageCount: built.messages?.length || 0
             };
 
-            // 变量桥接：靶场也注入变量状态和解析宏
+            // 变量桥接：靶场也注入变量状态和解析宏（可开关）
+            if (injectVariables) {
             try {
                 const { buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
                 const scopeOpts = {
@@ -4030,6 +4033,19 @@ ${promptListText}
                     else built.messages.unshift({ role: 'system', content: statusBlock });
                 }
             } catch (e) { logger.warn('[靶场] 变量注入失败:', e.message); }
+            }
+
+            // 人物档案注入（可开关）
+            if (injectProfiles) {
+            try {
+                const profiles = sessionManager?.listParticipantProfiles?.(10) || [];
+                if (profiles.length > 0) {
+                    const profileText = profiles.map(p => `[档案:${p.participantName||p.title}]\n${(p.content||'').slice(0, 300)}`).join('\n\n');
+                    const sysIdx = built.messages.findIndex(m => m.role === 'system');
+                    if (sysIdx >= 0) built.messages[sysIdx].content += '\n' + profileText;
+                }
+            } catch (e) { logger.warn('[靶场] 档案注入失败:', e.message); }
+            }
 
             let aiResponse = null;
             if (req.body.includeAIResponse) {

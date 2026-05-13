@@ -5422,6 +5422,13 @@
                                     允许人物档案参与注入
                                 </label>
                             </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-memory-participant-profile-retry" checked>
+                                    LLM失败自动重试
+                                </label>
+                                <p class="hint-text">调用失败重试2次，仍失败挂起下次触发再试</p>
+                            </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>人物档案黑名单 participantId（逗号分隔）</label>
                                 <textarea id="config-memory-participant-profile-blacklist" placeholder="例如: 10001,10002"></textarea>
@@ -5821,6 +5828,11 @@
                             <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-participants" checked> 参与者</label>
                             <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-reference" checked> 回复引用</label>
                             <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-intent" checked> 用户意图</label>
+                        </div>
+                        <div class="range-section-label">变量 & 档案</div>
+                        <div class="range-ctx-checkboxes">
+                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-inject-vars" checked> 注入变量</label>
+                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-inject-profiles" checked> 注入人物档案</label>
                         </div>
                         <div class="range-section-label">输出格式</div>
                         <div class="range-ctx-checkboxes">
@@ -12117,6 +12129,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-memory-summary-source').value = currentConfig.memory?.summary?.maxSourceMessages ?? 50;
                 document.getElementById('config-memory-participant-profile-enabled').checked = currentConfig.memory?.participantProfile?.enabled === true;
                 document.getElementById('config-memory-participant-profile-inject-enabled').checked = currentConfig.memory?.participantProfile?.injectEnabled !== false;
+                document.getElementById('config-memory-participant-profile-retry').checked = currentConfig.memory?.participantProfile?.retryOnError !== false;
                 document.getElementById('config-memory-participant-profile-blacklist').value = (currentConfig.memory?.participantProfile?.blacklistParticipantIds || []).join(',');
                 document.getElementById('config-memory-participant-profile-manual-command').value = currentConfig.chat?.commands?.participantProfileManual?.command || currentConfig.memory?.participantProfile?.manualCommand || '/人物档案';
                 document.getElementById('config-memory-participant-profile-trigger').value = currentConfig.memory?.participantProfile?.triggerMessages ?? 8;
@@ -12435,6 +12448,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     participantProfile: {
                         enabled: document.getElementById('config-memory-participant-profile-enabled').checked,
                         injectEnabled: document.getElementById('config-memory-participant-profile-inject-enabled').checked,
+                        retryOnError: document.getElementById('config-memory-participant-profile-retry').checked,
                         blacklistParticipantIds: document.getElementById('config-memory-participant-profile-blacklist').value.split(',').map((item) => item.trim()).filter(Boolean),
                         manualCommand: document.getElementById('config-chat-command-participant-profile-command').value.trim() || '/人物档案',
                         triggerMessages: parseInt(document.getElementById('config-memory-participant-profile-trigger').value) || 8,
@@ -13527,7 +13541,9 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     presetId: RE.preset.value || undefined,
                     messageType: 'group',
                     includeAIResponse: true,
-                    contextConfig: getRangeContextConfig()
+                    contextConfig: getRangeContextConfig(),
+                    injectVariables: document.getElementById('range-inject-vars')?.checked !== false,
+                    injectProfiles: document.getElementById('range-inject-profiles')?.checked !== false
                 };
                 const ov = getRangeOverrides();
                 if (ov.baseUrl) body.modelProviderId = RE.provider.value;

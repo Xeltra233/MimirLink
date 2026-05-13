@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -57,6 +57,13 @@ export function createMCPHandler(managers, config, saveConfig) {
         fixed.secondary_keys = fixed.secondary_keys || [];
         fixed.selective = fixed.selective ?? false;
         return fixed;
+    }
+
+    // 写回世界书文件
+    function saveWorldbookFile(characterName, wb) {
+        const wbPath = resolve(process.cwd(), 'data', 'worlds', `${characterName}'s Lorebook.json`);
+        writeFileSync(wbPath, JSON.stringify(wb, null, 2), 'utf-8');
+        worldBookManager.clearCache();
     }
 
     // 工具注册表
@@ -503,6 +510,92 @@ ${wbSummary || '(未提供)'}
             }
         },
 
+        range_update_worldbook_entry: {
+            description: '添加/修改/删除世界书条目。通过MCP操作世界书，自动校验ST格式。',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    characterName: { type: 'string', description: '角色名（不含.png）' },
+                    entryId: { type: 'number', description: '条目id，修改/删除时必填' },
+                    action: { type: 'string', description: 'add / update / delete / merge' },
+                    keys: { type: 'array', description: '触发词列表' },
+                    content: { type: 'string', description: '条目内容' },
+                    constant: { type: 'boolean', description: '是否常量条目' },
+                    position: { type: 'string', description: 'before_char 或 after_char' },
+                    insertion_order: { type: 'number', description: '排序权重' },
+                    comment: { type: 'string', description: '条目备注' },
+                    mergeTargetId: { type: 'number', description: 'merge时目标条目的id' }
+                },
+                required: ['characterName']
+            },
+            handler: async ({ characterName, entryId, action, keys, content, constant, position, insertion_order, comment, mergeTargetId }) => {
+                try {
+                    const wbName = characterName.replace(/\.png$/i, '');
+                    const wb = worldBookManager.readWorldBook(wbName);
+                    if (!wb) return { content: [{ type: 'text', text: `未找到 ${wbName} 的世界书` }] };
+                    const entries = wb.entries || [];
+
+                    switch (action) {
+                        case 'add': {
+                            const newId = Math.max(0, ...entries.map(e => e.id || 0)) + 1;
+                            const entry = {
+                                id: newId,
+                                keys: keys || [],
+                                secondary_keys: [],
+                                content: content || '',
+                                constant: constant || false,
+                                enabled: true,
+                                selective: false,
+                                position: position || 'before_char',
+                                insertion_order: insertion_order || 100,
+                                comment: comment || ''
+                            };
+                            entries.push(entry);
+                            const issues = validateWorldbookEntry(entry, entries.length - 1);
+                            saveWorldbookFile(wbName, wb);
+                            const msg = issues.length > 0 ? `已添加 id=${newId}，注意: ${issues.join('; ')}` : `已添加 id=${newId}`;
+                            return { content: [{ type: 'text', text: msg }] };
+                        }
+                        case 'update': {
+                            const entry = entries.find(e => e.id === entryId);
+                            if (!entry) return { content: [{ type: 'text', text: `未找到 id=${entryId}` }] };
+                            if (keys !== undefined) entry.keys = keys;
+                            if (content !== undefined) entry.content = content;
+                            if (constant !== undefined) entry.constant = constant;
+                            if (position !== undefined) entry.position = position;
+                            if (insertion_order !== undefined) entry.insertion_order = insertion_order;
+                            if (comment !== undefined) entry.comment = comment;
+                            saveWorldbookFile(wbName, wb);
+                            return { content: [{ type: 'text', text: `已更新 id=${entryId}` }] };
+                        }
+                        case 'delete': {
+                            const idx = entries.findIndex(e => e.id === entryId);
+                            if (idx < 0) return { content: [{ type: 'text', text: `未找到 id=${entryId}` }] };
+                            entries.splice(idx, 1);
+                            saveWorldbookFile(wbName, wb);
+                            return { content: [{ type: 'text', text: `已删除 id=${entryId}` }] };
+                        }
+                        case 'merge': {
+                            if (!mergeTargetId) return { content: [{ type: 'text', text: 'merge需要mergeTargetId' }] };
+                            const source = entries.find(e => e.id === entryId);
+                            const target = entries.find(e => e.id === mergeTargetId);
+                            if (!source || !target) return { content: [{ type: 'text', text: '源或目标条目未找到' }] };
+                            target.content = (target.content || '') + '\n' + (source.content || '');
+                            target.keys = [...new Set([...(target.keys||[]), ...(source.keys||[])])];
+                            const sidx = entries.findIndex(e => e.id === entryId);
+                            entries.splice(sidx, 1);
+                            saveWorldbookFile(wbName, wb);
+                            return { content: [{ type: 'text', text: `已将 id=${entryId} 合并到 id=${mergeTargetId}` }] };
+                        }
+                        default:
+                            return { content: [{ type: 'text', text: `未知操作: ${action}，支持 add/update/delete/merge` }] };
+                    }
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `操作失败: ${e.message}` }] };
+                }
+            }
+        },
+
         range_validate_character: {
             description: '校验角色卡格式：检查必要字段、八股词、冗余描写、ST兼容性',
             inputSchema: {
@@ -640,6 +733,123 @@ ${wbSummary || '(未提供)'}
                 } catch (e) {
                     return { content: [{ type: 'text', text: `注入失败: ${e.message}` }] };
                 }
+            }
+        },
+
+        range_list_variables: {
+            description: '列出变量，可按scope/角色/搜索过滤',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    characterName: { type: 'string' },
+                    scopeKey: { type: 'string' },
+                    search: { type: 'string' },
+                    limit: { type: 'number' }
+                }
+            },
+            handler: async ({ characterName, scopeKey, search, limit }) => {
+                const filters = { characterName: characterName || '', scopeKey: scopeKey || '', search: search || '', limit: limit || 100 };
+                const vars = sessionManager.listVariables(filters);
+                const items = vars.map(v => ({ id: v.id, key: v.key || v.title, value: v.rawValue || v.value, valueType: v.valueType, characterName: v.characterName, scopeKey: v.scopeKey }));
+                return { content: [{ type: 'text', text: JSON.stringify(items, null, 2) }] };
+            }
+        },
+
+        range_set_variable: {
+            description: '创建或更新变量',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    key: { type: 'string' },
+                    value: { type: 'string' },
+                    valueType: { type: 'string' },
+                    characterName: { type: 'string' },
+                    scopeKey: { type: 'string' }
+                },
+                required: ['key', 'value', 'characterName']
+            },
+            handler: async ({ key, value, valueType, characterName, scopeKey }) => {
+                const scope = { scopeType: 'user_persistent', scopeKey: scopeKey || 'default', characterName, presetName: '' };
+                const result = sessionManager.upsertVariable(scope, { key, rawValue: String(value), valueType: valueType || 'string', source: 'mcp' });
+                return { content: [{ type: 'text', text: `变量 "${key}" 已保存 (id=${result.id})` }] };
+            }
+        },
+
+        range_delete_variable: {
+            description: '删除变量',
+            inputSchema: {
+                type: 'object', properties: {
+                    key: { type: 'string' },
+                    characterName: { type: 'string' },
+                    scopeKey: { type: 'string' }
+                }, required: ['key', 'characterName']
+            },
+            handler: async ({ key, characterName, scopeKey }) => {
+                const scope = { scopeType: 'user_persistent', scopeKey: scopeKey || 'default', characterName, presetName: '' };
+                const ok = sessionManager.deleteVariableByName(scope, key);
+                return { content: [{ type: 'text', text: ok ? `已删除 "${key}"` : `未找到 "${key}"` }] };
+            }
+        },
+
+        range_list_knowledge: {
+            description: '列出知识库条目',
+            inputSchema: {
+                type: 'object', properties: {
+                    characterName: { type: 'string' },
+                    search: { type: 'string' },
+                    limit: { type: 'number' }
+                }
+            },
+            handler: async ({ characterName, search, limit }) => {
+                const filters = { characterName: characterName || '', search: search || '', limit: limit || 50 };
+                const items = sessionManager.listKnowledgeEntries(filters);
+                const result = items.map(k => ({ id: k.id, title: k.title, content: (k.content||'').slice(0, 200), knowledgeType: k.knowledgeType }));
+                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+            }
+        },
+
+        range_set_knowledge: {
+            description: '创建知识库条目',
+            inputSchema: {
+                type: 'object', properties: {
+                    title: { type: 'string' },
+                    content: { type: 'string' },
+                    characterName: { type: 'string' },
+                    knowledgeType: { type: 'string' }
+                }, required: ['title', 'content', 'characterName']
+            },
+            handler: async ({ title, content, characterName, knowledgeType }) => {
+                const scope = { scopeType: 'user_persistent', scopeKey: 'default', characterName, presetName: '' };
+                const result = sessionManager.upsertKnowledgeEntry(scope, { title, content, knowledgeType: knowledgeType || 'fixed' });
+                return { content: [{ type: 'text', text: `知识 "${title}" 已保存 (id=${result.id})` }] };
+            }
+        },
+
+        range_list_profiles: {
+            description: '列出人物档案',
+            inputSchema: {
+                type: 'object', properties: { limit: { type: 'number' } }
+            },
+            handler: async ({ limit }) => {
+                const items = sessionManager.listParticipantProfiles(limit || 20);
+                const result = items.map(p => ({ id: p.id, participantId: p.participantId, name: p.participantName || p.title, content: (p.content||'').slice(0, 200) }));
+                return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
+            }
+        },
+
+        range_load_worldbook: {
+            description: '加载指定角色的世界书为当前活跃',
+            inputSchema: {
+                type: 'object', properties: {
+                    characterName: { type: 'string' }
+                }, required: ['characterName']
+            },
+            handler: async ({ characterName }) => {
+                const wb = worldBookManager.readWorldBook(characterName.replace(/\.png$/i, ''));
+                if (!wb) return { content: [{ type: 'text', text: `未找到 ${characterName} 的世界书` }] };
+                const wbName = `${characterName.replace(/\.png$/i, '')}'s Lorebook.json`;
+                worldBookManager.loadWorldBook(wbName);
+                return { content: [{ type: 'text', text: `已加载世界书: ${wbName} (${(wb.entries||[]).length}条)` }] };
             }
         },
 

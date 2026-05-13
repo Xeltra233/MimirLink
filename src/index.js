@@ -1016,6 +1016,7 @@ let lastRecallSnapshot = null;
 const participantProfileTimers = new Map();
 const participantProfileTargets = new Map();
 const participantProfileBuilds = new Set();
+const participantProfileRetryQueue = new Map();
 let participantProfileIntervalTimer = null;
 let participantProfileProgress = {
     running: false,
@@ -1339,12 +1340,22 @@ async function dispatchReply(event, processedReply) {
     const sendText = async (content) => {
         const message = !hasSentPrimary && mentionPrefix ? `${mentionPrefix}${content}` : content;
         if (event.message_type === 'group') {
-            if (quoteReplyEnabled && !splitMessage && !hasSentPrimary && event.message_id) {
-                await bot.sendGroupReply(event.group_id, event.message_id, message);
+            if (quoteReplyEnabled && event.message_id) {
+                // 引用+@：用消息段数组确保@生效
+                if (!hasSentPrimary && mentionSenderOnReply && event.user_id) {
+                    const segments = [
+                        { type: 'reply', data: { id: String(event.message_id) } },
+                        { type: 'at', data: { qq: String(event.user_id) } },
+                        { type: 'text', data: { text: String(content) } }
+                    ];
+                    await bot.sendGroupMessage(event.group_id, segments);
+                } else {
+                    await bot.sendGroupReply(event.group_id, event.message_id, message);
+                }
             } else {
                 await bot.sendGroupMessage(event.group_id, message);
             }
-        } else if (quoteReplyEnabled && !splitMessage && !hasSentPrimary && event.message_id) {
+        } else if (quoteReplyEnabled && event.message_id) {
             await bot.sendPrivateReply(event.user_id, event.message_id, message);
         } else {
             await bot.sendPrivateMessage(event.user_id, message);
@@ -1359,7 +1370,7 @@ async function dispatchReply(event, processedReply) {
             : fallbackText;
 
         if (event.message_type === 'group') {
-            if (quoteReplyEnabled && !splitMessage && !hasSentPrimary && fallbackMessage && event.message_id) {
+            if (quoteReplyEnabled && !hasSentPrimary && fallbackMessage && event.message_id) {
                 await bot.sendGroupReply(event.group_id, event.message_id, fallbackMessage);
             } else {
                 if (!hasSentPrimary && fallbackMessage) {
@@ -1367,7 +1378,7 @@ async function dispatchReply(event, processedReply) {
                 }
                 await bot.sendGroupRecord(event.group_id, audioPath);
             }
-        } else if (quoteReplyEnabled && !splitMessage && !hasSentPrimary && fallbackMessage && event.message_id) {
+        } else if (quoteReplyEnabled && !hasSentPrimary && fallbackMessage && event.message_id) {
             await bot.sendPrivateReply(event.user_id, event.message_id, fallbackMessage);
         } else {
             if (!hasSentPrimary && fallbackMessage) {
@@ -1761,10 +1772,29 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
         logger.info(`[画像] 已更新人物档案: ${speakerIdentity.participantName}(${speakerIdentity.participantId})`);
         return savedProfile;
     } catch (error) {
+        const retryEnabled = participantProfileConfig.retryOnError !== false;
+        const retryCount = options._retryCount || 0;
+
+        if (retryEnabled && retryCount < 2) {
+            logger.warn(`[画像] LLM调用失败，重试 ${retryCount+1}/2: ${error.message}`);
+            participantProfileBuilds.delete(buildKey);
+            await sleep(2000);
+            return maybeBuildParticipantProfile(sessionManager, aiClient, namespaceOptions, speakerIdentity, logger, {
+                ...options, _retryCount: retryCount + 1
+            });
+        }
+
+        // 重试耗尽，挂起到队列下次再试
+        if (retryEnabled) {
+            const queueKey = buildKey;
+            participantProfileRetryQueue.set(queueKey, { namespaceOptions, speakerIdentity, addedAt: Date.now(), error: error.message });
+            logger.warn(`[画像] 重试失败已挂起: ${speakerIdentity.participantName}(${speakerIdentity.participantId})，下次触发再试`);
+        }
+
         updateParticipantProfileProgress({
             running: false,
-            stage: 'failed',
-            currentMessage: `人物档案分析失败: ${error.message}`,
+            stage: retryEnabled ? 'queued' : 'failed',
+            currentMessage: retryEnabled ? '重试失败已挂起，下次继续' : `人物档案分析失败: ${error.message}`,
             progressPercent: 100,
             lastCompletedAt: Date.now(),
             lastFailureAt: Date.now(),
@@ -1779,10 +1809,10 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
         setParticipantProfileTask({
             ...profileTaskMeta,
             running: false,
-            stage: 'failed',
+            stage: retryEnabled ? 'queued' : 'failed',
             triggeredBy: options.triggeredBy || 'auto',
             analysisMode: participantProfileConfig.analysisMode,
-            currentMessage: `人物档案分析失败: ${error.message}`,
+            currentMessage: retryEnabled ? '重试失败已挂起，下次继续' : `人物档案分析失败: ${error.message}`,
             progressPercent: 100,
             lastCompletedAt: Date.now(),
             lastFailureAt: Date.now(),
@@ -1794,7 +1824,6 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                 triggeredBy: options.triggeredBy || 'auto'
             }
         });
-        throw error;
     } finally {
         participantProfileBuilds.delete(buildKey);
     }
@@ -1812,6 +1841,16 @@ function startParticipantProfileIntervalScheduler(sessionManager, aiClient, logg
     }
 
     participantProfileIntervalTimer = setInterval(() => {
+        // 先处理重试队列
+        if (participantProfileRetryQueue.size > 0) {
+            for (const [key, item] of participantProfileRetryQueue) {
+                logger.info(`[画像] 重试挂起的档案: ${item.speakerIdentity?.participantName}(${item.speakerIdentity?.participantId})`);
+                participantProfileRetryQueue.delete(key);
+                maybeBuildParticipantProfile(sessionManager, aiClient, item.namespaceOptions, item.speakerIdentity, logger, {
+                    triggeredBy: 'retry'
+                }).catch(() => {});
+            }
+        }
         for (const target of participantProfileTargets.values()) {
             updateParticipantProfileProgress({
                 running: false,

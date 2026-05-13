@@ -79,7 +79,8 @@ export function getParticipantProfileConfig(config = {}) {
         analysisMode: normalizeAnalysisMode(participantProfile.analysisMode),
         model: toOptionalString(participantProfile.model) || toOptionalString(selectedProvider?.model),
         baseUrl: toOptionalString(participantProfile.baseUrl) || toOptionalString(selectedProvider?.baseUrl),
-        apiKey: toOptionalString(participantProfile.apiKey) || toOptionalString(selectedProvider?.apiKey)
+        apiKey: toOptionalString(participantProfile.apiKey) || toOptionalString(selectedProvider?.apiKey),
+        retryOnError: participantProfile.retryOnError !== false
     };
     if (providerId) {
         result.providerId = providerId;
@@ -110,6 +111,7 @@ export function normalizeParticipantProfileConfig(config = {}) {
     config.memory.participantProfile.model = toOptionalString(config.memory.participantProfile.model);
     config.memory.participantProfile.baseUrl = toOptionalString(config.memory.participantProfile.baseUrl);
     config.memory.participantProfile.apiKey = toOptionalString(config.memory.participantProfile.apiKey);
+    config.memory.participantProfile.retryOnError = normalized.retryOnError;
 
     return normalized;
 }
