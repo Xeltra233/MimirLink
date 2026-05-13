@@ -1395,6 +1395,16 @@ async function dispatchReply(event, processedReply) {
                 const isPrimarySend = !hasSentPrimary;
                 await sendText(content);
 
+                // TTS 自动转换：启用时每条文字也合成语音发送
+                if (ttsConfig.enabled && isPrimarySend) {
+                    try {
+                        logger.info(`[TTS] 自动合成: ${content.substring(0, 30)}...`);
+                        recordDashboardMetric('tts');
+                        const audioPath = await ttsManager.synthesize(content);
+                        await sendVoice(audioPath, content);
+                    } catch (err) { logger.warn(`[TTS] 合成失败: ${err.message}`); }
+                }
+
                 const hasMoreSegments = index < segments.length - 1 || textParts.indexOf(part) < textParts.length - 1;
                 const delayMs = isPrimarySend ? segmentDelayMs : proactiveIntervalMs;
                 if (hasMoreSegments && delayMs > 0) {

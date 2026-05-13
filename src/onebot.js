@@ -150,9 +150,10 @@ export class OneBotClient extends EventEmitter {
             }
         });
 
-        this.ws.on('close', () => {
+        this.ws.on('close', (code, reason) => {
             this.connected = false;
             this.emit('disconnected');
+            this.logger.warn(`OneBot 连接关闭 code=${code} reason=${reason?.toString()||'无'}`);
             // 自动重连
             setTimeout(() => this.connect(), this.config.reconnectInterval || 5000);
         });
@@ -179,9 +180,12 @@ export class OneBotClient extends EventEmitter {
             return null;
         }
 
-        return {
-            Authorization: `Bearer ${token}`
-        };
+        // NapCat/LLOneBot 兼容：header 模式和 query 模式
+        if (this.config.tokenMode === 'header') {
+            return { Authorization: `Bearer ${token}` };
+        }
+        // 默认：直接传 token 不带前缀（兼容更多实现）
+        return { Authorization: token };
     }
 
     buildConnectionUrl() {

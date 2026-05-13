@@ -415,6 +415,47 @@ ${wbSummary || '(未提供)'}
             }
         },
 
+        range_validate_preset: {
+            description: '校验预设格式，检查 prompt 条目是否完整、字段是否合规',
+            inputSchema: { type: 'object', properties: {} },
+            handler: async () => {
+                try {
+                    const issues = [];
+                    const pfiles = config.imports?.presetFiles || [];
+                    const prompts = config.preset?.prompts || [];
+
+                    // 检查内置预设
+                    for (let i = 0; i < prompts.length; i++) {
+                        const p = prompts[i];
+                        if (!p.identifier && !p.name) issues.push(`内置预设#${i}: 缺少 identifier 或 name`);
+                        if (p.enabled === undefined) issues.push(`内置预设#${i}: 缺少 enabled 字段`);
+                    }
+
+                    // 检查导入的预设
+                    for (const pf of pfiles) {
+                        const pp = pf.importedPreset?.prompts || [];
+                        for (let i = 0; i < pp.length; i++) {
+                            const p = pp[i];
+                            if (!p.identifier && !p.name) issues.push(`${pf.filename}: prompt#${i} 缺少 identifier/name`);
+                            if (typeof p.content !== 'string') issues.push(`${pf.filename}: prompt#${i}(${p.name}) content 为空或非文本`);
+                            if (p.role && !['system','assistant','user'].includes(p.role)) issues.push(`${pf.filename}: prompt#${i}(${p.name}) role 无效: ${p.role}`);
+                        }
+                    }
+
+                    const totalPrompts = prompts.length + pfiles.reduce((s, pf) => s + (pf.importedPreset?.prompts?.length || 0), 0);
+                    const valid = issues.length === 0;
+                    return { content: [{ type: 'text', text: [
+                        `预设文件: ${pfiles.length} 个导入`,
+                        `Prompt 总数: ${totalPrompts}`,
+                        `格式: ${valid ? '✔ 正常' : '✗ 存在问题'}`,
+                        ...issues.map(i => `  - ${i}`)
+                    ].join('\n') }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `校验失败: ${e.message}` }] };
+                }
+            }
+        },
+
         range_fix_worldbook_format: {
             description: '自动修复世界书条目的 ST 格式问题（uid→id, order→insertion_order, position数字→字符串）',
             inputSchema: {
