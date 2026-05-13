@@ -1451,11 +1451,21 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 delete newConfig.memory.participantProfile.apiKey;
             }
 
+			const onebotChanged = (
+				newConfig.onebot?.url !== undefined && newConfig.onebot.url !== config.onebot?.url
+				|| newConfig.onebot?.accessToken !== undefined && newConfig.onebot.accessToken !== config.onebot?.accessToken
+				|| newConfig.onebot?.mode !== undefined && newConfig.onebot.mode !== config.onebot?.mode
+				|| newConfig.onebot?.tokenMode !== undefined && newConfig.onebot.tokenMode !== config.onebot?.tokenMode
+			);
 			mergeConfig(config, newConfig);
 			normalizeAccessControlConfig();
 			applyRuntimeConfig();
             clearParticipantProfileTimers();
 			saveConfig(config);
+			if (onebotChanged && bot) {
+				bot.reconnect();
+				logger.info('OneBot 配置变更，自动重连');
+			}
 
 			logger.info(`[API ${req.requestId || 'no-id'}] 配置已更新`, {
                 topLevelKeys: Object.keys(newConfig || {}),
