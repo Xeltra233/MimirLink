@@ -24,7 +24,7 @@ cp config.example.json config.json
 npm start
 # 面板: http://localhost:8001
 ```
-Node.js >= 16。
+Node.js >= 22.5.0（`node:sqlite` 内置模块）。
 
 ---
 
@@ -60,24 +60,55 @@ Node.js >= 16。
 - 配置：模型供应商、聊天参数、搜索、备份恢复、MCP
 
 ### MCP 接口
-`POST /mcp` — Claude Code 等外部工具远程调用。挂载配置（`.claude/settings.json`）：
+`POST /mcp`（默认路径，可在配置页修改）—— Claude Code 等外部工具远程调用，JSON-RPC 2.0 协议。
+
+Config 中启用：
+```json
+{"mcp": {"enabled": true, "path": "/mcp"}}
+```
+
+Claude Code 挂载（`.claude/settings.json`）：
 ```json
 {"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}
 ```
 
+**25 个工具：**
+
 | 工具 | 描述 |
 |---|---|
+| **靶场测试** | |
 | `range_test` | 发送测试消息，获取 AI 回复 |
-| `range_analyze` | 评分回复质量 |
-| `range_trace_output` | 追踪输出来源（预设/角色卡/世界书） |
-| `range_validate_character` | 校验角色卡格式、八股词、HTML |
-| `range_validate_worldbook` | 校验世界书 ST 格式 |
-| `range_validate_preset` | 校验预设格式 |
-| `range_fix_worldbook_format` | 自动修复非标字段 |
-| `range_get_preset_status` | 列出预设及启用状态 |
-| `range_set_preset_prompt` | 启用/禁用/修改预设 prompt |
-| `range_update_character` | 修改角色卡字段 |
-| `range_batch_test` | 批量测试 |
+| `range_analyze` | 评分回复质量，检测八股/冗余/角色偏离 |
+| `range_batch_test` | 批量发送测试消息 |
+| `range_get_prefs` | 读取靶场偏好（角色/世界书/预设/模型） |
+| **角色卡** | |
+| `range_list_characters` | 列出所有可用角色 |
+| `range_validate_character` | 校验角色卡：必要字段、八股词、HTML标签、ST兼容性 |
+| `range_update_character` | 修改角色卡字段，直接写入 PNG tEXt 块 |
+| **世界书** | |
+| `range_load_worldbook` | 加载指定角色的世界书为当前活跃 |
+| `range_validate_worldbook` | 校验世界书 ST 格式兼容性 |
+| `range_fix_worldbook_format` | 自动修复非标字段（uid→id, order→insertion_order 等） |
+| `range_update_worldbook_entry` | 添加/修改/删除/合并世界书条目 |
+| **预设** | |
+| `range_get_preset_status` | 列出所有预设 prompt 及启用状态 |
+| `range_set_preset_prompt` | 启用/禁用/修改指定预设 prompt |
+| `range_batch_set_prompts` | 批量启用/禁用预设 prompt（关键词匹配） |
+| `range_validate_preset` | 校验预设格式完整性 |
+| **变量** | |
+| `range_list_variables` | 列出变量，支持 scope/角色/搜索过滤 |
+| `range_set_variable` | 创建或更新变量 |
+| `range_delete_variable` | 删除变量 |
+| **知识库 & 档案** | |
+| `range_list_knowledge` | 列出知识库条目 |
+| `range_set_knowledge` | 创建知识库条目 |
+| `range_list_profiles` | 列出人物档案 |
+| **数据注入** | |
+| `range_seed_test_data` | 注入假数据用于全链路测试（变量/知识/档案） |
+| `range_clear_test_data` | 清除指定 scope 的假测试数据 |
+| **来源追踪** | |
+| `range_trace_output` | 分析 AI 输出文本来源：匹配预设 prompt、世界书条目 |
+| `range_list_models` | 列出可用 AI 模型（含 provider 信息） |
 
 ### 反注入
 - 14 条规则，high 风险直接拦截 + QQ 回复警告
@@ -92,6 +123,7 @@ Node.js >= 16。
 
 ## 已知问题
 
+- **`node:sqlite` 需要 Node.js >= 22.5.0**：Zeabur 等平台默认 Node 20 会崩溃 `No such built-in module: node:sqlite`，需在 Dockerfile 或平台设置中指定 Node 22+
 - **HTML 前端卡**：ST 的 `<details>` `<maintext>` `<div class="...">` 等复杂标签未完全覆盖，纯文字卡正常
 - **变量初始化**：仅扫描 `setvar` 宏，不含脚本执行
 - **预设需手动调**：导入的 ST 预设默认大量 prompt 启用，需在 MCP 或配置页关闭不需要的
