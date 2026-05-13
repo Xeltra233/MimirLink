@@ -52,25 +52,24 @@ export class CharacterManager {
                 if (nullIndex !== -1) {
                     const keyword = chunkData.toString('ascii', 0, nullIndex);
 
-                    if (keyword === 'chara') {
+                    if (keyword === 'chara' || keyword === 'ccv3') {
                         let dataStart = nullIndex + 1;
 
                         // iTXt 格式需要跳过额外的字段
                         if (type === 'iTXt') {
-                            // 跳过压缩标志和压缩方法
                             while (dataStart < chunkData.length && chunkData[dataStart] === 0) dataStart++;
-                            // 跳过语言标签
                             while (dataStart < chunkData.length && chunkData[dataStart] !== 0) dataStart++;
                             dataStart++;
-                            // 跳过翻译关键字
                             while (dataStart < chunkData.length && chunkData[dataStart] !== 0) dataStart++;
                             dataStart++;
                         }
 
                         const base64Data = chunkData.toString('utf8', dataStart);
                         const jsonStr = Buffer.from(base64Data, 'base64').toString('utf8');
-                        character = JSON.parse(jsonStr);
-                        break;
+                        // ccv3 优先：已经有 ccv3 数据则跳过 chara；否则接受当前数据
+                        if (keyword === 'ccv3' || !character) {
+                            character = JSON.parse(jsonStr);
+                        }
                     }
                 }
             }
