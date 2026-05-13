@@ -5372,7 +5372,7 @@
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-memory-summary-enabled" checked>
-                                    启用自动摘要
+                                    启用 AI 自动摘要
                                 </label>
                             </div>
                             <div class="form-group">
@@ -5391,11 +5391,10 @@
                                 <label>单次摘要最多压缩消息数</label>
                                 <input type="number" id="config-memory-summary-source" placeholder="50" min="10">
                             </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-memory-summary-ai" checked>
-                                    使用 AI 生成摘要
-                                </label>
+                            <div class="form-group full">
+                                <label>摘要专用模型</label>
+                                <select id="config-memory-summary-model" onchange="markConfigDirty('摘要模型已修改')"></select>
+                                <p class="hint-text">留空则使用聊天模型，填则用指定模型做摘要（省钱）</p>
                             </div>
                         </div>
                     </div>
@@ -11219,7 +11218,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
         function refreshAIModelSelectOptions() {
             const providers = (aiProviderEntries || []).filter(e => e.baseUrl);
-            const targetIds = ['config-chat-model-ref', 'config-memory-participant-profile-model'];
+            const targetIds = ['config-chat-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
             targetIds.forEach((selectId) => {
                 const select = document.getElementById(selectId);
                 if (!select) return;
@@ -12122,7 +12121,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 refreshAIModelSelectOptions();
                 document.getElementById('config-chat-model-ref').value = buildAIModelRef(currentConfig.chat?.modelProviderId || currentConfig.ai?.activeProviderId || '', currentConfig.chat?.model || currentConfig.ai?.model || '');
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
-                document.getElementById('config-memory-summary-ai').checked = currentConfig.memory?.summary?.useAI !== false;
+                document.getElementById('config-memory-summary-model').value = currentConfig.memory?.summary?.model || '';
 
                 document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
                 document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
@@ -12442,7 +12441,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         keepRecent: parseInt(document.getElementById('config-memory-summary-keep').value) || 30,
                         maxSummaries: parseInt(document.getElementById('config-memory-summary-max').value) || 8,
                         maxSourceMessages: parseInt(document.getElementById('config-memory-summary-source').value) || 50,
-                        useAI: document.getElementById('config-memory-summary-ai').checked
+                        useAI: document.getElementById('config-memory-summary-enabled').checked,
+                        model: document.getElementById('config-memory-summary-model').value || ''
                     }
                 },
                 preset: {

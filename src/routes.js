@@ -1767,7 +1767,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
             logger.info(`已选择角色: ${characterName}`, {
                 varReads: varInit.summary.readCount,
                 varWrites: varInit.summary.appliedCount,
-                varUnsupported: varInit.summary.unsupportedCount
+                varUnsupported: varInit.summary.unsupportedCount,
+                varKeys: varInit.applied.map(i => `${i.key}=${i.parsedValue}`).join(', ') || '无'
             });
             res.json({
                 success: true,
@@ -4009,6 +4010,26 @@ ${promptListText}
                 memoryRecallCount: recalledEntries.length,
                 messageCount: built.messages?.length || 0
             };
+
+            // 变量桥接：靶场也注入变量状态和解析宏
+            try {
+                const { buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
+                const scopeOpts = {
+                    scopeType: recallNamespace.scopeType, scopeKey: recallNamespace.scopeKey,
+                    characterName: recallNamespace.characterName, presetName: recallNamespace.presetName
+                };
+                for (const msg of built.messages) {
+                    if (typeof msg.content === 'string') {
+                        msg.content = resolveVariableMacros(msg.content, sessionManager, scopeOpts);
+                    }
+                }
+                const statusBlock = buildVariableStatusBlock(sessionManager, scopeOpts);
+                if (statusBlock) {
+                    const sysIdx = built.messages.findIndex(m => m.role === 'system');
+                    if (sysIdx >= 0) built.messages[sysIdx].content += '\n' + statusBlock;
+                    else built.messages.unshift({ role: 'system', content: statusBlock });
+                }
+            } catch (e) { logger.warn('[靶场] 变量注入失败:', e.message); }
 
             let aiResponse = null;
             if (req.body.includeAIResponse) {

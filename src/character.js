@@ -106,40 +106,97 @@ export class CharacterManager {
      * @returns {Object} 更新后的完整角色数据
      */
     updateCharacter(characterName, updates) {
-        // 先清除缓存，确保读取最新数据
         this.cache.delete(characterName);
-        
-        // 读取原始角色数据
+
         const pngPath = path.join(this.charactersDir, characterName + '.png');
         if (!fs.existsSync(pngPath)) {
             throw new Error(`角色文件不存在: ${pngPath}`);
         }
 
-        // 读取现有的覆盖层数据（如果存在）
+        // 读取原始 PNG 数据
+        const buffer = fs.readFileSync(pngPath);
+        const currentChar = this.readFromPng(characterName);
+
+        // 也读取覆盖层（保留 MimirLink 独有字段如 worldbook 绑定等）
         const overridePath = path.join(this.overridesDir, characterName + '.json');
-        let existingOverrides = {};
+        let overrides = {};
         if (fs.existsSync(overridePath)) {
-            try {
-                existingOverrides = JSON.parse(fs.readFileSync(overridePath, 'utf-8'));
-            } catch (e) {
-                console.error(`读取覆盖层文件失败: ${overridePath}`, e);
-            }
+            try { overrides = JSON.parse(fs.readFileSync(overridePath, 'utf-8')); } catch {}
         }
 
-        // 合并更新
-        const newOverrides = { ...existingOverrides, ...updates };
-        
-        // 保存覆盖层文件
-        fs.writeFileSync(overridePath, JSON.stringify(newOverrides, null, 2), 'utf-8');
+        // ST 卡字段 → 写入 PNG；MimirLink 独有字段 → 写入覆盖层
+        const stFields = ['name','description','personality','scenario','first_mes','mes_example','system_prompt','post_history_instructions','creator_notes','creatorcomment','talkativeness','fav','tags','alternate_greetings','extensions','character_book'];
+        const stUpdates = {};
+        const localUpdates = {};
+        for (const [k, v] of Object.entries(updates)) {
+            if (stFields.includes(k)) stUpdates[k] = v;
+            else localUpdates[k] = v;
+        }
 
-        // 重新读取并返回完整的角色数据
+        // 写 ST 字段回 PNG
+        if (Object.keys(stUpdates).length > 0) {
+            const updated = { ...currentChar, ...stUpdates };
+            if (updated.data) Object.assign(updated.data, stUpdates);
+            const jsonStr = JSON.stringify(updated);
+            const base64Str = Buffer.from(jsonStr, 'utf8').toString('base64');
+
+            // 找到 chara chunk 并替换
+            let offset = 8;
+            const chunks = [];
+            while (offset < buffer.length) {
+                const length = buffer.readUInt32BE(offset);
+                const type = buffer.toString('ascii', offset + 4, offset + 8);
+                const chunkData = buffer.slice(offset + 8, offset + 8 + length);
+
+                if (type === 'tEXt' || type === 'iTXt') {
+                    const nullIdx = chunkData.indexOf(0);
+                    if (nullIdx !== -1) {
+                        const keyword = chunkData.toString('ascii', 0, nullIdx);
+                        if (keyword === 'chara') {
+                            // 替换这个 chunk
+                            const newKeyword = Buffer.from('chara\0', 'ascii');
+                            const newData = Buffer.concat([newKeyword, Buffer.from(base64Str, 'utf8')]);
+                            const newLength = Buffer.alloc(4);
+                            newLength.writeUInt32BE(newData.length, 0);
+                            const newType = Buffer.from('tEXt', 'ascii');
+                            const crcData = Buffer.concat([newType, newData]);
+                            const crc = crc32(crcData);
+                            const crcBuf = Buffer.alloc(4);
+                            crcBuf.writeUInt32BE(crc, 0);
+                            chunks.push(Buffer.concat([newLength, newType, newData, crcBuf]));
+                            offset += 12 + length;
+                            continue;
+                        }
+                    }
+                }
+                // 保留原 chunk
+                chunks.push(buffer.slice(offset, offset + 12 + length));
+                offset += 12 + length;
+            }
+
+            // 写回文件
+            const pngSig = Buffer.alloc(8);
+            pngSig.write('\x89PNG\r\n\x1a\n', 0, 8, 'ascii');
+            fs.writeFileSync(pngPath, Buffer.concat([pngSig, ...chunks]));
+        }
+
+        // 写 MimirLink 独有字段到覆盖层，同时删除已写回PNG的ST字段
+        if (Object.keys(localUpdates).length > 0) {
+            const newOverrides = { ...overrides, ...localUpdates };
+            for (const f of stFields) delete newOverrides[f];
+            fs.writeFileSync(overridePath, JSON.stringify(newOverrides, null, 2), 'utf-8');
+        } else if (Object.keys(stUpdates).length > 0 && Object.keys(overrides).length > 0) {
+            // 有ST更新但无本地更新：清理覆盖层中的ST字段
+            for (const f of stFields) delete overrides[f];
+            fs.writeFileSync(overridePath, JSON.stringify(overrides, null, 2), 'utf-8');
+        }
+
+        // 清除并重读
+        this.cache.delete(characterName);
         const updatedCharacter = this.readFromPng(characterName);
-        
-        // 如果是当前角色，也更新 currentCharacter
         if (this.currentCharacter && this.currentCharacter.name === updatedCharacter.name) {
             this.currentCharacter = updatedCharacter;
         }
-
         return updatedCharacter;
     }
 
@@ -240,4 +297,18 @@ export class CharacterManager {
             }
         };
     }
+}
+
+function crc32(data) {
+    const table = new Int32Array(256);
+    for (let i = 0; i < 256; i++) {
+        let c = i;
+        for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+        table[i] = c;
+    }
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < data.length; i++) {
+        crc = table[(crc ^ data[i]) & 0xFF] ^ (crc >>> 8);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
 }

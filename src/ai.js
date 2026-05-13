@@ -1269,7 +1269,7 @@ export class AIClient {
         throw new Error(`AI API 错误: ${primaryResult.status} - ${primaryResult.errorText}`);
     }
 
-    async summarize(messages, sessionId = 'default') {
+    async summarize(messages, sessionId = 'default', modelOverride = null) {
         const summaryPrompt = [
             {
                 role: 'system',
@@ -1280,8 +1280,8 @@ export class AIClient {
                 content: `会话ID: ${sessionId}\n\n对话内容:\n${messages.map((message) => `[${message.role}] ${message.content}`).join('\n')}`
             }
         ];
-
-        return this.chat(summaryPrompt);
+        const overrides = modelOverride ? { model: modelOverride } : {};
+        return this.chat(summaryPrompt, overrides);
     }
 
     async chatWithTools(messages, toolContext = {}, overrides = {}) {

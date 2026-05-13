@@ -2159,8 +2159,12 @@ async function processBatch(batch) {
                 }
             }
 
+            const summaryModel = config.memory?.summary?.model || null;
             await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
-                return aiClient.summarize(messages, lockedSessionId);
+                logger.info(`[摘要] 开始生成 (${messages.length}条消息) 模型:${summaryModel||'默认'}`);
+                const result = await aiClient.summarize(messages, lockedSessionId, summaryModel);
+                logger.info(`[摘要] 完成 (${result?.length||0}字)`);
+                return result;
             });
 
             const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
@@ -2172,12 +2176,12 @@ async function processBatch(batch) {
                 trusted: adminUser
             });
             if (injectionRisk.level === 'high') {
-                logger.warn(`[安全] 高风险注入已拦截 [${sessionId}]`, injectionRisk);
+                logger.warn(`[安全] 高风险注入已拦截 [${sessionId}] 规则:${injectionRisk.matchedRules.join(',')} 分数:${injectionRisk.score}`, { userId: event.user_id, groupId: event.group_id, preview: processedInput.slice(0, 80) });
                 await dispatchReply(event, '⚠️ 检测到提示注入攻击，已拦截。');
                 return;
             }
             if (injectionRisk.level !== 'none') {
-                logger.warn(`[安全] 检测到疑似提示注入 (${injectionRisk.level}) [${sessionId}]`, injectionRisk);
+                logger.warn(`[安全] 疑似注入 (${injectionRisk.level}) [${sessionId}] 规则:${injectionRisk.matchedRules.join(',')}`, injectionRisk);
             }
             runtimeContext = {
                 sessionId,
@@ -2272,7 +2276,7 @@ async function processBatch(batch) {
             });
 
             const summaryBeforeReply = await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
-                return aiClient.summarize(messages, lockedSessionId);
+                return aiClient.summarize(messages, lockedSessionId, summaryModel);
             });
             if (summaryBeforeReply) {
                 sessionManager.upsertSummaryIndexFromSummary(runtimeContext.recallNamespace, summaryBeforeReply, sessionId);
@@ -2474,7 +2478,11 @@ async function processBatch(batch) {
             // 清洗 ST 卡常见内部标签（draft_notes / thinking / cot 等）
             try {
                 const { stripInternalTags } = await import('./variable-bridge.js');
+                const beforeLen = processedReply.length;
                 processedReply = stripInternalTags(processedReply);
+                if (processedReply.length !== beforeLen) {
+                    logger.info(`[清洗] 标签剥离: ${beforeLen}→${processedReply.length} 字`);
+                }
             } catch (e) { logger.warn('[变量] 标签清洗失败:', e.message); }
             // 变量桥接：提取 <UpdateVariable> 块并写入变量存储
             try {

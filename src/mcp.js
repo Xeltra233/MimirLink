@@ -5,7 +5,7 @@ import { fileURLToPath } from 'url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export function createMCPHandler(managers, config, saveConfig) {
-    const { aiClient, promptBuilder, characterManager, worldBookManager, logger } = managers;
+    const { aiClient, promptBuilder, characterManager, worldBookManager, sessionManager, logger } = managers;
 
     // === ST 格式校验 ===
     const ST_WORLDBOOK_ENTRY_FIELDS = {
@@ -570,6 +570,110 @@ ${wbSummary || '(未提供)'}
             }
         },
 
+        range_seed_test_data: {
+            description: '注入假数据用于全链路测试：变量、知识库、人物档案。可指定 scopeKey 和 characterName。',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    characterName: { type: 'string', description: '角色名，默认当前角色' },
+                    scopeKey: { type: 'string', description: '变量scopeKey，默认 user:test' },
+                    vars: { type: 'array', description: '变量列表 [{key,value,valueType}]，不填则用默认值' },
+                    knowledge: { type: 'array', description: '知识列表 [{title,content}]，不填则用默认值' },
+                    profile: { type: 'object', description: '人物档案 {title,content}' }
+                }
+            },
+            handler: async ({ characterName, scopeKey, vars, knowledge, profile }) => {
+                try {
+                    const charName = characterName || config.chat?.defaultCharacter || '未知';
+                    const sk = scopeKey || 'user:test';
+                    const results = { variables: 0, knowledge: 0, profile: 0 };
+
+                    // 变量
+                    const defaultVars = [
+                        { key: '好感度', rawValue: '75', valueType: 'number' },
+                        { key: '装逼值', rawValue: '888', valueType: 'number' },
+                        { key: '心情', rawValue: '得意', valueType: 'string' },
+                        { key: '关系状态', rawValue: '老铁', valueType: 'string' },
+                        { key: '今日吹牛次数', rawValue: '12', valueType: 'number' },
+                    ];
+                    const seedVars = Array.isArray(vars) && vars.length > 0 ? vars : defaultVars;
+                    for (const v of seedVars) {
+                        const scope = { scopeType: 'user_persistent', scopeKey: sk, characterName: charName, presetName: '' };
+                        sessionManager.upsertVariable(scope, {
+                            key: v.key, rawValue: String(v.rawValue ?? ''), valueType: v.valueType || 'string', source: 'seed'
+                        });
+                        results.variables++;
+                    }
+
+                    // 知识库
+                    const defaultKnowledge = [
+                        { title: '用户画像', content: '测试用户，喜欢修仙话题，说话风格直接粗犷，常用网络用语。' },
+                        { title: '帮派规则', content: '炸天帮帮规：1.装逼第一 2.不认怂 3.欠债不还' },
+                    ];
+                    const seedKnowledge = Array.isArray(knowledge) && knowledge.length > 0 ? knowledge : defaultKnowledge;
+                    for (const k of seedKnowledge) {
+                        const scope = { scopeType: 'user_persistent', scopeKey: sk, characterName: charName, presetName: '' };
+                        sessionManager.upsertKnowledgeEntry(scope, { title: k.title, content: k.content, knowledgeType: 'fixed' });
+                        results.knowledge++;
+                    }
+
+                    // 档案
+                    if (profile) {
+                        const scope = { scopeType: 'user_persistent', scopeKey: sk, characterName: charName, presetName: '' };
+                        sessionManager.upsertParticipantProfile(scope, {
+                            participantId: sk.replace('user:', ''),
+                            title: profile.title || '测试用户',
+                            content: profile.content || '',
+                            metadata: { source: 'seed' }
+                        });
+                        results.profile = 1;
+                    }
+
+                    return { content: [{ type: 'text', text: [
+                        `已注入假数据 (scopeKey=${sk}, 角色=${charName})`,
+                        `  变量: ${results.variables} 条`,
+                        `  知识: ${results.knowledge} 条`,
+                        `  档案: ${results.profile} 条`,
+                        '',
+                        '现在可以去靶场测试全链路效果'
+                    ].join('\n') }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `注入失败: ${e.message}` }] };
+                }
+            }
+        },
+
+        range_clear_test_data: {
+            description: '清除指定 scope 的假测试数据（变量/知识/档案）',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    scopeKey: { type: 'string', description: '要清除的 scopeKey，默认 user:test' },
+                    characterName: { type: 'string', description: '角色名，默认当前角色' }
+                }
+            },
+            handler: async ({ scopeKey, characterName }) => {
+                try {
+                    const sk = scopeKey || 'user:test';
+                    const charName = characterName || config.chat?.defaultCharacter || '';
+                    const filters = { scopeType: 'user_persistent', scopeKey: sk, characterName: charName, limit: 500 };
+                    let deleted = 0;
+
+                    // 删变量
+                    const vars = sessionManager.listVariables(filters);
+                    for (const v of vars) { sessionManager.deleteVariable(v.id); deleted++; }
+
+                    // 删知识
+                    const knowledge = sessionManager.listKnowledgeEntries(filters);
+                    for (const k of knowledge) { sessionManager.deleteKnowledgeEntry?.(k.id) || sessionManager.deleteVariable(k.id); deleted++; }
+
+                    return { content: [{ type: 'text', text: `已清除 ${deleted} 条数据 (scopeKey=${sk}, 角色=${charName})` }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `清除失败: ${e.message}` }] };
+                }
+            }
+        },
+
         range_trace_output: {
             description: '分析 AI 输出内容的来源：匹配启用的预设 prompt、世界书条目，找出可能生成特定格式/内容的源头。',
             inputSchema: {
@@ -600,8 +704,8 @@ ${wbSummary || '(未提供)'}
                         if (matches) findings.push({ label, count: matches.length, sample: matches.slice(0, 2).map(m => m.slice(0, 60)) });
                     }
 
-                    // 查三个来源
-                    const sources = { preset: [], worldbook: [], character: [] };
+                    // 查六个来源
+                    const sources = { preset: [], worldbook: [], character: [], profile: [], knowledge: [], memory: [] };
 
                     // 来源1: 启用的预设
                     const pfiles = config.imports?.presetFiles || [];
@@ -645,11 +749,36 @@ ${wbSummary || '(未提供)'}
                         }
                     } catch {}
 
+                    // 来源4: 人物档案
+                    try {
+                        const profiles = sessionManager?.listParticipantProfiles?.(20) || [];
+                        for (const p of profiles) {
+                            const text = [p.title, p.content, p.metadata?.summary].filter(Boolean).join('\n');
+                            if (text) sources.profile.push({ source: '人物档案', name: p.title || p.participantId || '?', content: text });
+                        }
+                    } catch {}
+
+                    // 来源5: 知识库
+                    try {
+                        const knowledge = sessionManager?.listKnowledgeEntries?.({ limit: 20 }) || [];
+                        for (const k of knowledge) {
+                            if (k.content) sources.knowledge.push({ source: '知识库', name: k.title || '?', content: k.content });
+                        }
+                    } catch {}
+
+                    // 来源6: 会话摘要/记忆
+                    try {
+                        const summaries = sessionManager?.listRecentSummaryIndexEntries?.({ scopeType: 'global_shared', scopeKey: 'global_shared_memory' }, 5) || [];
+                        for (const s of summaries) {
+                            if (s.outline) sources.memory.push({ source: '会话摘要', name: s.id?.slice(0,8) || '?', content: s.outline });
+                        }
+                    } catch {}
+
                     // 匹配：每个finding对应哪个source
                     const traces = [];
                     for (const f of findings) {
                         const matchedSources = new Set();
-                        for (const cat of ['preset', 'character', 'worldbook']) {
+                        for (const cat of ['preset', 'character', 'worldbook', 'profile', 'knowledge', 'memory']) {
                             for (const s of sources[cat]) {
                                 if (s.content && f.sample.some(sample => s.content.includes(sample.slice(0, 30)) || sample.slice(0, 30).includes(s.content.slice(0, 30)))) {
                                     matchedSources.add(`[${cat}] ${s.name} (${s.source})`);
@@ -668,7 +797,7 @@ ${wbSummary || '(未提供)'}
                                 return `  ${t.finding} (${t.count}处) ← ${srcStr}`;
                             }),
                             '',
-                            `来源统计: 预设${sources.preset.length} | 角色卡字段${sources.character.length} | 世界书条目${sources.worldbook.length}`
+                            `来源统计: 预设${sources.preset.length} | 角色卡${sources.character.length} | 世界书${sources.worldbook.length} | 档案${sources.profile?.length||0} | 知识${sources.knowledge?.length||0} | 记忆${sources.memory?.length||0}`
                         ];
                     return { content: [{ type: 'text', text: lines.join('\n') }] };
                 } catch (e) {
