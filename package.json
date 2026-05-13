@@ -41,7 +41,7 @@
     "url": "https://github.com/your-username/mimirlink"
   },
   "engines": {
-    "node": ">=16.0.0",
+    "node": ">=22.5.0",
     "npm": ">=7.0.0"
   },
   "dependencies": {
