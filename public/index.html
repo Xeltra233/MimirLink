@@ -5004,13 +5004,22 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>OneBot 连接</h3>
-                        <p class="config-card-intro">配置机器人连接、Token 和鉴权方式。</p>
+                        <p class="config-card-intro">支持 WS（正向WS连接）和 HTTP（事件上报+API调用）两种模式</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subgrid">
                             <div class="form-group">
-                                <label>WebSocket URL</label>
+                                <label>连接模式</label>
+                                <select id="config-onebot-mode">
+                                    <option value="ws">WebSocket（正向WS）</option>
+                                    <option value="http">HTTP（事件上报 + API调用）</option>
+                                </select>
+                                <p class="hint-text">WS：MimirLink 主动连 OneBot / HTTP：OneBot 往 /onebot/event 推事件</p>
+                            </div>
+                            <div class="form-group">
+                                <label id="config-onebot-url-label">连接地址</label>
                                 <input type="text" id="config-onebot-url" placeholder="ws://127.0.0.1:3001">
+                                <p class="hint-text" id="config-onebot-url-hint">WS 模式填 ws://host:port，HTTP 模式填 http://host:port</p>
                             </div>
                             <div class="form-group">
                                 <label>Access Token（可选）</label>
@@ -12041,6 +12050,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 const res = await fetch('/api/config');
                 currentConfig = await res.json();
                     document.getElementById('config-onebot-url').value = currentConfig.onebot?.url || '';
+                document.getElementById('config-onebot-mode').value = currentConfig.onebot?.mode || 'ws';
                 document.getElementById('config-onebot-token').value = '';
                 document.getElementById('config-onebot-token').placeholder = currentConfig.onebot?.hasAccessToken ? '已配Token，留空表示不修改' : '留空表示无需认证';
                 document.getElementById('config-onebot-token-mode').value = currentConfig.onebot?.tokenMode || 'header';
@@ -12333,6 +12343,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
 
             const newConfig = {
                 onebot: {
+                    mode: document.getElementById('config-onebot-mode').value,
                     url: document.getElementById('config-onebot-url').value,
                     accessToken: (() => {
                         const value = document.getElementById('config-onebot-token').value.trim();
