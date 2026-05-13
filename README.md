@@ -27,6 +27,41 @@ docker compose up -d
 
 `config/config.json` 目录挂载适用于只能挂载目录的部署平台。两种方式等效。
 
+### 最小配置
+其余字段有默认值，只需填这 5 项即可跑起来：
+
+```json
+{
+  "onebot": {
+    "url": "ws://127.0.0.1:3001",
+    "accessToken": "你的token"
+  },
+  "ai": {
+    "baseUrl": "https://api.deepseek.com",
+    "apiKey": "sk-xxx",
+    "model": "deepseek-chat"
+  },
+  "chat": {
+    "defaultCharacter": "你的角色名"
+  },
+  "auth": {
+    "enabled": true,
+    "username": "admin",
+    "password": "改掉这个密码",
+    "sessionSecret": "随便打一串乱码"
+  }
+}
+```
+
+| 字段 | 说明 |
+|------|------|
+| `onebot.url` | OneBot 地址，不用 QQ 可留空 |
+| `ai.baseUrl` / `ai.apiKey` / `ai.model` | AI 供应商，兼容 OpenAI/DeepSeek 等 |
+| `chat.defaultCharacter` | 默认角色名（要和 `data/characters/xxx.png` 一致） |
+| `auth.password` / `auth.sessionSecret` | Web 面板登录密码和会话密钥 |
+
+完整配置参考 `config.example.json`。
+
 ### Linux / Windows
 ```bash
 npm install
