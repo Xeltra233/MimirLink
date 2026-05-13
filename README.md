@@ -17,6 +17,16 @@ docker compose up -d
 ```
 支持 `linux/amd64` `linux/arm64`。
 
+**目录挂载**：
+| 宿主机 | 容器 | 说明 |
+|--------|------|------|
+| `./config.json` 或 `./config/config.json` | `/app/config.json` 或 `/app/config/config.json` | 配置文件，代码优先读 `config/config.json` |
+| `./data` | `/app/data` | 角色卡、世界书、聊天记录、记忆库 |
+| `./logs` | `/app/logs` | 运行日志 |
+| `./audio` | `/app/audio` | TTS 语音 |
+
+`config/config.json` 目录挂载适用于只能挂载目录的部署平台。两种方式等效。
+
 ### Linux / Windows
 ```bash
 npm install
