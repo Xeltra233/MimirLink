@@ -728,11 +728,6 @@ export class SessionManager {
             `)
         };
 
-        this.transactions = {
-            addMessage: this.db.createTagStore().get`
-                SELECT 1
-            `
-        };
     }
 
     async withSessionLock(sessionId, task) {
