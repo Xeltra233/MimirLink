@@ -3169,10 +3169,13 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     app.post('/api/ai/models', requireAuth, async (req, res) => {
         try {
-            const { baseUrl, apiKey } = req.body || {};
+            const { baseUrl, apiKey, providerId } = req.body || {};
+            const provider = (providerId && Array.isArray(config.ai?.providers))
+                ? config.ai.providers.find(p => p.id === providerId)
+                : null;
             const models = await aiClient.listModels({
-                baseUrl: baseUrl || config.ai?.baseUrl,
-                apiKey: apiKey || config.ai?.apiKey
+                baseUrl: baseUrl || provider?.baseUrl || config.ai?.baseUrl,
+                apiKey: apiKey || provider?.apiKey || config.ai?.apiKey
             });
             logger.info(`[API ${req.requestId || 'no-id'}] 模型列表拉取完成`, {
                 baseUrl: baseUrl || config.ai?.baseUrl || '',
@@ -3187,10 +3190,13 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     app.post('/api/ai/probe', requireAuth, async (req, res) => {
         try {
-            const { baseUrl, apiKey, model } = req.body || {};
+            const { baseUrl, apiKey, model, providerId } = req.body || {};
+            const provider = (providerId && Array.isArray(config.ai?.providers))
+                ? config.ai.providers.find(p => p.id === providerId)
+                : null;
             const result = await aiClient.probeModel(model, {
-                baseUrl: baseUrl || config.ai?.baseUrl,
-                apiKey: apiKey || config.ai?.apiKey
+                baseUrl: baseUrl || provider?.baseUrl || config.ai?.baseUrl,
+                apiKey: apiKey || provider?.apiKey || config.ai?.apiKey
             });
             logger.info(`[API ${req.requestId || 'no-id'}] 模型探测完成`, {
                 baseUrl: baseUrl || config.ai?.baseUrl || '',

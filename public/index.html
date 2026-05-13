@@ -11074,7 +11074,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 provider: normalizedProvider,
                 baseUrl: resolvedBaseUrl || (allowDefaultBaseUrl ? ((normalizedProvider === 'custom' && preserveEmptyCustomBaseUrl) ? '' : providerDefaults.baseUrl) : ''),
                 apiKey: typeof draft.apiKey === 'string' ? draft.apiKey : '',
-                model: resolvedModel || (allowDefaultModel ? ((normalizedProvider === 'custom' && preserveEmptyCustomModel) ? '' : providerDefaults.model) : '')
+                model: resolvedModel || (allowDefaultModel ? ((normalizedProvider === 'custom' && preserveEmptyCustomModel) ? '' : providerDefaults.model) : ''),
+                providerId: draft.providerId || ''
             };
         }
 
@@ -11944,7 +11945,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 provider: entry.provider || 'openai-compatible',
                 baseUrl: entry.baseUrl || '',
                 apiKey: entry.apiKey && entry.apiKey !== '******' ? entry.apiKey : '',
-                model: document.getElementById('config-ai-model')?.value.trim() || entry.models?.find((model) => model.enabled !== false)?.id || entry.model || ''
+                model: document.getElementById('config-ai-model')?.value.trim() || entry.models?.find((model) => model.enabled !== false)?.id || entry.model || '',
+                providerId: entry.id || ''
             }, {
                 applyDefaultBaseUrl: false,
                 applyDefaultModel: false
