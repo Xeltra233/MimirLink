@@ -67,10 +67,18 @@ const __dirname = dirname(__filename);
 const ROOT_DIR = join(__dirname, '..');
 
 function loadConfig() {
-    const configPath = join(ROOT_DIR, 'config.json');
+    // 优先读 config/ 目录（平台只能挂载目录），兼容 config.json 文件挂载
+    const dirConfigPath = join(ROOT_DIR, 'config', 'config.json');
+    const fileConfigPath = join(ROOT_DIR, 'config.json');
     const exampleConfigPath = join(ROOT_DIR, 'config.example.json');
-    if (fs.existsSync(configPath)) {
-        const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+    const primary = fs.existsSync(dirConfigPath) ? dirConfigPath
+        : fs.existsSync(fileConfigPath) ? fileConfigPath
+            : null;
+
+    if (primary) {
+        configSourcePath = primary;
+        const config = JSON.parse(fs.readFileSync(primary, 'utf8'));
         normalizeConfig(config);
         return config;
     }
@@ -78,17 +86,23 @@ function loadConfig() {
     if (fs.existsSync(exampleConfigPath)) {
         const exampleConfig = JSON.parse(fs.readFileSync(exampleConfigPath, 'utf8'));
         normalizeConfig(exampleConfig);
-        fs.writeFileSync(configPath, JSON.stringify(exampleConfig, null, 2), 'utf8');
+        const target = join(ROOT_DIR, 'config');
+        if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+        fs.writeFileSync(join(target, 'config.json'), JSON.stringify(exampleConfig, null, 2), 'utf8');
         return exampleConfig;
     }
 
     throw new Error('配置文件不存在: config.json');
 }
 
+let configSourcePath = null; // 记录 config 从哪读的，写回同一位置
+
 function saveConfig(config) {
-    const configPath = join(ROOT_DIR, 'config.json');
+    const target = configSourcePath || join(ROOT_DIR, 'config.json');
+    const dir = dirname(target);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     normalizeConfig(config);
-    fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
+    fs.writeFileSync(target, JSON.stringify(config, null, 2), 'utf8');
 }
 
 function ensureBindingConfig(config) {
