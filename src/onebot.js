@@ -119,20 +119,33 @@ export class OneBotClient extends EventEmitter {
     }
 
     connect() {
-        if (this.ws) {
-            this.ws.close();
+        if (this.ws) { this.ws.close(); }
+
+        const mode = this.config.mode || 'ws';
+        if (mode === 'http') {
+            this.connected = true;
+            this.emit('connected');
+            this.logger.info(`OneBot HTTP 模式已就绪 (上报地址: POST /onebot/event)`);
+            // HTTP 模式下获取登录信息
+            this._call('get_login_info').then(info => {
+                this.selfId = info.user_id;
+                this.logger.info(`登录账号: ${info.nickname} (${info.user_id})`);
+            }).catch(err => {
+                this.logger.error(`获取登录信息失败: ${err.message}`);
+            });
+            return;
         }
 
+        // WS 模式
         const url = this.buildConnectionUrl();
         const headers = this.buildConnectionHeaders();
-        this.logger.info(`正在连接 OneBot: ${url}`);
+        this.logger.info(`正在连接 OneBot (WS): ${url}`);
 
         this.ws = new WebSocket(url, headers ? { headers } : undefined);
 
         this.ws.on('open', () => {
             this.connected = true;
             this.emit('connected');
-            // 获取登录信息
             this._call('get_login_info').then(info => {
                 this.selfId = info.user_id;
                 this.logger.info(`登录账号: ${info.nickname} (${info.user_id})`);
@@ -154,13 +167,22 @@ export class OneBotClient extends EventEmitter {
             this.connected = false;
             this.emit('disconnected');
             this.logger.warn(`OneBot 连接关闭 code=${code} reason=${reason?.toString()||'无'}`);
-            // 自动重连
             setTimeout(() => this.connect(), this.config.reconnectInterval || 5000);
         });
 
         this.ws.on('error', (err) => {
             this.logger.error(`WebSocket 错误: ${err.message}`);
         });
+    }
+
+    // HTTP 模式：接收 OneBot 推送的事件
+    handleHttpEvent(eventData) {
+        if (eventData.post_type === 'message' || eventData.post_type === 'notice' || eventData.post_type === 'request') {
+            this.emit('message', eventData);
+        }
+        if (eventData.echo !== undefined) {
+            this._handleMessage(eventData);
+        }
     }
 
     getNormalizedToken() {
@@ -234,6 +256,21 @@ export class OneBotClient extends EventEmitter {
     }
 
     _call(action, params = {}) {
+        // HTTP 模式：直接 fetch
+        if ((this.config.mode || 'ws') === 'http') {
+            const httpUrl = (this.config.url || '').replace(/\/+$/, '');
+            const apiUrl = `${httpUrl}/${action}`;
+            return fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...this.buildConnectionHeaders() },
+                body: JSON.stringify(params)
+            }).then(r => r.json()).then(data => {
+                if (data.status === 'ok' || data.retcode === 0) return data.data;
+                throw new Error(data.msg || data.wording || 'API调用失败');
+            });
+        }
+
+        // WS 模式
         return new Promise((resolve, reject) => {
             if (!this.connected) {
                 this.logger.error?.('[OneBot] API 调用失败: 未连接', { action });

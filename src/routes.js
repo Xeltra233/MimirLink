@@ -5365,6 +5365,20 @@ ${lastResultText}
         }
     });
 
+    // OneBot HTTP 上报端点（无需认证，由 OneBot access_token 保护）
+    app.post('/onebot/event', (req, res) => {
+        try {
+            if (!bot || typeof bot.handleHttpEvent !== 'function') {
+                return res.status(503).json({ error: 'OneBot 未就绪或未启用 HTTP 模式' });
+            }
+            bot.handleHttpEvent(req.body);
+            res.json({ status: 'ok' });
+        } catch (e) {
+            logger.error('[OneBot] HTTP 事件处理失败:', e.message);
+            res.status(500).json({ error: e.message });
+        }
+    });
+
     app.post('/api/status/onebot/reconnect', requireAuth, (req, res) => {
         if (bot) {
             bot.reconnect();
