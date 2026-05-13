@@ -1561,6 +1561,24 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     if (!(key in merged)) delete config[key];
                 }
                 saveConfig(config);
+                // 重新读取确保落盘到正确路径
+                const verifyPaths = [
+                    path.join(__dirname, '..', 'config', 'config.json'),
+                    path.join(__dirname, '..', 'config.json')
+                ];
+                for (const vp of verifyPaths) {
+                    if (fsSync.existsSync(vp)) {
+                        try {
+                            const verifyConfig = JSON.parse(fsSync.readFileSync(vp, 'utf8'));
+                            for (const key of Object.keys(verifyConfig)) {
+                                config[key] = verifyConfig[key];
+                            }
+                            break;
+                        } catch (verifyErr) {
+                            logger.warn('[恢复] config 验证读取失败:', verifyErr.message);
+                        }
+                    }
+                }
                 changes.replaced.push('config.json');
             }
 
