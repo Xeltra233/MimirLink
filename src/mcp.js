@@ -501,6 +501,180 @@ ${wbSummary || '(未提供)'}
                     return { content: [{ type: 'text', text: `修复失败: ${e.message}` }] };
                 }
             }
+        },
+
+        range_validate_character: {
+            description: '校验角色卡格式：检查必要字段、八股词、冗余描写、ST兼容性',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    characterName: { type: 'string', description: '角色名（不含 .png）' }
+                },
+                required: ['characterName']
+            },
+            handler: async ({ characterName }) => {
+                try {
+                    const ch = characterManager.readFromPng(characterName);
+                    const issues = [];
+                    // 必要字段检查
+                    if (!ch.name && !ch.data?.name) issues.push('缺少 name');
+                    if (!ch.description && !ch.data?.description) issues.push('缺少 description（人设描述）');
+                    if (!ch.first_mes && !ch.data?.first_mes) issues.push('缺少 first_mes（开场白）');
+
+                    // 八股词检测
+                    const cliches = ['仿佛','宛如','似乎','似是','犹如','恍若','嘴角上扬','闪过','光芒','涟漪','小兽','投石','心头一颤'];
+                    const fields = {
+                        description: ch.description || ch.data?.description || '',
+                        personality: ch.personality || ch.data?.personality || '',
+                        scenario: ch.scenario || ch.data?.scenario || '',
+                        first_mes: ch.first_mes || ch.data?.first_mes || '',
+                        mes_example: ch.mes_example || ch.data?.mes_example || '',
+                        system_prompt: ch.system_prompt || ch.data?.system_prompt || '',
+                        post_history_instructions: ch.post_history_instructions || ch.data?.post_history_instructions || ''
+                    };
+                    const clicheHits = {};
+                    for (const [field, content] of Object.entries(fields)) {
+                        const hits = cliches.filter(c => content.includes(c));
+                        if (hits.length > 0) clicheHits[field] = hits;
+                    }
+                    const totalCliches = Object.values(clicheHits).reduce((s, a) => s + a.length, 0);
+
+                    // HTML标签检测
+                    const htmlHits = {};
+                    for (const [field, content] of Object.entries(fields)) {
+                        const tags = content.match(/<[^>]+>/g);
+                        if (tags) htmlHits[field] = [...new Set(tags)].slice(0, 5);
+                    }
+
+                    // 统计
+                    const fieldSizes = Object.entries(fields).map(([k,v]) => ({field:k, len: v.length}));
+
+                    const lines = [
+                        `角色: ${ch.name || ch.data?.name || characterName}`,
+                        `字段数: ${Object.values(fields).filter(v=>v).length}/7 有内容`,
+                        ...fieldSizes.filter(f=>f.len>0).map(f => `  ${f.field}: ${f.len}字`),
+                        '',
+                        totalCliches > 0 ? `⚠ 八股词 ${totalCliches}处:` : '✔ 无八股词',
+                        ...Object.entries(clicheHits).map(([f, h]) => `  ${f}: ${h.join(', ')}`),
+                        '',
+                        Object.keys(htmlHits).length > 0 ? `⚠ HTML标签:` : '✔ 无HTML标签',
+                        ...Object.entries(htmlHits).map(([f, h]) => `  ${f}: ${h.join(', ')}`),
+                        '',
+                        `内置世界书: ${ch.character_book ? '有' : '无'}`,
+                        `正则脚本: ${(ch.extensions?.regex_scripts || ch.data?.extensions?.regex_scripts || []).length} 条`
+                    ].filter(l => l !== '');
+                    return { content: [{ type: 'text', text: lines.join('\n') }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `校验失败: ${e.message}` }] };
+                }
+            }
+        },
+
+        range_trace_output: {
+            description: '分析 AI 输出内容的来源：匹配启用的预设 prompt、世界书条目，找出可能生成特定格式/内容的源头。',
+            inputSchema: {
+                type: 'object',
+                properties: {
+                    text: { type: 'string', description: '要分析的 AI 输出文本' }
+                },
+                required: ['text']
+            },
+            handler: async ({ text, characterName }) => {
+                try {
+                    const findings = [];
+                    const patterns = [
+                        { regex: /[A-E][：:].*\n?/g, label: '行动选项(A/B/C/D/E)' },
+                        { regex: /咪咪点评|喵呜|本咪/g, label: 'TGD咪咪吐槽' },
+                        { regex: /平行事件/g, label: '平行事件' },
+                        { regex: /时间地点|日期[：:]\s*\d{4}/g, label: '显示时间地点' },
+                        { regex: /摘要|\[.*?月.*?日.*?\|/g, label: '摘要' },
+                        { regex: /《end》|<\/?end>/gi, label: 'end标记' },
+                        { regex: /draft_notes|<\/?thinking>/gi, label: '思维链/草稿' },
+                        { regex: /<details|<summary|<\/?div[^>]*class=/gi, label: 'HTML标签' },
+                        { regex: /内心独白/g, label: 'NPC内心独白' },
+                        { regex: /剧情推动/g, label: '剧情推动' },
+                        { regex: /\bStatusBlock\b|status_current_variable/gi, label: '变量状态块' },
+                    ];
+                    for (const { regex, label } of patterns) {
+                        const matches = text.match(regex);
+                        if (matches) findings.push({ label, count: matches.length, sample: matches.slice(0, 2).map(m => m.slice(0, 60)) });
+                    }
+
+                    // 查三个来源
+                    const sources = { preset: [], worldbook: [], character: [] };
+
+                    // 来源1: 启用的预设
+                    const pfiles = config.imports?.presetFiles || [];
+                    for (const pf of pfiles) {
+                        for (const p of (pf.importedPreset?.prompts || [])) {
+                            if (p.enabled !== false) sources.preset.push({ source: pf.filename, name: p.name || p.identifier, content: p.content || '' });
+                        }
+                    }
+                    for (const p of (config.preset?.prompts || [])) {
+                        if (p.enabled !== false) sources.preset.push({ source: '内置预设', name: p.name || p.identifier, content: p.content || '' });
+                    }
+
+                    // 来源2: 当前角色卡
+                    const charName = characterName || config.chat?.defaultCharacter || '';
+                    if (charName) {
+                        try {
+                            const ch = characterManager.readFromPng(charName.replace(/\.png$/i, ''));
+                            const cardFields = [
+                                { name: 'system_prompt', content: ch.system_prompt || ch.data?.system_prompt || '' },
+                                { name: 'post_history_instructions', content: ch.post_history_instructions || ch.data?.post_history_instructions || '' },
+                                { name: 'description', content: ch.description || ch.data?.description || '' },
+                                { name: 'personality', content: ch.personality || ch.data?.personality || '' },
+                                { name: 'first_mes', content: ch.first_mes || ch.data?.first_mes || '' },
+                                { name: 'mes_example', content: ch.mes_example || ch.data?.mes_example || '' },
+                            ];
+                            for (const f of cardFields) {
+                                if (f.content) sources.character.push({ source: charName, name: f.name, content: f.content });
+                            }
+                        } catch {}
+                    }
+
+                    // 来源3: 当前世界书
+                    try {
+                        const wb = worldBookManager.getCurrentWorldBook();
+                        const wbName = wb?.name || worldBookManager.currentWorldBookName;
+                        if (wbName) {
+                            const wbData = worldBookManager.readWorldBook(wbName);
+                            for (const e of (wbData?.entries || [])) {
+                                if (e.enabled !== false) sources.worldbook.push({ source: wbName, name: (e.keys || e.key || []).slice(0,3).join(',') || e.comment || 'entry', content: e.content || '' });
+                            }
+                        }
+                    } catch {}
+
+                    // 匹配：每个finding对应哪个source
+                    const traces = [];
+                    for (const f of findings) {
+                        const matchedSources = new Set();
+                        for (const cat of ['preset', 'character', 'worldbook']) {
+                            for (const s of sources[cat]) {
+                                if (s.content && f.sample.some(sample => s.content.includes(sample.slice(0, 30)) || sample.slice(0, 30).includes(s.content.slice(0, 30)))) {
+                                    matchedSources.add(`[${cat}] ${s.name} (${s.source})`);
+                                }
+                            }
+                        }
+                        traces.push({ finding: f.label, count: f.count, sources: [...matchedSources] });
+                    }
+
+                    const lines = findings.length === 0
+                        ? ['未检测到已知格式化模式']
+                        : [
+                            `=== 来源追踪 (${findings.length} 类) ===`,
+                            ...traces.map(t => {
+                                const srcStr = t.sources.length > 0 ? t.sources.join(' | ') : '未定位到具体来源';
+                                return `  ${t.finding} (${t.count}处) ← ${srcStr}`;
+                            }),
+                            '',
+                            `来源统计: 预设${sources.preset.length} | 角色卡字段${sources.character.length} | 世界书条目${sources.worldbook.length}`
+                        ];
+                    return { content: [{ type: 'text', text: lines.join('\n') }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `分析失败: ${e.message}` }] };
+                }
+            }
         }
     };
 

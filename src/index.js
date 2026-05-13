@@ -1394,17 +1394,6 @@ async function dispatchReply(event, processedReply) {
 
                 const isPrimarySend = !hasSentPrimary;
                 await sendText(content);
-
-                // TTS 自动转换：启用时每条文字也合成语音发送
-                if (ttsConfig.enabled && isPrimarySend) {
-                    try {
-                        logger.info(`[TTS] 自动合成: ${content.substring(0, 30)}...`);
-                        recordDashboardMetric('tts');
-                        const audioPath = await ttsManager.synthesize(content);
-                        await sendVoice(audioPath, content);
-                    } catch (err) { logger.warn(`[TTS] 合成失败: ${err.message}`); }
-                }
-
                 const hasMoreSegments = index < segments.length - 1 || textParts.indexOf(part) < textParts.length - 1;
                 const delayMs = isPrimarySend ? segmentDelayMs : proactiveIntervalMs;
                 if (hasMoreSegments && delayMs > 0) {
@@ -2176,12 +2165,17 @@ async function processBatch(batch) {
 
             const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
             const stickyKeys = sessionManager.getStickyEntryKeys(sessionId);
-            const processedInput = regexProcessor.processInput(mergedStructuredText);
             const adminUser = isAdminUser(config, event.user_id);
+            let processedInput = regexProcessor.processInput(mergedStructuredText);
             const injectionRisk = detectPromptInjectionRisk(processedInput, {
                 sourceType: adminUser ? 'admin_user_message' : 'user_message',
                 trusted: adminUser
             });
+            if (injectionRisk.level === 'high') {
+                logger.warn(`[安全] 高风险注入已拦截 [${sessionId}]`, injectionRisk);
+                await dispatchReply(event, '⚠️ 检测到提示注入攻击，已拦截。');
+                return;
+            }
             if (injectionRisk.level !== 'none') {
                 logger.warn(`[安全] 检测到疑似提示注入 (${injectionRisk.level}) [${sessionId}]`, injectionRisk);
             }
@@ -2694,9 +2688,14 @@ bot.on('disconnected', () => {
 });
 
 // --- MCP 端点 (外部 AI 工具接口) ---
-const { createMCPHandler } = await import('./mcp.js');
-app.post('/mcp', createMCPHandler(managers, config, saveConfig));
-logger.info('MCP 端点已挂载: /mcp');
+if (config.mcp?.enabled !== false) {
+    const mcpPath = config.mcp?.path || '/mcp';
+    const { createMCPHandler } = await import('./mcp.js');
+    app.post(mcpPath, createMCPHandler(managers, config, saveConfig));
+    logger.info(`MCP 端点已挂载: ${mcpPath}`);
+} else {
+    logger.info('MCP 端点已禁用');
+}
 
 server.listen(config.server.port, config.server.host, () => {
     logger.info(`服务器已启动: http://${config.server.host}:${config.server.port}`);

@@ -45,24 +45,36 @@ const INTERNAL_TAGS = [
 export function stripInternalTags(text) {
     if (!text) return text;
     let result = text;
-    // 1. 先洗成对标签（draft_notes/details/style 等，标签+内容全删）
-    for (const regex of INTERNAL_TAGS) {
-        result = result.replace(regex, '');
-    }
-    // 2. 单独洗 <style> 块
-    result = result.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
-    // 3. 洗所有裸 HTML 标签（开/闭/自闭合），但保留 <UpdateVariable>
-    const uvPlaceholder = '___UV_PLACEHOLDER___';
+
+    // 1. 保存 UpdateVariable 块
     const uvBlocks = [];
     result = result.replace(/<UpdateVariable>[\s\S]*?<\/UpdateVariable>/gi, (match) => {
         uvBlocks.push(match);
-        return uvPlaceholder;
+        return `___UV_${uvBlocks.length - 1}___`;
     });
-    // 去掉所有 HTML 标签
+
+    // 2. 删除整个内容块（style/script/XML注释）
+    result = result.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+    result = result.replace(/<!--[\s\S]*?-->/g, '');
+
+    // 3. 只去标签保正文（wrapper类标签：draft_notes/thinking/details/div等）
+    //    先处理标签内的内容块
+    const wrapperTags = [
+        'draft_notes', 'draft', 'thinking', 'analysis', 'reflection', 'cot',
+        'bginfor', 'maintext', 'contenttext', 'details', 'summary',
+        'WMM', 'StatusBlock', 'option', '内部分析'
+    ];
+    for (const tag of wrapperTags) {
+        result = result.replace(new RegExp(`<${tag}[^>]*>`, 'gi'), '');
+        result = result.replace(new RegExp(`</${tag}>`, 'gi'), '');
+    }
+
+    // 4. 去掉所有残留 HTML 标签
     result = result.replace(/<[^>]+>/g, '');
-    // 还原 UpdateVariable
-    let idx = 0;
-    result = result.replace(new RegExp(uvPlaceholder, 'g'), () => uvBlocks[idx++] || '');
+
+    // 5. 还原 UpdateVariable
+    result = result.replace(/___UV_(\d+)___/g, (_, i) => uvBlocks[parseInt(i)] || '');
+
     return result.replace(/\n{3,}/g, '\n\n').trim();
 }
 

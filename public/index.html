@@ -31,9 +31,9 @@
             --error: #d94040;
             --border: #e6e5e2;
             --border-strong: #d6d5d1;
-            --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
-            --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
-            --shadow-md: 0 4px 12px rgba(0,0,0,0.06);
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+            --shadow: 0 4px 16px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+            --shadow-md: 0 8px 30px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.06);
             --radius: 8px;
             --radius-lg: 12px;
         }
@@ -845,6 +845,11 @@
         #dashboard .dashboard-chart-card {
             display: grid;
             gap: 16px;
+            background: var(--bg);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.08), 0 1px 4px rgba(0,0,0,0.04);
+            border: 1px solid color-mix(in srgb, var(--border) 60%, transparent 40%);
         }
 
         #dashboard .dashboard-mini-stats {
@@ -854,12 +859,19 @@
         }
 
         #dashboard .dashboard-mini-stat {
-            padding: 12px 14px;
-            border-radius: 12px;
+            padding: 14px 16px;
+            border-radius: 14px;
             background: var(--bg);
-            border: 1px solid color-mix(in srgb, var(--border) 82%, transparent 18%);
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
+            border: 1px solid color-mix(in srgb, var(--border) 50%, transparent 50%);
             display: grid;
             gap: 6px;
+            transition: box-shadow 0.2s, transform 0.2s;
+        }
+
+        #dashboard .dashboard-mini-stat:hover {
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
         }
 
         #dashboard .dashboard-mini-stat-label {
@@ -887,12 +899,14 @@
             background: linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 92%, var(--bg) 8%) 0%, var(--bg) 100%);
             padding: 14px;
             min-height: 260px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
         }
 
         #dashboard .dashboard-line-chart {
             width: 100%;
             height: 220px;
             display: block;
+            filter: drop-shadow(0 2px 6px rgba(0,0,0,0.1));
         }
 
         #dashboard .dashboard-line-grid {
@@ -968,6 +982,7 @@
             position: relative;
             border-radius: 50%;
             background: conic-gradient(var(--accent) 0deg, var(--accent) 120deg, color-mix(in srgb, var(--success) 78%, white 22%) 120deg, color-mix(in srgb, var(--success) 78%, white 22%) 240deg, color-mix(in srgb, var(--warning) 78%, white 22%) 240deg, color-mix(in srgb, var(--warning) 78%, white 22%) 360deg);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.04);
         }
 
         #dashboard .dashboard-donut-chart::after {
@@ -4966,6 +4981,7 @@
                 <button type="button" class="config-subtab" data-config-panel="memory" onclick="setConfigSubPanel('memory')">记忆</button>
                 <button type="button" class="config-subtab" data-config-panel="model" onclick="setConfigSubPanel('model')">模型供应</button>
                 <button type="button" class="config-subtab" data-config-panel="preset" onclick="setConfigSubPanel('preset')">预设</button>
+                <button type="button" class="config-subtab" data-config-panel="mcp" onclick="setConfigSubPanel('mcp')">MCP</button>
                 <button type="button" class="config-subtab" data-config-panel="data" onclick="setConfigSubPanel('data')">数据</button>
             </div>
             <div class="grid">
@@ -5091,7 +5107,7 @@
                             </div>
                             <div class="form-group">
                                 <label id="config-chat-users-label">允许的用户 QQ (逗号分隔)</label>
-                                <input type="text" id="config-chat-users" placeholder="12345678,87654321">
+                                <input type="text" id="config-chat-users" placeholder="留空不限制用户，填写则仅允许这些QQ">
                             </div>
                             <div class="form-group">
                                 <label>管理QQ (逗号分隔)</label>
@@ -5181,27 +5197,32 @@
                             <label class="checkbox-label">
                                 <input type="checkbox" id="config-context-enabled" checked> 启用上下文感知增强
                             </label>
+                            <p class="hint-text">总开关，关闭后以下四项全部失效</p>
                         </div>
                         <div class="config-subgrid" style="margin-top:8px">
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-context-session-facts" checked> 会话事实
                                 </label>
+                                <p class="hint-text">注入对话中已确认的事实，如"用户叫小明，正在聊修仙话题"</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-context-participants" checked> 参与者信息
                                 </label>
+                                <p class="hint-text">注入当前聊天对象的人物档案摘要</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-context-reply-reference" checked> 回复引用
                                 </label>
+                                <p class="hint-text">有人回复了之前的消息时，把被引用的原文注入</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-context-recent-intent" checked> 用户意图
                                 </label>
+                                <p class="hint-text">分析最近几条消息，推断用户当前意图并注入</p>
                             </div>
                         </div>
                     </div>
@@ -5631,6 +5652,33 @@
                                     </div>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+                </div>
+                <div class="config-subpanel" data-config-panel="mcp">
+                <div class="card">
+                    <div class="config-card-header">
+                        <h3>MCP 接口</h3>
+                        <p class="config-card-intro">外部工具（Claude Code/Codex）通过此端点调用靶场能力</p>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-mcp-enabled" checked> 启用 MCP
+                                </label>
+                                <p class="hint-text">关闭后 /mcp 端点不可用</p>
+                            </div>
+                            <div class="form-group">
+                                <label>端点路径</label>
+                                <input type="text" id="config-mcp-path" placeholder="/mcp" value="/mcp">
+                                <p class="hint-text">默认 /mcp，修改后需重启生效</p>
+                            </div>
+                        </div>
+                        <div class="meta-box" style="margin-top:12px">
+                            <strong>挂载配置</strong> (.claude/settings.json):<br>
+                            <code>{"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}</code>
                         </div>
                     </div>
                 </div>
@@ -7000,9 +7048,12 @@
 
             return `
                 <svg class="dashboard-line-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="最近调用趋势势图">
+                    <defs>
+                        ${renderedSeries.map((s, i) => `<filter id="shadow-${i}"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="${s.color}" flood-opacity="0.35"/></filter>`).join('')}
+                    </defs>
                     ${horizontalGrid}
-                    ${renderedSeries.map((series) => `<path class="dashboard-line-path" style="stroke:${series.color};" d="${series.path}"></path>`).join('')}
-                    ${renderedSeries.map((series) => series.points.map((point) => `<circle class="dashboard-line-dot" style="stroke:${series.color};" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4"></circle>`).join('')).join('')}
+                    ${renderedSeries.map((series, i) => `<path class="dashboard-line-path" style="stroke:${series.color};filter:url(#shadow-${i})" d="${series.path}"></path>`).join('')}
+                    ${renderedSeries.map((series, i) => series.points.map((point) => `<circle class="dashboard-line-dot" style="stroke:${series.color};filter:url(#shadow-${i})" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4"></circle>`).join('')).join('')}
                 </svg>
                 <div class="dashboard-line-labels">
                     ${safeLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join('')}
@@ -7046,29 +7097,25 @@
 
             statsContainer.innerHTML = [
                 {
-                    label: '聊天调用',
-                    value: formatDashboardCompactNumber(chatCalls),
-                    note: '最近 30 分钟'
+                    label: '聊天调用', value: formatDashboardCompactNumber(chatCalls),
+                    note: '最近 30 分钟', accent: 'var(--accent)'
                 },
                 {
-                    label: '人物档案调用',
-                    value: formatDashboardCompactNumber(profileCalls),
-                    note: `已保存${formatDashboardCompactNumber(composition.participantProfiles || 0)} 份画像`
+                    label: '人物档案调用', value: formatDashboardCompactNumber(profileCalls),
+                    note: `已保存${formatDashboardCompactNumber(composition.participantProfiles || 0)} 份画像`, accent: 'var(--success)'
                 },
                 {
-                    label: '知识导入调用',
-                    value: formatDashboardCompactNumber(knowledgeCalls),
-                    note: `固定 ${formatDashboardCompactNumber(composition.fixedKnowledge || 0)} / 动态 ${formatDashboardCompactNumber(composition.dynamicKnowledge || 0)}`
+                    label: '知识导入调用', value: formatDashboardCompactNumber(knowledgeCalls),
+                    note: `固定 ${formatDashboardCompactNumber(composition.fixedKnowledge || 0)} / 动态 ${formatDashboardCompactNumber(composition.dynamicKnowledge || 0)}`, accent: 'var(--warning)'
                 },
                 {
-                    label: 'TTS 调用',
-                    value: formatDashboardCompactNumber(ttsCalls),
-                    note: status?.globalMemory?.storage?.type ? `存储 ${escapeHtml(status.globalMemory.storage.type)}` : '等待存储信息'
+                    label: 'TTS 调用', value: formatDashboardCompactNumber(ttsCalls),
+                    note: status?.globalMemory?.storage?.type ? `存储 ${escapeHtml(status.globalMemory.storage.type)}` : '等待存储信息', accent: 'var(--btn-primary)'
                 }
             ].map((item) => `
-                <div class="dashboard-mini-stat">
+                <div class="dashboard-mini-stat" style="border-left:3px solid ${item.accent};box-shadow:0 2px 12px rgba(0,0,0,0.06),0 1px 3px rgba(0,0,0,0.04),inset 0 0 0 1px color-mix(in srgb,${item.accent} 12%,transparent 88%)">
                     <div class="dashboard-mini-stat-label">${item.label}</div>
-                    <div class="dashboard-mini-stat-value">${item.value}</div>
+                    <div class="dashboard-mini-stat-value" style="color:${item.accent}">${item.value}</div>
                     <div class="dashboard-mini-stat-note">${item.note}</div>
                 </div>
             `).join('');
@@ -12079,6 +12126,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
                 document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
                 document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
+                document.getElementById('config-mcp-enabled').checked = currentConfig.mcp?.enabled !== false;
+                document.getElementById('config-mcp-path').value = currentConfig.mcp?.path || '/mcp';
                 presetDraft = normalizePresetDraft(currentConfig.preset || {});
                 selectedPresetPromptIndex = 0;
                 renderPresetEditor();
@@ -12401,6 +12450,10 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     name: document.getElementById('config-preset-name').value,
                     prompts: structuredClone(presetDraft.prompts),
                     regexRules: currentConfig.preset?.regexRules || []
+                },
+                mcp: {
+                    enabled: document.getElementById('config-mcp-enabled').checked,
+                    path: document.getElementById('config-mcp-path').value.trim() || '/mcp'
                 },
                 context: {
                     enabled: document.getElementById('config-context-enabled').checked,
