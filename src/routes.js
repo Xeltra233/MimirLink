@@ -1566,6 +1566,50 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
+    // 检测备份包内容，返回包含的分类列表，前端据此自动勾选
+    app.post('/api/config/backup/inspect', requireAuth, async (req, res) => {
+        const tmpDir = path.join(__dirname, '..', 'data', '_inspect_tmp');
+        try {
+            const { extract } = await import('tar-fs');
+            const { createGunzip } = await import('zlib');
+            fsSync.rmSync(tmpDir, { recursive: true, force: true });
+            fsSync.mkdirSync(tmpDir, { recursive: true });
+
+            await new Promise((resolve, reject) => {
+                const gunzip = createGunzip();
+                const tarExtract = extract(tmpDir);
+                req.pipe(gunzip).pipe(tarExtract);
+                tarExtract.on('finish', resolve);
+                tarExtract.on('error', reject);
+                gunzip.on('error', reject);
+                req.on('error', reject);
+            });
+
+            const found = [];
+            if (fsSync.existsSync(path.join(tmpDir, 'config.json'))) found.push('config');
+            const dataDir = path.join(tmpDir, 'data');
+            if (fsSync.existsSync(dataDir)) {
+                for (const [cat, sub] of Object.entries(BACKUP_DATA_SUBDIRS)) {
+                    if (sub && fsSync.existsSync(path.join(dataDir, sub))) found.push(cat);
+                    if (!sub && cat === 'corpus' && fsSync.existsSync(path.join(dataDir, 'range-corpus.json'))) found.push(cat);
+                }
+            }
+            // 如果 config.json 存在, presets/regex 也包含在内
+            if (found.includes('config')) {
+                if (!found.includes('presets')) found.push('presets');
+                if (!found.includes('regex')) found.push('regex');
+            }
+            // memory 永远单独显示
+            if (fsSync.existsSync(path.join(dataDir, 'chats'))) found.push('memory');
+
+            fsSync.rmSync(tmpDir, { recursive: true, force: true });
+            res.json({ success: true, categories: found });
+        } catch (e) {
+            try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+            res.status(400).json({ success: false, error: e.message });
+        }
+    });
+
     app.post('/api/config/restore', requireAuth, async (req, res) => {
         const tmpDir = path.join(__dirname, '..', 'data', '_restore_tmp');
         const categories = parseBackupCategories(req.query);

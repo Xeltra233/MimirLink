@@ -5740,29 +5740,12 @@
                         <p class="config-card-intro">选择需要导出或恢复的数据类别。角色卡升级只需导入角色卡，不勾选记忆库即可保留数据。</p>
                     </div>
                     <div class="config-subsection">
-                        <div class="config-subsection-title">选择数据类别</div>
-                        <div id="backup-category-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:16px;">
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="config" checked> 配置</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="characters" checked> 角色卡</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="worldbooks" checked> 世界书</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="memory" checked> 记忆库</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="presets" checked> 预设</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="corpus" checked> 语料</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="knowledge" checked> 知识库</label>
-                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="regex" checked> 正则规则</label>
-                        </div>
+                        <div class="config-subsection-title">备份与恢复</div>
+                        <p class="hint-text" style="margin-bottom:12px;">备份导出为 .tar.gz 文件。恢复时自动识别内容并支持选择类别。</p>
+                        <button class="success" onclick="showBackupModal()">📥 导出备份</button>
+                        <button class="secondary" onclick="document.getElementById('config-restore-file').click()" style="margin-left:8px;">📤 恢复备份</button>
+                        <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="inspectRestoreFile(event)">
                     </div>
-                    <div class="config-subsection">
-                        <div class="config-subsection-title">备份</div>
-                        <p class="hint-text" style="margin-bottom:12px;">根据上方勾选的类别导出为 .tar.gz 文件。含密钥的完整备份可迁移到新机器。</p>
-                        <button class="success" onclick="backupAllConfig()" style="margin-right:8px;">📥 备份选中</button>
-                        <button class="secondary" onclick="backupAllConfig({includeKeys:true})" style="margin-right:8px;">🔑 备份选中（含密钥）</button>
-                    </div>
-                    <div class="config-subsection">
-                        <div class="config-subsection-title">恢复</div>
-                        <p class="hint-text" style="margin-bottom:12px;">选择之前导出的 .tar.gz 文件。恢复前自动备份当前状态。<b>升级角色卡时不要勾选记忆库。</b></p>
-                        <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 恢复选中类别</button>
-                        <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="handleRestoreFile(event)">
                     </div>
                 </div>
                 </div>
@@ -6584,6 +6567,12 @@
             document.querySelectorAll('.config-subpanel').forEach((panel) => {
                 panel.classList.toggle('active', panel.dataset.configPanel === panelId);
             });
+            // 数据面板独立于配置修改，切换到数据面板时隐藏脏状态提示
+            if (panelId === 'data') {
+                setConfigSaveStatus('idle', '备份恢复不受配置保存影响');
+            } else if (configDirty) {
+                setConfigSaveStatus('dirty', '当前配置有未保存改动');
+            }
         }
 
         function initGlobalSearch() {
@@ -12714,15 +12703,45 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             event.returnValue = '';
         });
         // === 配置备份/恢复 ===
-        function getBackupCategories() {
-            const checks = document.querySelectorAll('#backup-category-checkboxes input[data-bk-cat]:checked');
-            return [...checks].map(cb => cb.dataset.bkCat).join(',') || 'all';
+        const BACKUP_CATS = ['config','characters','worldbooks','memory','presets','corpus','knowledge','regex'];
+        const BACKUP_CAT_LABELS = { config:'配置', characters:'角色卡', worldbooks:'世界书', memory:'记忆库', presets:'预设', corpus:'语料', knowledge:'知识库', regex:'正则规则' };
+
+        function showBackupModal() {
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            const checkboxHtml = BACKUP_CATS.map(c => `
+                <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="${c}" checked> ${BACKUP_CAT_LABELS[c]}</label>
+            `).join('');
+            overlay.innerHTML = `
+                <div class="modal" style="max-width:440px;">
+                    <h3>导出备份</h3>
+                    <p class="hint-text" style="margin-bottom:12px;">选择要导出的数据类别：</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:16px;">${checkboxHtml}</div>
+                    <label class="option-row" style="margin-bottom:16px;">
+                        <input type="checkbox" id="backup-include-keys">
+                        <div>包含 API 密钥（可迁移到新机器直接使用）</div>
+                    </label>
+                    <div class="btn-group" style="justify-content:flex-end;">
+                        <button class="secondary" id="backup-cancel-btn">取消</button>
+                        <button class="success" id="backup-confirm-btn">确认导出</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.querySelector('#backup-cancel-btn').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+            overlay.querySelector('#backup-confirm-btn').addEventListener('click', () => {
+                const checks = overlay.querySelectorAll('[data-bk-cat]:checked');
+                const cats = [...checks].map(cb => cb.dataset.bkCat).join(',') || 'all';
+                const includeKeys = overlay.querySelector('#backup-include-keys')?.checked || false;
+                overlay.remove();
+                doBackup(cats, includeKeys);
+            });
         }
 
-        async function backupAllConfig(opts = {}) {
-            const cats = getBackupCategories();
+        async function doBackup(cats, includeKeys) {
             const params = new URLSearchParams({ categories: cats });
-            if (opts.includeKeys) params.set('includeKeys', 'true');
+            if (includeKeys) params.set('includeKeys', 'true');
             try {
                 const res = await fetch('/api/config/backup?' + params.toString());
                 if (!res.ok) throw new Error('备份失败');
@@ -12736,21 +12755,46 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 a.click();
                 URL.revokeObjectURL(objUrl);
                 const label = cats === 'all' ? '全部' : cats.replace(/,/g, '+');
-                showToast(`已导出（${label}）${opts.includeKeys ? '含密钥' : '安全模式'}`);
+                showToast(`已导出（${label}）${includeKeys ? '含密钥' : '安全模式'}`);
             } catch(e) { showToast('备份失败: ' + e.message, true); }
         }
 
-        function showRestoreConfirmModal(file, cats, onConfirm) {
-            const catLabel = cats === 'all' ? '全部' : cats.replace(/,/g, '+');
-            const hasMemory = cats === 'all' || cats.split(',').includes('memory');
+        async function inspectRestoreFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
+                showToast('请选择 .tar.gz 备份文件', true);
+                event.target.value = '';
+                return;
+            }
+            try {
+                const res = await fetch('/api/config/backup/inspect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: file
+                });
+                const data = await res.json();
+                if (!data.success) { showToast('读取备份失败: ' + data.error, true); event.target.value = ''; return; }
+                const found = data.categories || [];
+                showRestoreModal(file, found);
+            } catch(e) { showToast('读取备份失败: ' + e.message, true); }
+            event.target.value = '';
+        }
+
+        function showRestoreModal(file, foundCats) {
+            const hasMemory = foundCats.includes('memory');
+            const checkboxHtml = BACKUP_CATS
+                .filter(c => foundCats.includes(c))
+                .map(c => `<label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="${c}" checked> ${BACKUP_CAT_LABELS[c]}</label>`).join('');
             const overlay = document.createElement('div');
             overlay.className = 'modal-overlay';
             overlay.innerHTML = `
-                <div class="modal" style="max-width:420px;">
-                    <h3>确认恢复备份</h3>
+                <div class="modal" style="max-width:440px;">
+                    <h3>恢复备份</h3>
                     <p style="margin-bottom:8px;">文件：<b>${escapeHtml(file.name)}</b></p>
-                    <p style="margin-bottom:8px;">恢复类别：<b>${catLabel}</b></p>
-                    ${hasMemory ? '<p style="color:var(--danger);margin-bottom:8px;">⚠️ 你勾选了记忆库，当前聊天记录将被覆盖！</p>' : ''}
+                    <p class="hint-text" style="margin-bottom:8px;">检测到以下类别，选择要恢复的内容：</p>
+                    <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px;">${checkboxHtml}</div>
+                    ${hasMemory ? '<p style="color:var(--danger);margin-bottom:8px;font-size:0.85rem;">⚠️ 记忆库包含聊天记录，恢复将覆盖当前数据！</p>' : ''}
                     <p class="hint-text">恢复前会自动备份当前状态到 data/restore-backups/。</p>
                     <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
                         <button class="secondary" id="restore-cancel-btn">取消</button>
@@ -12760,45 +12804,38 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             `;
             document.body.appendChild(overlay);
             overlay.querySelector('#restore-cancel-btn').addEventListener('click', () => overlay.remove());
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
             overlay.querySelector('#restore-confirm-btn').addEventListener('click', () => {
+                const checks = overlay.querySelectorAll('[data-bk-cat]:checked');
+                const cats = [...checks].map(cb => cb.dataset.bkCat).join(',') || 'all';
                 overlay.remove();
-                onConfirm();
+                doRestoreFile(file, cats);
             });
         }
 
-        async function handleRestoreFile(event) {
-            const file = event.target.files[0];
-            if (!file) return;
-            if (!file.name.endsWith('.tar.gz') && !file.name.endsWith('.tgz')) {
-                showToast('请选择 .tar.gz 备份文件', true);
-                event.target.value = '';
-                return;
-            }
-            const cats = getBackupCategories();
-            showRestoreConfirmModal(file, cats, async () => {
-                try {
-                    const res = await fetch('/api/config/restore?categories=' + encodeURIComponent(cats), {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/octet-stream' },
-                        body: file
-                    });
-                    const data = await res.json();
-                    if (data.success) {
-                        const c = data.changes;
-                        const parts = [];
-                        if (c.replaced?.length) parts.push(`替换: ${c.replaced.length}项`);
-                        if (c.merged?.length) parts.push(`合并: ${c.merged.length}项`);
-                        if (c.added?.length) parts.push(`新增: ${c.added.length}项`);
-                        if (c.skipped?.length) parts.push(`跳过: ${c.skipped.length}项`);
-                        showToast(`恢复完成！${parts.join(' | ')}。自动备份: ${data.autoBackup}。即将刷新...`);
-                        setTimeout(() => location.reload(), 2000);
-                    } else {
-                        showToast('恢复失败: ' + data.error, true);
-                    }
-                } catch(e) { showToast('恢复失败: ' + e.message, true); }
-            });
-            event.target.value = '';
+        async function doRestoreFile(file, cats) {
+            try {
+                const res = await fetch('/api/config/restore?categories=' + encodeURIComponent(cats), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/octet-stream' },
+                    body: file
+                });
+                const data = await res.json();
+                if (data.success) {
+                    const c = data.changes;
+                    const parts = [];
+                    if (c.replaced?.length) parts.push(`替换: ${c.replaced.length}项`);
+                    if (c.merged?.length) parts.push(`合并: ${c.merged.length}项`);
+                    if (c.added?.length) parts.push(`新增: ${c.added.length}项`);
+                    if (c.skipped?.length) parts.push(`跳过: ${c.skipped.length}项`);
+                    showToast(`恢复完成！${parts.join(' | ')}。自动备份: ${data.autoBackup}。即将刷新...`);
+                    setTimeout(() => location.reload(), 2000);
+                } else {
+                    showToast('恢复失败: ' + data.error, true);
+                }
+            } catch(e) { showToast('恢复失败: ' + e.message, true); }
         }
+
         // OneBot 重连
         async function reconnectOneBot() {
             try {
