@@ -70,16 +70,17 @@ export function createMCPHandler(managers, config, saveConfig) {
     const tools = {
 
         range_test: {
-            description: '发送测试消息到指定角色，获取 AI 回复。用于测试角色卡表现。',
+            description: '发送测试消息到指定角色，获取 AI 回复。可传入 fakeHistory 数组伪造聊天记录以模拟记忆继承。',
             inputSchema: {
                 type: 'object',
                 properties: {
                     message: { type: 'string', description: '测试消息内容' },
-                    characterName: { type: 'string', description: '角色名，可选，默认用当前靶场选择的角色' }
+                    characterName: { type: 'string', description: '角色名，可选，默认用当前靶场选择的角色' },
+                    fakeHistory: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: '可选，伪造的聊天记录 [{role:"user"|"assistant", content}]' }
                 },
                 required: ['message']
             },
-            handler: async ({ message, characterName }) => {
+            handler: async ({ message, characterName, fakeHistory }) => {
                 const resolvedChar = characterName || config.chat?.defaultCharacter || '';
                 if (!resolvedChar) return { content: [{ type: 'text', text: '请指定 characterName' }] };
 
@@ -88,13 +89,28 @@ export function createMCPHandler(managers, config, saveConfig) {
                 try { character = characterManager.readFromPng(charName); } catch {}
                 if (!character) return { content: [{ type: 'text', text: `角色 "${resolvedChar}" 未找到` }] };
 
+                // 加载角色绑定的世界书和预设
+                let worldBook = null;
+                let presetConfig = null;
+                try {
+                    const PromptBuilderClass = promptBuilder.constructor;
+                    const binding = PromptBuilderClass.getEffectiveBinding(config, charName);
+                    if (binding.worldbook) worldBook = worldBookManager.readWorldBook(binding.worldbook);
+                    if (binding.preset) {
+                        const importRecord = (config.imports?.presetFiles || []).find(r => r?.id === binding.preset);
+                        if (importRecord?.importedPreset) presetConfig = PromptBuilderClass.normalizePreset(importRecord.importedPreset);
+                    }
+                } catch {}
+
+                const recentMessages = Array.isArray(fakeHistory) ? fakeHistory.map(m => ({ role: m.role || 'user', content: m.content || '' })) : [];
+
                 try {
                     const built = await promptBuilder.build(
                         resolvedChar, message,
-                        { recentMessages: [], summaries: [] },
+                        { recentMessages, summaries: [] },
                         new Set(),
-                        { sessionId: `mcp_${Date.now()}`, messageType: 'group', messageCount: 1, recalledEntries: [], participants: [], injectionRisk: null, replyReference: null },
-                        { character, worldBook: null, presetConfig: null }
+                        { sessionId: `mcp_${Date.now()}`, messageType: 'group', messageCount: 1 + recentMessages.length, recalledEntries: [], participants: [], injectionRisk: null, replyReference: null },
+                        { character, worldBook, presetConfig }
                     );
 
                     const aiResult = await aiClient.chat(built.messages, {});
@@ -102,7 +118,7 @@ export function createMCPHandler(managers, config, saveConfig) {
                     const usage = aiResult?.usage || null;
 
                     return {
-                        content: [{ type: 'text', text: JSON.stringify({ reply, tokenUsage: usage }, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify({ reply, tokenUsage: usage, fakeHistoryCount: recentMessages.length }, null, 2) }]
                     };
                 } catch (e) {
                     return { content: [{ type: 'text', text: `测试失败: ${e.message}` }] };
@@ -270,21 +286,87 @@ ${wbSummary || '(未提供)'}
         },
 
         range_get_preset_status: {
-            description: '列出所有预设 prompt 及其启用状态。可用于审查哪些功能开着。',
+            description: '列出所有预设 prompt 及其启用状态。传 includeContent=true 可返回完整内容。',
             inputSchema: { type: 'object', properties: {
-                filter: { type: 'string', description: '可选，只返回名称包含此关键词的 prompt' }
+                filter: { type: 'string', description: '可选，只返回名称包含此关键词的 prompt' },
+                includeContent: { type: 'boolean', description: '可选，是否返回 prompt 完整内容，默认 false' }
             }},
-            handler: async ({ filter }) => {
+            handler: async ({ filter, includeContent }) => {
                 const presetFiles = config.imports?.presetFiles || [];
                 let all = [];
                 for (const pf of presetFiles) {
                     for (const p of pf?.importedPreset?.prompts || []) {
                         if (!filter || (p.name || '').includes(filter)) {
-                            all.push({ name: p.name, enabled: p.enabled !== false, role: p.role || 'system' });
+                            const item = {
+                                name: p.name,
+                                enabled: p.enabled !== false,
+                                role: p.role || 'system',
+                                injection_position: p.injection_position ?? 0
+                            };
+                            if (includeContent) {
+                                item.content = p.content || '';
+                                item.identifier = p.identifier || '';
+                            }
+                            all.push(item);
                         }
                     }
                 }
                 return { content: [{ type: 'text', text: JSON.stringify(all, null, 2) }] };
+            }
+        },
+
+        range_get_worldbook_entries: {
+            description: '获取指定角色世界书的所有条目完整内容。返回触发词和正文。',
+            inputSchema: { type: 'object', properties: {
+                characterName: { type: 'string', description: '角色名（不含 .png）' },
+                search: { type: 'string', description: '可选，只返回内容含此关键词的条目' }
+            }, required: ['characterName'] },
+            handler: async ({ characterName, search }) => {
+                try {
+                    const wbPath = resolve(process.cwd(), 'data', 'worlds', `${characterName}'s Lorebook.json`);
+                    const wb = JSON.parse(readFileSync(wbPath, 'utf-8'));
+                    let entries = wb.entries || [];
+                    if (search) {
+                        entries = entries.filter(e => (e.content || '').includes(search) || (e.comment || '').includes(search) || (e.keys || []).some(k => k.includes(search)));
+                    }
+                    const result = entries.map((e, i) => ({
+                        id: e.id ?? i,
+                        keys: e.keys || [],
+                        comment: e.comment || '',
+                        enabled: e.enabled !== false,
+                        constant: e.constant || false,
+                        content: e.content || ''
+                    }));
+                    return { content: [{ type: 'text', text: JSON.stringify({ count: result.length, entries: result }, null, 2) }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `获取失败: ${e.message}` }] };
+                }
+            }
+        },
+
+        range_get_character_card: {
+            description: '获取角色卡原始内容。返回所有字段的完整文本，用于审查角色设定。',
+            inputSchema: { type: 'object', properties: {
+                characterName: { type: 'string', description: '角色名（不含 .png）' }
+            }, required: ['characterName'] },
+            handler: async ({ characterName }) => {
+                try {
+                    const char = characterManager.readFromPng(characterName);
+                    const fields = {
+                        name: char.name || char.data?.name || '',
+                        description: char.description || char.data?.description || '',
+                        personality: char.personality || char.data?.personality || '',
+                        scenario: char.scenario || char.data?.scenario || '',
+                        system_prompt: char.system_prompt || char.data?.system_prompt || '',
+                        first_mes: char.first_mes || char.data?.first_mes || '',
+                        post_history_instructions: char.post_history_instructions || char.data?.post_history_instructions || '',
+                        mes_example: char.mes_example || char.data?.mes_example || ''
+                    };
+                    const nonEmpty = Object.fromEntries(Object.entries(fields).filter(([k,v]) => v));
+                    return { content: [{ type: 'text', text: JSON.stringify(nonEmpty, null, 2) }] };
+                } catch (e) {
+                    return { content: [{ type: 'text', text: `获取失败: ${e.message}` }] };
+                }
             }
         },
 
@@ -1017,17 +1099,68 @@ ${wbSummary || '(未提供)'}
         }
     };
 
-    // JSON-RPC handler
+    // Streamable HTTP handler
     const serverInfo = { name: 'mimirlink-range', version: '1.0.0' };
     const toolList = Object.entries(tools).map(([name, t]) => ({
         name, description: t.description, inputSchema: t.inputSchema
     }));
 
+    // SSE 会话管理
+    const sseSessions = new Map(); // sessionId -> { res, createdAt }
+
+    function closeSSESession(sessionId) {
+        const session = sseSessions.get(sessionId);
+        if (session) {
+            try { session.res.end(); } catch {}
+            sseSessions.delete(sessionId);
+        }
+    }
+
     return async function mcpHandler(req, res) {
+        // GET：建立 SSE 流
+        if (req.method === 'GET') {
+            const sessionId = req.query['Mcp-Session-Id'] || req.query['sessionId'] || req.headers['mcp-session-id'];
+            if (!sessionId) {
+                return res.status(400).json({ error: 'Missing Mcp-Session-Id' });
+            }
+
+            res.setHeader('Content-Type', 'text/event-stream');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.setHeader('Connection', 'keep-alive');
+            res.setHeader('X-Accel-Buffering', 'no');
+            res.flushHeaders();
+
+            // 发送 endpoint 事件
+            const baseUrl = `${req.protocol || 'http'}://${req.get('host')}${req.path}`;
+            res.write(`event: endpoint\ndata: ${baseUrl}?Mcp-Session-Id=${sessionId}\n\n`);
+            res.write(`: heartbeat\n\n`);
+
+            sseSessions.set(sessionId, { res, createdAt: Date.now() });
+
+            // 心跳
+            const heartbeat = setInterval(() => {
+                try { res.write(`: heartbeat ${Date.now()}\n\n`); } catch { clearInterval(heartbeat); }
+            }, 15000);
+
+            req.on('close', () => {
+                clearInterval(heartbeat);
+                sseSessions.delete(sessionId);
+            });
+
+            return; // 不调用 res.end()，保持连接
+        }
+
+        // DELETE：关闭会话
+        if (req.method === 'DELETE') {
+            const sessionId = req.query['Mcp-Session-Id'] || req.query['sessionId'] || req.headers['mcp-session-id'];
+            if (sessionId) closeSSESession(sessionId);
+            return res.status(200).json({ ok: true });
+        }
+
+        // POST：JSON-RPC
         const sessionId = req.headers['mcp-session-id'];
 
         try {
-            // Parse body
             let body = req.body;
             if (!body || typeof body !== 'object') {
                 return res.status(400).json(jsonRpcError(null, -32700, 'Parse error'));
@@ -1038,16 +1171,18 @@ ${wbSummary || '(未提供)'}
                 return res.status(400).json(jsonRpcError(id, -32600, 'Invalid Request'));
             }
 
-            logger.info(`[MCP] ${method} id=${id}`);
+            logger.info(`[MCP] ${method} id=${id} session=${sessionId || 'none'}`);
 
             switch (method) {
-                case 'initialize':
-                    res.setHeader('Mcp-Session-Id', `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+                case 'initialize': {
+                    const newSessionId = `mcp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                    res.setHeader('Mcp-Session-Id', newSessionId);
                     return res.json(jsonRpcResult(id, {
                         protocolVersion: '2024-11-05',
                         capabilities: { tools: {} },
                         serverInfo
                     }));
+                }
 
                 case 'initialized':
                     return res.json(jsonRpcResult(id, {}));

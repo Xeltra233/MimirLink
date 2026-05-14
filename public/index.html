@@ -3097,6 +3097,36 @@
             word-break: break-word;
         }
 
+        .variable-group-section {
+            margin-bottom: 16px;
+        }
+        .variable-group-title {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            padding: 6px 0 8px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 8px;
+        }
+        .variable-group {
+            margin-bottom: 4px;
+        }
+        .variable-group summary {
+            cursor: pointer;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: var(--bg);
+            font-weight: 600;
+            font-size: 0.9rem;
+            user-select: none;
+        }
+        .variable-group summary:hover {
+            background: var(--bg-elevated);
+        }
+        .variable-group-items {
+            padding: 4px 0;
+        }
+
         .variable-detail-card {
             min-width: 0;
         }
@@ -5707,17 +5737,31 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>数据备份与恢复</h3>
-                        <p class="config-card-intro">导出完整数据备份（含角色卡、世界书、语料、预设、会话）或从备份恢复</p>
+                        <p class="config-card-intro">选择需要导出或恢复的数据类别。角色卡升级只需导入角色卡，不勾选记忆库即可保留数据。</p>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">选择数据类别</div>
+                        <div id="backup-category-checkboxes" style="display:flex;flex-wrap:wrap;gap:8px 20px;margin-bottom:16px;">
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="config" checked> 配置</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="characters" checked> 角色卡</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="worldbooks" checked> 世界书</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="memory" checked> 记忆库</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="presets" checked> 预设</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="corpus" checked> 语料</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="knowledge" checked> 知识库</label>
+                            <label class="option-row" style="width:auto;"><input type="checkbox" data-bk-cat="regex" checked> 正则规则</label>
+                        </div>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">备份</div>
-                        <p class="hint-text" style="margin-bottom:12px;">导出所有数据为单个 .tar.gz 文件。完整备份含 API 密钥（可迁移到新机器），安全备份隐藏密钥（适合分享）。</p>
-                        <button class="success" onclick="backupAllConfig()" style="margin-right:8px;">📥 备份全部</button>
+                        <p class="hint-text" style="margin-bottom:12px;">根据上方勾选的类别导出为 .tar.gz 文件。含密钥的完整备份可迁移到新机器。</p>
+                        <button class="success" onclick="backupAllConfig()" style="margin-right:8px;">📥 备份选中</button>
+                        <button class="secondary" onclick="backupAllConfig({includeKeys:true})" style="margin-right:8px;">🔑 备份选中（含密钥）</button>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">恢复</div>
-                        <p class="hint-text" style="margin-bottom:12px;">选择之前导出的 .tar.gz 备份文件。恢复前会自动备份当前状态到 data/restore-backups/。</p>
-                        <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 一键恢复</button>
+                        <p class="hint-text" style="margin-bottom:12px;">选择之前导出的 .tar.gz 文件。恢复前自动备份当前状态。<b>升级角色卡时不要勾选记忆库。</b></p>
+                        <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 恢复选中类别</button>
                         <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="handleRestoreFile(event)">
                     </div>
                 </div>
@@ -5805,6 +5849,7 @@
                                 <button class="secondary range-btn-xs" data-range-action="clear-corpus">清空</button>
                             </div>
                         </div>
+                        <p class="hint-text" style="margin-bottom:8px;">语料库仅供靶场测试使用——优化师从中挑选消息来测试角色表现，不会注入到真实 AI 对话中。</p>
                         <div id="range-corpus-status" class="range-corpus-status-text"></div>
                         <div id="range-corpus-progress" style="display:none" class="range-corpus-progress-wrapper">
                             <div class="range-corpus-progress-row">
@@ -5817,8 +5862,21 @@
                             <div class="form-group"><label>嵌入模型</label><select id="range-embed-model" data-range-action="embed-model-change"><option value="">自动检测</option></select></div>
                             <div class="form-group"><label>重排模型</label><select id="range-rerank-model" data-range-action="rerank-model-change"><option value="">不启用</option></select></div>
                         </div>
+                        <p class="hint-text" style="margin-top:4px;">语料库导入支持 <a href="https://github.com/shuakami/qq-chat-exporter" target="_blank" rel="noopener">QQ Chat Exporter</a> 导出的 JSON 格式。用该工具导出群聊记录后，直接导入即可作为测试语料。</p>
                         <div id="range-corpus-lines" class="range-corpus-lines"></div>
                         <input type="file" id="range-corpus-file" accept=".json" multiple style="display:none" data-range-action="corpus-file">
+                    </div>
+                    <div class="card range-card-padded">
+                        <div class="section-head range-section-head">
+                            <h3 class="range-panel-h3">📝 伪造聊天记录</h3>
+                            <span id="range-fake-history-count" style="color:var(--text-muted);font-size:0.8rem;"></span>
+                        </div>
+                        <p class="hint-text" style="margin-bottom:8px;">粘贴对话历史模拟继承记忆。格式：<code>[用户] xxx</code> / <code>[角色] xxx</code> 交替。</p>
+                        <textarea id="range-fake-history-input" rows="5" style="width:100%;font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="[用户] 你好啊&#10;[角色] 哟，这位道友有何贵干？&#10;[用户] 我想加入炸天帮&#10;[角色] 交五百灵石入帮费！"></textarea>
+                        <div style="margin-top:8px;display:flex;gap:8px;">
+                            <button class="secondary range-btn-xs" onclick="applyRangeFakeHistory()">✅ 应用</button>
+                            <button class="secondary range-btn-xs" onclick="clearRangeFakeHistory()">清空</button>
+                        </div>
                     </div>
                     <div class="card range-card-padded">
                         <div class="btn-group range-btn-group-wrap">
@@ -5950,6 +6008,20 @@
         };
         let selectedSession = null;
         let currentCharacterSelectedFile = null;
+
+        async function autoLoadCurrentCharacterDetail() {
+            if (!currentCharacterSelectedFile) return;
+            try {
+                const detailRes = await fetch(`/api/characters/${encodeURIComponent(currentCharacterSelectedFile)}/detail`);
+                const detailData = await detailRes.json();
+                if (detailData.success) {
+                    currentCharacterData = detailData.character;
+                    currentCharacterMetadataSummary = detailData.metadataSummary || null;
+                    renderCharacterDetail(detailData.character, currentCharacterSelectedFile, detailData.metadataSummary || null, detailData.bindingSummary || null);
+                }
+            } catch (e) { /* ignore */ }
+        }
+
         let currentCharacterNameForRuntimePreview = null;
         let currentRegexRules = [];
         let editingRegexIndex = null;
@@ -6085,17 +6157,7 @@
             await loadMemoryDatabases();
             connectLogWebSocket();
             // 自动加载默认角色详情
-            if (currentCharacterSelectedFile) {
-                try {
-                    const detailRes = await fetch(`/api/characters/${encodeURIComponent(currentCharacterSelectedFile)}/detail`);
-                    const detailData = await detailRes.json();
-                    if (detailData.success) {
-                        currentCharacterData = detailData.character;
-                        currentCharacterMetadataSummary = detailData.metadataSummary || null;
-                        renderCharacterDetail(detailData.character, currentCharacterSelectedFile, detailData.metadataSummary || null, detailData.bindingSummary || null);
-                    }
-                } catch (e) { /* ignore */ }
-            }
+            await autoLoadCurrentCharacterDetail();
             updateRuntimePreviewIdentityFields();
 
             // 定时刷新状
@@ -6426,6 +6488,7 @@
             }
             if (panelId === 'characters') {
                 loadCharacters();
+                autoLoadCurrentCharacterDetail();
                 return;
             }
             if (panelId === 'worldbooks') {
@@ -7600,7 +7663,20 @@
                 return;
             }
 
-            list.innerHTML = variables.map((item) => {
+            // 按 scopeKey 分组：纯数字开头 → 用户变量，其余 → 全局变量
+            const groups = new Map();
+            const globalVars = [];
+            for (const item of variables) {
+                const sk = (item.scopeKey || 'default').trim();
+                if (/^\d+/.test(sk) && sk !== 'default') {
+                    if (!groups.has(sk)) groups.set(sk, []);
+                    groups.get(sk).push(item);
+                } else {
+                    globalVars.push(item);
+                }
+            }
+
+            const renderItem = (item) => {
                 const selectedClass = selectedVariableId === item.id ? 'selected' : '';
                 const val = item.rawValue || item.value || item.content || '';
                 return `
@@ -7611,7 +7687,32 @@
                         </div>
                     </div>
                 `;
-            }).join('');
+            };
+
+            let html = '';
+
+            // 用户分组
+            if (groups.size > 0) {
+                html += '<div class="variable-group-section"><div class="variable-group-title">👤 用户变量</div>';
+                for (const [userId, vars] of groups) {
+                    html += `<details class="variable-group" open>
+                        <summary class="variable-group-summary">QQ: ${escapeHtml(userId)} <span class="meta-inline">(${vars.length} 条)</span></summary>
+                        <div class="variable-group-items">
+                            ${vars.map(renderItem).join('')}
+                        </div>
+                    </details>`;
+                }
+                html += '</div>';
+            }
+
+            // 全局变量
+            if (globalVars.length > 0) {
+                html += '<div class="variable-group-section"><div class="variable-group-title">🌐 全局变量</div>';
+                html += `<div class="variable-group-items">${globalVars.map(renderItem).join('')}</div>`;
+                html += '</div>';
+            }
+
+            list.innerHTML = html;
         }
 
         function renderVariableDetail(item) {
@@ -8720,11 +8821,11 @@
                     <div style="margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border);">
                         <div style="font-weight: 600; margin-bottom: 8px;">记忆库策</div>
                         <label class="option-row">
-                            <input type="radio" name="memory-binding-mode" value="inherit" checked>
+                            <input type="radio" name="memory-binding-mode" value="inherit">
                             <div>沿用全局默认数据</div>
                         </label>
                         <label class="option-row">
-                            <input type="radio" name="memory-binding-mode" value="character">
+                            <input type="radio" name="memory-binding-mode" value="character" checked>
                             <div>为这个角色创建独立数据库</div>
                         </label>
                         <label class="option-row">
@@ -8751,7 +8852,7 @@
                 overlay.querySelectorAll('input[data-key]').forEach((input) => {
                     selected[input.dataset.key] = input.checked;
                 });
-                const selectedMode = overlay.querySelector('input[name="memory-binding-mode"]:checked')?.value || 'inherit';
+                const selectedMode = overlay.querySelector('input[name="memory-binding-mode"]:checked')?.value || 'character';
                 const customPath = overlay.querySelector('#memory-binding-custom-path')?.value?.trim() || '';
                 const migrateFromCurrent = overlay.querySelector('#memory-binding-migrate-current')?.checked === true;
                 overlay.remove();
@@ -8763,7 +8864,7 @@
             });
         }
 
-        async function doSelectCharacter(filename, importOptions = {}, memoryBinding = { mode: 'inherit' }) {
+        async function doSelectCharacter(filename, importOptions = {}, memoryBinding = { mode: 'character' }) {
             try {
                 const res = await fetch('/api/characters/select', {
                     method: 'POST',
@@ -8808,8 +8909,12 @@
                     throw new Error(detailData.error || '读取角色卡信息失');
                 }
 
+                const hasExistingBinding = detailData.bindingSummary?.memoryDbPath?.value;
+                const existingDbLabel = hasExistingBinding
+                    ? `\n⚠️ 角色卡已存在，当前记忆库 ${hasExistingBinding} 将保留，不会被覆盖。`
+                    : '';
                 showImportOptionsModal(
-                    `导入角色卡：${detailData.character?.name || filename}`,
+                    `导入角色卡：${detailData.character?.name || filename}${existingDbLabel}`,
                     detailData.metadataSummary,
                     detailData.importPlan || {
                         importWorldBook: detailData.metadataSummary?.hasEmbeddedWorldBook,
@@ -11296,7 +11401,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
         function refreshAIModelSelectOptions() {
             const providers = (aiProviderEntries || []).filter(e => e.baseUrl);
-            const targetIds = ['config-chat-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
+            const targetIds = ['config-chat-model-ref', 'config-chat-backup-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
             targetIds.forEach((selectId) => {
                 const select = document.getElementById(selectId);
                 if (!select) return;
@@ -12201,6 +12306,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-memory-participant-profile-provider-id').value = participantProfileProviderId;
                 refreshAIModelSelectOptions();
                 document.getElementById('config-chat-model-ref').value = buildAIModelRef(currentConfig.chat?.modelProviderId || currentConfig.ai?.activeProviderId || '', currentConfig.chat?.model || currentConfig.ai?.model || '');
+                document.getElementById('config-chat-backup-model-ref').value = buildAIModelRef(currentConfig.chat?.backupModelProviderId || '', currentConfig.chat?.backupModel || '');
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
                 document.getElementById('config-memory-summary-model').value = currentConfig.memory?.summary?.model || '';
 
@@ -12410,6 +12516,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 model: activeProviderForSave.model || ''
             });
             const chatModelSelection = getSelectedAIModelRef('config-chat-model-ref');
+            const backupModelSelection = getSelectedAIModelRef('config-chat-backup-model-ref');
             const participantProfileModelSelection = getSelectedAIModelRef('config-memory-participant-profile-model');
 
             const newConfig = {
@@ -12464,6 +12571,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     sessionMode: document.getElementById('config-chat-session-mode').value,
                     modelProviderId: chatModelSelection.providerId,
                     model: chatModelSelection.model,
+                    backupModelProviderId: backupModelSelection.providerId || '',
+                    backupModel: backupModelSelection.model || '',
                     accessControlMode: document.getElementById('config-chat-access-mode').value,
                     triggerMode: document.getElementById('config-chat-trigger-mode').value,
                     triggerPrefix: document.getElementById('config-chat-trigger').value,
@@ -12605,15 +12714,17 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             event.returnValue = '';
         });
         // === 配置备份/恢复 ===
-        async function backupAllConfig() {
-            const includeKeys = confirm(
-                '导出备份：\n\n' +
-                '点「确定」= 完整备份（含 API 密钥，可迁移到新机器直接用）\n' +
-                '点「取消」= 安全备份（密钥隐藏，适合分享给他人）'
-            );
+        function getBackupCategories() {
+            const checks = document.querySelectorAll('#backup-category-checkboxes input[data-bk-cat]:checked');
+            return [...checks].map(cb => cb.dataset.bkCat).join(',') || 'all';
+        }
+
+        async function backupAllConfig(opts = {}) {
+            const cats = getBackupCategories();
+            const params = new URLSearchParams({ categories: cats });
+            if (opts.includeKeys) params.set('includeKeys', 'true');
             try {
-                const url = includeKeys ? '/api/config/backup?includeKeys=true' : '/api/config/backup';
-                const res = await fetch(url);
+                const res = await fetch('/api/config/backup?' + params.toString());
                 if (!res.ok) throw new Error('备份失败');
                 const blob = await res.blob();
                 const objUrl = URL.createObjectURL(blob);
@@ -12624,9 +12735,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 a.download = name;
                 a.click();
                 URL.revokeObjectURL(objUrl);
-                showToast(includeKeys ? '完整备份已下载（含密钥，请妥善保管）' : '安全备份已下载（密钥已隐藏）');
+                const label = cats === 'all' ? '全部' : cats.replace(/,/g, '+');
+                showToast(`已导出（${label}）${opts.includeKeys ? '含密钥' : '安全模式'}`);
             } catch(e) { showToast('备份失败: ' + e.message, true); }
         }
+
         async function handleRestoreFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -12635,11 +12748,15 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 event.target.value = '';
                 return;
             }
-            if (!confirm(`确定要恢复备份 "${file.name}" 吗？\n恢复前会自动备份当前状态。`)) {
+            const cats = getBackupCategories();
+            const hasMemory = cats === 'all' || cats.split(',').includes('memory');
+            const catLabel = cats === 'all' ? '全部' : cats.replace(/,/g, '+');
+            const warn = hasMemory ? '\n⚠️ 你勾选了记忆库，当前聊天记录将被覆盖！' : '';
+            if (!confirm(`确定恢复 "${file.name}" 吗？\n恢复类别: ${catLabel}${warn}\n恢复前会自动备份当前状态。`)) {
                 event.target.value = ''; return;
             }
             try {
-                const res = await fetch('/api/config/restore', {
+                const res = await fetch('/api/config/restore?categories=' + encodeURIComponent(cats), {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/octet-stream' },
                     body: file
@@ -12651,6 +12768,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     if (c.replaced?.length) parts.push(`替换: ${c.replaced.length}项`);
                     if (c.merged?.length) parts.push(`合并: ${c.merged.length}项`);
                     if (c.added?.length) parts.push(`新增: ${c.added.length}项`);
+                    if (c.skipped?.length) parts.push(`跳过: ${c.skipped.length}项`);
                     showToast(`恢复完成！${parts.join(' | ')}。自动备份: ${data.autoBackup}。即将刷新...`);
                     setTimeout(() => location.reload(), 2000);
                 } else {
@@ -13096,6 +13214,39 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
         let _rangeRestoringPrefs = false;
         let rangeJsonMode = true;
         let _rangeLastTestScored = false;
+        let rangeFakeHistory = []; // 伪造聊天记录 [{ role, content }]
+
+        function applyRangeFakeHistory() {
+            const input = document.getElementById('range-fake-history-input');
+            const raw = (input?.value || '').trim();
+            if (!raw) { rangeFakeHistory = []; updateFakeHistoryCount(); return; }
+            const lines = raw.split('\n').filter(l => l.trim());
+            const msgs = [];
+            for (const line of lines) {
+                const userMatch = line.match(/^\[用户\]\s*(.+)/);
+                const botMatch = line.match(/^\[(?:角色|bot|Bot|AI)\]\s*(.+)/);
+                if (userMatch) {
+                    msgs.push({ role: 'user', content: userMatch[1].trim() });
+                } else if (botMatch) {
+                    msgs.push({ role: 'assistant', content: botMatch[1].trim() });
+                }
+            }
+            rangeFakeHistory = msgs;
+            updateFakeHistoryCount();
+            showToast(msgs.length > 0 ? `已加载 ${msgs.length} 条伪造记录` : '未识别到有效记录');
+        }
+
+        function clearRangeFakeHistory() {
+            rangeFakeHistory = [];
+            const input = document.getElementById('range-fake-history-input');
+            if (input) input.value = '';
+            updateFakeHistoryCount();
+        }
+
+        function updateFakeHistoryCount() {
+            const el = document.getElementById('range-fake-history-count');
+            if (el) el.textContent = rangeFakeHistory.length > 0 ? `${rangeFakeHistory.length} 条` : '';
+        }
 
         async function loadPromptRange() {
             const wasLoaded = rangeModels.providers && rangeModels.providers.length > 0;
@@ -13601,7 +13752,8 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     includeAIResponse: true,
                     contextConfig: getRangeContextConfig(),
                     injectVariables: document.getElementById('range-inject-vars')?.checked !== false,
-                    injectProfiles: document.getElementById('range-inject-profiles')?.checked !== false
+                    injectProfiles: document.getElementById('range-inject-profiles')?.checked !== false,
+                    context: rangeFakeHistory.length > 0 ? { recentMessages: rangeFakeHistory } : undefined
                 };
                 const ov = getRangeOverrides();
                 if (ov.baseUrl) body.modelProviderId = RE.provider.value;
@@ -14895,11 +15047,9 @@ ACTION: DONE
             if (s.worldbook) RE.worldbook.value = s.worldbook;
             if (s.preset) RE.preset.value = s.preset;
             if (s.provider) RE.provider.value = s.provider;
-            if (s.provider && s.model) RE.model.value = s.provider + '||' + s.model;
-            else if (s.model) RE.model.value = s.model;
+            if (s.model) RE.model.value = s.model;
             if (s.optProvider) RE.optProvider.value = s.optProvider;
-            if (s.optProvider && s.optModel) RE.optModel.value = s.optProvider + '||' + s.optModel;
-            else if (s.optModel) RE.optModel.value = s.optModel;
+            if (s.optModel) RE.optModel.value = s.optModel;
             onRangeCharacterChange();
             onRangeWorldBookChange();
             onRangePresetChange();

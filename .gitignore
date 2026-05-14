@@ -17,6 +17,7 @@ data/range-corpus.json
 data/range-prefs.json
 data/range-embeddings.json
 data/range-snapshots/
+data/presets/
 
 # Keep data directory structure
 !data/.gitkeep
@@ -54,6 +55,7 @@ docs/superpowers/
 
 # Claude Code project settings (contains MCP config)
 .claude/
+.mcp.json
 
 # Temp script artifacts
 tmp-bracket-check.py

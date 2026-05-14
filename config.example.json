@@ -83,6 +83,8 @@
     "blockedGroups": [],
     "allowedUsers": [],
     "blockedUsers": [],
+    "emojiReaction": true,
+    "pokeReaction": true,
     "bufferWindowMs": 1200,
     "replyDelayMs": 800,
     "segmentDelayMs": 300,

@@ -1484,31 +1484,83 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     // ==================== 角色卡管理 ====================
 
-    // === 配置备份/恢复（tar.gz 全量打包） ===
+    // === 配置备份/恢复（tar.gz 全量打包，支持分类过滤） ===
+    const BACKUP_CATEGORIES = ['config','characters','worldbooks','memory','presets','corpus','regex','knowledge'];
+    const BACKUP_DATA_SUBDIRS = {
+        characters: 'characters',
+        worldbooks: 'worlds',
+        memory: 'chats',
+        corpus: '',      // corpus files at data root
+        knowledge: 'knowledge',
+        regex: '',       // regex in imports
+        presets: 'presets'   // data/presets/
+    };
+
+    function parseBackupCategories(query) {
+        const raw = query.categories || 'all';
+        if (raw === 'all') return new Set(BACKUP_CATEGORIES);
+        const selected = raw.split(',').map(s => s.trim()).filter(s => BACKUP_CATEGORIES.includes(s));
+        return new Set(selected.length > 0 ? selected : BACKUP_CATEGORIES);
+    }
+
     app.get('/api/config/backup', requireAuth, async (req, res) => {
         const tmpDir = path.join(__dirname, '..', 'data', '_backup_tmp');
         const includeKeys = req.query.includeKeys === 'true';
+        const categories = parseBackupCategories(req.query);
         const dateStr = new Date().toISOString().slice(0,10);
-        const suffix = includeKeys ? 'full' : 'safe';
+        const parts = includeKeys ? ['full'] : ['safe'];
+        if (!categories.has('config')) parts.push('noconfig');
+        const suffix = parts.join('-');
         const archiveName = `mimirlink-backup-${dateStr}-${suffix}.tar.gz`;
         try {
             const { pack } = await import('tar-fs');
             const { createGzip } = await import('zlib');
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             fsSync.mkdirSync(tmpDir, { recursive: true });
-            // config.json：根据 includeKeys 决定是否脱敏
-            const exportConfig = includeKeys ? config : maskConfigSecrets(config);
-            fsSync.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(exportConfig, null, 2), 'utf8');
-            // 复制 data 目录
             const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
-            copyDirSync(dataDir, path.join(tmpDir, 'data'), new Set(['_backup_tmp', 'restore-backups']));
-            // 流式打包
+            const tmpDataDir = path.join(tmpDir, 'data');
+            fsSync.mkdirSync(tmpDataDir, { recursive: true });
+
+            // config.json
+            if (categories.has('config')) {
+                const exportConfig = includeKeys ? config : maskConfigSecrets(config);
+                fsSync.writeFileSync(path.join(tmpDir, 'config.json'), JSON.stringify(exportConfig, null, 2), 'utf8');
+            }
+
+            // data 子目录按分类复制
+            const handledSubdirs = new Set();
+            for (const cat of categories) {
+                const sub = BACKUP_DATA_SUBDIRS[cat];
+                if (sub === undefined) continue;
+                if (sub) {
+                    // 子目录
+                    const src = path.join(dataDir, sub);
+                    const dst = path.join(tmpDataDir, sub);
+                    if (fsSync.existsSync(src)) copyDirSync(src, dst, new Set());
+                    handledSubdirs.add(sub);
+                } else {
+                    // data 根文件（corpus, regex imports, presets 在 config 里已包含）
+                }
+            }
+            // corpus 特殊处理
+            if (categories.has('corpus')) {
+                for (const f of ['range-corpus.json','range-corpus-embeddings.json','range-prefs.json','range-snapshots']) {
+                    const src = path.join(dataDir, f);
+                    const dst = path.join(tmpDataDir, f);
+                    if (fsSync.existsSync(src)) {
+                        if (fsSync.statSync(src).isDirectory()) copyDirSync(src, dst, new Set());
+                        else fsSync.copyFileSync(src, dst);
+                    }
+                }
+            }
+
             res.setHeader('Content-Type', 'application/gzip');
             res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
             const gzip = createGzip();
             pack(tmpDir).pipe(gzip).pipe(res);
             res.on('finish', () => { try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {} });
-            logger.info(`[备份] ${includeKeys ? '含密钥' : '安全'}模式: ${archiveName}`);
+            const catList = [...categories].join(',');
+            logger.info(`[备份] ${includeKeys ? '含密钥' : '安全'} 分类:[${catList}]: ${archiveName}`);
         } catch (e) {
             try { fsSync.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
             logger.error('[备份] 导出失败:', e.message);
@@ -1518,12 +1570,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     app.post('/api/config/restore', requireAuth, async (req, res) => {
         const tmpDir = path.join(__dirname, '..', 'data', '_restore_tmp');
+        const categories = parseBackupCategories(req.query);
         const changes = { replaced: [], merged: [], added: [], skipped: [] };
         try {
             const { extract } = await import('tar-fs');
             const { createGunzip } = await import('zlib');
             const { Writable } = await import('stream');
-            // 接收 tar.gz 流，解压到临时目录
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             fsSync.mkdirSync(tmpDir, { recursive: true });
 
@@ -1548,52 +1600,81 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const autoStream = pack(tmpDir).pipe(createGzip()).pipe(fsSync.createWriteStream(path.join(autoBackupDir, autoBackupFile)));
 
             // 读取备份中的 config.json
-            const backupConfigPath = path.join(tmpDir, 'config.json');
-            if (fsSync.existsSync(backupConfigPath)) {
-                const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
-                const merged = deepMergeConfig(config, backupConfig);
-                // 将合并结果逐字段写回 config 对象（保留引用）
-                for (const key of Object.keys(merged)) {
-                    config[key] = merged[key];
-                }
-                // 删除备份中没有的 key（说明被故意移除）
-                for (const key of Object.keys(config)) {
-                    if (!(key in merged)) delete config[key];
-                }
-                saveConfig(config);
-                // 重新读取确保落盘到正确路径
-                const verifyPaths = [
-                    path.join(__dirname, '..', 'config', 'config.json'),
-                    path.join(__dirname, '..', 'config.json')
-                ];
-                for (const vp of verifyPaths) {
-                    if (fsSync.existsSync(vp)) {
-                        try {
-                            const verifyConfig = JSON.parse(fsSync.readFileSync(vp, 'utf8'));
-                            for (const key of Object.keys(verifyConfig)) {
-                                config[key] = verifyConfig[key];
+            if (categories.has('config')) {
+                const backupConfigPath = path.join(tmpDir, 'config.json');
+                if (fsSync.existsSync(backupConfigPath)) {
+                    const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+                    const merged = deepMergeConfig(config, backupConfig);
+                    for (const key of Object.keys(merged)) {
+                        config[key] = merged[key];
+                    }
+                    for (const key of Object.keys(config)) {
+                        if (!(key in merged)) delete config[key];
+                    }
+                    saveConfig(config);
+                    const verifyPaths = [
+                        path.join(__dirname, '..', 'config', 'config.json'),
+                        path.join(__dirname, '..', 'config.json')
+                    ];
+                    for (const vp of verifyPaths) {
+                        if (fsSync.existsSync(vp)) {
+                            try {
+                                const verifyConfig = JSON.parse(fsSync.readFileSync(vp, 'utf8'));
+                                for (const key of Object.keys(verifyConfig)) {
+                                    config[key] = verifyConfig[key];
+                                }
+                                break;
+                            } catch (verifyErr) {
+                                logger.warn('[恢复] config 验证读取失败:', verifyErr.message);
                             }
-                            break;
-                        } catch (verifyErr) {
-                            logger.warn('[恢复] config 验证读取失败:', verifyErr.message);
                         }
                     }
+                    changes.replaced.push('config.json');
                 }
-                changes.replaced.push('config.json');
+            } else {
+                changes.skipped.push('config.json');
             }
 
-            // 复制备份中的 data 目录内容（智能合并）
+            // 复制备份中的 data 目录内容（按分类过滤）
             const backupDataDir = path.join(tmpDir, 'data');
             if (fsSync.existsSync(backupDataDir)) {
                 const currentDataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
-                const skipDirs = new Set(['_backup_tmp', '_restore_tmp', 'restore-backups', 'chats']);
-                mergeDirSync(backupDataDir, currentDataDir, skipDirs, changes);
+                const skipSubdirs = new Set(['_backup_tmp', '_restore_tmp', 'restore-backups']);
+                // 默认不恢复 chats（记忆库）
+                if (!categories.has('memory')) skipSubdirs.add('chats');
+
+                for (const cat of categories) {
+                    const sub = BACKUP_DATA_SUBDIRS[cat];
+                    if (!sub) continue;
+                    const src = path.join(backupDataDir, sub);
+                    const dst = path.join(currentDataDir, sub);
+                    if (fsSync.existsSync(src)) {
+                        if (cat === 'memory') {
+                            // 记忆库：保留当前 chats 目录，不覆盖
+                            changes.skipped.push('data/chats (记忆库已保留)');
+                        } else {
+                            mergeDirSync(src, dst, new Set(), changes);
+                        }
+                    }
+                }
+                // corpus 根文件
+                if (categories.has('corpus')) {
+                    for (const f of ['range-corpus.json','range-corpus-embeddings.json','range-prefs.json']) {
+                        const src = path.join(backupDataDir, f);
+                        const dst = path.join(currentDataDir, f);
+                        if (fsSync.existsSync(src)) {
+                            fsSync.copyFileSync(src, dst);
+                            changes.replaced.push(`data/${f}`);
+                        }
+                    }
+                }
             }
 
             // 清理
             await new Promise(r => autoStream.on('finish', r));
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             characterManager.clearCache?.();
+            if (categories.has('config')) applyRuntimeConfig();
 
             logger.info('[恢复] 完成:', JSON.stringify(changes));
             res.json({ success: true, changes, autoBackup: autoBackupFile });
@@ -2304,6 +2385,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 return res.status(400).json({ success: false, error: '缺少 dbPath' });
             }
             sessionManager.setConfig(config, { storagePath: dbPath });
+            // 持久化到 config，防止 applyRuntimeConfig 回退
+            config.memory.storage = config.memory.storage || {};
+            config.memory.storage.path = dbPath;
+            config.bindings = config.bindings || {};
+            config.bindings.global = config.bindings.global || {};
+            config.bindings.global.memoryDbPath = dbPath;
             saveConfig(config);
             logger.info(`手动切换数据库: ${dbPath}`);
             res.json({ success: true, dbPath });
@@ -3628,6 +3715,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
             }
             applyRuntimeConfig();
             saveConfig(config);
+            // 同步保存到独立文件，支持备份分类导出
+            try {
+                const presetsDir = path.join(config.chat?.dataDir || path.join(__dirname, '..', 'data'), 'presets');
+                fsSync.mkdirSync(presetsDir, { recursive: true });
+                fsSync.writeFileSync(path.join(presetsDir, `${presetImportRecordId}.json`), JSON.stringify(record, null, 2), 'utf8');
+            } catch (e) { logger.warn('[预设] 保存到文件失败:', e.message); }
             logger.info(`[API ${req.requestId || 'no-id'}] preset import completed`, {
                 importedFields,
                 importedRegexCount: importedRegexRules.length,
@@ -3663,6 +3756,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
             }
             applyRuntimeConfig();
             saveConfig(config);
+            // 同步删除预设文件
+            try {
+                const presetsDir = path.join(config.chat?.dataDir || path.join(__dirname, '..', 'data'), 'presets');
+                const presetFile = path.join(presetsDir, `${req.params.id}.json`);
+                if (fsSync.existsSync(presetFile)) fsSync.unlinkSync(presetFile);
+            } catch {}
             res.json({
                 success: true,
                 removedCount: result.removedCount,

@@ -132,6 +132,41 @@ function ensureBindingConfig(config) {
     }
 }
 
+function syncPresetFiles(config) {
+    const presetsDir = join(config.chat?.dataDir || join(ROOT_DIR, 'data'), 'presets');
+    fs.mkdirSync(presetsDir, { recursive: true });
+    try {
+        ensureBindingConfig(config);
+        config.imports = config.imports || {};
+        config.imports.presetFiles = config.imports.presetFiles || [];
+
+        // 文件 → config：把磁盘上有但 config 里没有的预设加载进去
+        const existingIds = new Set(config.imports.presetFiles.map(p => p.id));
+        const diskFiles = fs.readdirSync(presetsDir).filter(f => f.endsWith('.json'));
+        for (const file of diskFiles) {
+            const id = file.replace(/\.json$/, '');
+            if (existingIds.has(id)) continue;
+            try {
+                const record = JSON.parse(fs.readFileSync(join(presetsDir, file), 'utf8'));
+                if (record && record.type === 'preset') {
+                    config.imports.presetFiles.unshift(record);
+                }
+            } catch {}
+        }
+
+        // config → 文件：旧版本升级时，把 config 里嵌的预设写出到磁盘
+        for (const record of config.imports.presetFiles) {
+            if (!record?.id) continue;
+            const filePath = join(presetsDir, `${record.id}.json`);
+            if (!fs.existsSync(filePath)) {
+                try {
+                    fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8');
+                } catch {}
+            }
+        }
+    } catch {}
+}
+
 function getCharacterBinding(config, characterName) {
     ensureBindingConfig(config);
     return config.bindings.characters[characterName] || {
@@ -920,6 +955,8 @@ async function callWithTimeout(promiseFactory, timeoutMs) {
 
 const config = loadConfig();
 ensureBindingConfig(config);
+// 从 data/presets/ 同步预设文件到 config（支持备份独立恢复）
+syncPresetFiles(config);
 const logger = new Logger();
 const DATA_DIR = config.chat?.dataDir || join(ROOT_DIR, 'data');
 
@@ -2708,6 +2745,44 @@ wss.on('connection', (ws) => {
     });
 });
 
+async function handlePokeEvent(event) {
+    if (config.chat?.pokeReaction === false) return;
+    const selfId = String(bot.selfId || '');
+    const targetId = String(event.target_id || '');
+    const userId = String(event.user_id || '');
+    const groupId = event.group_id;
+
+    // 只响应戳机器人的事件
+    if (targetId !== selfId) return;
+
+    // 冷却：15秒内不重复响应
+    const now = Date.now();
+    if (_lastPokeResponse && (now - _lastPokeResponse) < 15000) return;
+    _lastPokeResponse = now;
+
+    try {
+        // 将戳一戳注入为对话消息，让角色自然感知
+        const defaultCharacter = config.chat?.defaultCharacter || '';
+        if (!defaultCharacter || !groupId) return;
+        const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+        const senderName = event.sender?.nickname || event.sender?.card || '群友';
+        const pokeText = `[群聊|QQ:${userId}|昵称:${senderName}|群号:${groupId}|群名:${groupId}|时间:${timestamp}] （戳了戳你）`;
+        const memoryScope = buildMemoryScope(config, { message_type: 'group', group_id: groupId, user_id: userId });
+        runtime.enqueue({
+            sessionKey: memoryScope.sessionKey,
+            memoryScope,
+            dedupeKey: `poke:${groupId}:${userId}:${now}`,
+            event: { message_type: 'group', group_id: groupId, user_id: userId },
+            plainText: '（戳了戳你）',
+            structuredText: pokeText,
+            isAtMe: true,
+            replyToMessageId: null,
+            triggerReason: 'poke'
+        });
+    } catch {}
+}
+let _lastPokeResponse = null;
+
 async function handleMessage(event) {
     if (!event || event.post_type !== 'message') {
         return;
@@ -2725,6 +2800,11 @@ async function handleMessage(event) {
     }
     if (!shouldRespond(config, event, plainText, isAtMe)) {
         return;
+    }
+
+    // 表情回应：收到消息后自动加表情，表示已收到
+    if (config.chat?.emojiReaction !== false && event.message_id && bot?.setMsgEmojiLike) {
+        bot.setMsgEmojiLike(event.message_id).catch(() => {});
     }
 
     lastInboundMessageAt = Date.now();
@@ -2757,7 +2837,14 @@ async function handleMessage(event) {
     });
 }
 
-bot.on('message', handleMessage);
+bot.on('message', (event) => {
+    // 戳一戳通知单独处理
+    if (event && event.post_type === 'notice' && event.notice_type === 'notify' && event.sub_type === 'poke') {
+        handlePokeEvent(event);
+        return;
+    }
+    handleMessage(event);
+});
 bot.on('connected', () => {
     logger.info(`已连接到 OneBot: ${config.onebot.url}`);
 });
@@ -2769,7 +2856,7 @@ bot.on('disconnected', () => {
 if (config.mcp?.enabled !== false) {
     const mcpPath = config.mcp?.path || '/mcp';
     const { createMCPHandler } = await import('./mcp.js');
-    app.post(mcpPath, createMCPHandler(managers, config, saveConfig));
+    app.all(mcpPath, createMCPHandler(managers, config, saveConfig));
     logger.info(`MCP 端点已挂载: ${mcpPath}`);
 } else {
     logger.info('MCP 端点已禁用');

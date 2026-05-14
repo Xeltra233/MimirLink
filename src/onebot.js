@@ -454,6 +454,45 @@ export class OneBotClient extends EventEmitter {
     }
 
     /**
+     * 给消息添加表情回应，表示已收到
+     * @param {string} messageId 原始消息 ID
+     * @param {string|number} emojiId QQ 表情 ID，默认 124 (OK 手势)
+     */
+    async setMsgEmojiLike(messageId, emojiId = '289') {
+        try {
+            await this._call('set_msg_emoji_like', {
+                message_id: parseInt(messageId, 10),
+                emoji_id: String(emojiId),
+                emoji_type: '1'
+            });
+        } catch (e) {
+            this.logger?.debug?.(`表情回应失败 (API 可能不支持): ${e.message}`);
+        }
+    }
+
+    /**
+     * 戳一戳群成员
+     * @param {string|number} groupId 群号
+     * @param {string|number} userId 目标用户 QQ 号
+     */
+    async sendGroupPoke(groupId, userId) {
+        return this._call('group_poke', {
+            group_id: parseInt(groupId, 10),
+            user_id: parseInt(userId, 10)
+        });
+    }
+
+    /**
+     * 私聊戳一戳
+     * @param {string|number} userId 目标用户 QQ 号
+     */
+    async sendFriendPoke(userId) {
+        return this._call('friend_poke', {
+            user_id: parseInt(userId, 10)
+        });
+    }
+
+    /**
      * 手动重新连接
      */
     reconnect() {
