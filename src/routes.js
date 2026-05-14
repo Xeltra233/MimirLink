@@ -1203,9 +1203,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     const applyRuntimeConfig = () => {
         aiClient.updateConfig(config.ai || {});
-        sessionManager.setConfig(config);
         const currentCharacter = config.chat?.defaultCharacter || '';
         const effectiveBinding = currentCharacter ? PromptBuilder.getEffectiveBinding(config, currentCharacter) : PromptBuilder.getEffectiveBinding(config, '');
+        sessionManager.setConfig(config, { storagePath: effectiveBinding.memoryDbPath || config.memory?.storage?.path });
         regexProcessor.updateConfig(
             config.regex || {},
             effectiveBinding.regexRules,
@@ -2294,6 +2294,22 @@ export function setupRoutes(app, config, saveConfig, managers) {
         } catch (error) {
             logger.error('获取数据库列表失败', error);
             res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/memory/activate', requireAuth, async (req, res) => {
+        try {
+            const { dbPath } = req.body || {};
+            if (!dbPath) {
+                return res.status(400).json({ success: false, error: '缺少 dbPath' });
+            }
+            sessionManager.setConfig(config, { storagePath: dbPath });
+            saveConfig(config);
+            logger.info(`手动切换数据库: ${dbPath}`);
+            res.json({ success: true, dbPath });
+        } catch (e) {
+            logger.error('切换数据库失败', e);
+            res.status(500).json({ success: false, error: e.message });
         }
     });
 

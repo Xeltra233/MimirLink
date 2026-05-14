@@ -8536,6 +8536,26 @@
             }
         }
 
+        async function switchActiveDatabase(dbPath) {
+            try {
+                const res = await fetch('/api/memory/activate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ dbPath })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('已切换数据库');
+                    await loadMemoryDatabases();
+                    await loadStatus();
+                } else {
+                    showToast('切换失败: ' + data.error, true);
+                }
+            } catch (e) {
+                showToast('切换失败', true);
+            }
+        }
+
         async function loadMemoryDatabases() {
             try {
                 const res = await fetch('/api/memory/databases');
@@ -8564,7 +8584,7 @@
                         ? `会话 ${db.stats.totalSessions} · 消息 ${db.stats.totalMessages} · 摘要 ${db.stats.totalSummaries}`
                         : '暂无统计';
                     return `
-                        <div class="list-item ${active ? 'selected' : ''}">
+                        <div class="list-item ${active ? 'selected' : ''}" onclick="switchActiveDatabase('${escapeHtml(db.path)}')" style="cursor:pointer">
                             <div>
                                 <div class="name">${escapeHtml(db.path)}</div>
                                 <div class="meta">${sizeMb} MB · ${updatedAt}</div>
