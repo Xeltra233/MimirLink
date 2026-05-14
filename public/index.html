@@ -12740,6 +12740,32 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             } catch(e) { showToast('备份失败: ' + e.message, true); }
         }
 
+        function showRestoreConfirmModal(file, cats, onConfirm) {
+            const catLabel = cats === 'all' ? '全部' : cats.replace(/,/g, '+');
+            const hasMemory = cats === 'all' || cats.split(',').includes('memory');
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal" style="max-width:420px;">
+                    <h3>确认恢复备份</h3>
+                    <p style="margin-bottom:8px;">文件：<b>${escapeHtml(file.name)}</b></p>
+                    <p style="margin-bottom:8px;">恢复类别：<b>${catLabel}</b></p>
+                    ${hasMemory ? '<p style="color:var(--danger);margin-bottom:8px;">⚠️ 你勾选了记忆库，当前聊天记录将被覆盖！</p>' : ''}
+                    <p class="hint-text">恢复前会自动备份当前状态到 data/restore-backups/。</p>
+                    <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
+                        <button class="secondary" id="restore-cancel-btn">取消</button>
+                        <button id="restore-confirm-btn">确认恢复</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.querySelector('#restore-cancel-btn').addEventListener('click', () => overlay.remove());
+            overlay.querySelector('#restore-confirm-btn').addEventListener('click', () => {
+                overlay.remove();
+                onConfirm();
+            });
+        }
+
         async function handleRestoreFile(event) {
             const file = event.target.files[0];
             if (!file) return;
@@ -12749,32 +12775,28 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 return;
             }
             const cats = getBackupCategories();
-            const hasMemory = cats === 'all' || cats.split(',').includes('memory');
-            const catLabel = cats === 'all' ? '全部' : cats.replace(/,/g, '+');
-            const warn = hasMemory ? '\n⚠️ 你勾选了记忆库，当前聊天记录将被覆盖！' : '';
-            if (!confirm(`确定恢复 "${file.name}" 吗？\n恢复类别: ${catLabel}${warn}\n恢复前会自动备份当前状态。`)) {
-                event.target.value = ''; return;
-            }
-            try {
-                const res = await fetch('/api/config/restore?categories=' + encodeURIComponent(cats), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/octet-stream' },
-                    body: file
-                });
-                const data = await res.json();
-                if (data.success) {
-                    const c = data.changes;
-                    const parts = [];
-                    if (c.replaced?.length) parts.push(`替换: ${c.replaced.length}项`);
-                    if (c.merged?.length) parts.push(`合并: ${c.merged.length}项`);
-                    if (c.added?.length) parts.push(`新增: ${c.added.length}项`);
-                    if (c.skipped?.length) parts.push(`跳过: ${c.skipped.length}项`);
-                    showToast(`恢复完成！${parts.join(' | ')}。自动备份: ${data.autoBackup}。即将刷新...`);
-                    setTimeout(() => location.reload(), 2000);
-                } else {
-                    showToast('恢复失败: ' + data.error, true);
-                }
-            } catch(e) { showToast('恢复失败: ' + e.message, true); }
+            showRestoreConfirmModal(file, cats, async () => {
+                try {
+                    const res = await fetch('/api/config/restore?categories=' + encodeURIComponent(cats), {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/octet-stream' },
+                        body: file
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        const c = data.changes;
+                        const parts = [];
+                        if (c.replaced?.length) parts.push(`替换: ${c.replaced.length}项`);
+                        if (c.merged?.length) parts.push(`合并: ${c.merged.length}项`);
+                        if (c.added?.length) parts.push(`新增: ${c.added.length}项`);
+                        if (c.skipped?.length) parts.push(`跳过: ${c.skipped.length}项`);
+                        showToast(`恢复完成！${parts.join(' | ')}。自动备份: ${data.autoBackup}。即将刷新...`);
+                        setTimeout(() => location.reload(), 2000);
+                    } else {
+                        showToast('恢复失败: ' + data.error, true);
+                    }
+                } catch(e) { showToast('恢复失败: ' + e.message, true); }
+            });
             event.target.value = '';
         }
         // OneBot 重连
