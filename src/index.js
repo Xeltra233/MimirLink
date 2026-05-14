@@ -183,15 +183,13 @@ function syncPresetFiles(config) {
             } catch {}
         }
 
-        // config → 文件：旧版本升级时，把 config 里嵌的预设写出到磁盘
+        // config → 文件：始终保持磁盘文件与 config 同步
         for (const record of config.imports.presetFiles) {
             if (!record?.id) continue;
             const filePath = join(presetsDir, `${record.id}.json`);
-            if (!fs.existsSync(filePath)) {
-                try {
-                    fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8');
-                } catch {}
-            }
+            try {
+                fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8');
+            } catch {}
         }
     } catch {}
 }
