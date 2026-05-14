@@ -1259,6 +1259,32 @@ export class AIClient {
                 }
             }
 
+            // 备用模型切换
+            const backupModel = this.config.chat?.backupModel;
+            const backupProviderId = this.config.chat?.backupModelProviderId;
+            if (backupModel && backupProviderId) {
+                const backupProvider = (this.config.ai?.providers || []).find(p => p.id === backupProviderId);
+                if (backupProvider) {
+                    this.logPipelineStage('降级全失败，尝试切换到备用模型', { provider: backupProviderId, model: backupModel });
+                    const backupOverrides = {
+                        ...overrides,
+                        model: backupModel,
+                        baseUrl: backupProvider.baseUrl || overrides.baseUrl,
+                        apiKey: backupProvider.apiKey || overrides.apiKey
+                    };
+                    const backupPayload = this.buildChatPayload(messages, backupOverrides);
+                    const backupResult = await this.sendChatRequest(backupPayload, backupOverrides);
+                    if (backupResult.ok) {
+                        this.logPipelineStage('备用模型请求成功', { responseModel: backupResult.data?.model || null });
+                        return this.extractChatContentWithPrefillFallback(backupResult.data, messages, backupOverrides);
+                    }
+                    this.logPipelineStage('备用模型请求也失败', {
+                        status: backupResult.status,
+                        errorText: String(backupResult.errorText || '').slice(0, 200)
+                    });
+                }
+            }
+
             throw new Error(`AI API 错误: ${lastFallbackResult.status} - ${lastFallbackResult.errorText}`);
         }
 
@@ -1266,6 +1292,33 @@ export class AIClient {
             status: primaryResult.status,
             errorText: String(primaryResult.errorText || '').slice(0, 500)
         });
+
+        // 备用模型切换
+        const backupModel = this.config.chat?.backupModel;
+        const backupProviderId = this.config.chat?.backupModelProviderId;
+        if (backupModel && backupProviderId) {
+            const backupProvider = (this.config.ai?.providers || []).find(p => p.id === backupProviderId);
+            if (backupProvider) {
+                this.logPipelineStage('尝试切换到备用模型', { provider: backupProviderId, model: backupModel });
+                const backupOverrides = {
+                    ...overrides,
+                    model: backupModel,
+                    baseUrl: backupProvider.baseUrl || overrides.baseUrl,
+                    apiKey: backupProvider.apiKey || overrides.apiKey
+                };
+                const backupPayload = this.buildChatPayload(messages, backupOverrides);
+                const backupResult = await this.sendChatRequest(backupPayload, backupOverrides);
+                if (backupResult.ok) {
+                    this.logPipelineStage('备用模型请求成功', { responseModel: backupResult.data?.model || null });
+                    return this.extractChatContentWithPrefillFallback(backupResult.data, messages, backupOverrides);
+                }
+                this.logPipelineStage('备用模型请求也失败', {
+                    status: backupResult.status,
+                    errorText: String(backupResult.errorText || '').slice(0, 200)
+                });
+            }
+        }
+
         throw new Error(`AI API 错误: ${primaryResult.status} - ${primaryResult.errorText}`);
     }
 
@@ -1303,9 +1356,29 @@ export class AIClient {
                 toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean)
             });
 
-            const result = await this.sendChatRequest(payload, overrides);
+            let result = await this.sendChatRequest(payload, overrides);
             if (!result.ok) {
-                throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
+                // 备用模型切换
+                const backupModel2 = this.config.chat?.backupModel;
+                const backupProviderId2 = this.config.chat?.backupModelProviderId;
+                if (backupModel2 && backupProviderId2) {
+                    const backupProvider2 = (this.config.ai?.providers || []).find(p => p.id === backupProviderId2);
+                    if (backupProvider2) {
+                        this.logPipelineStage('chatWithTools 主模型失败，尝试备用模型');
+                        const backupOv = { ...overrides, model: backupModel2, baseUrl: backupProvider2.baseUrl || overrides.baseUrl, apiKey: backupProvider2.apiKey || overrides.apiKey };
+                        const backupPayload = this.buildToolsChatPayload(conversation, tools, backupOv);
+                        const backupResult = await this.sendChatRequest(backupPayload, backupOv);
+                        if (backupResult.ok) {
+                            result = backupResult;
+                            this.logPipelineStage('备用模型请求成功');
+                        } else {
+                            this.logPipelineStage('备用模型也失败');
+                        }
+                    }
+                }
+                if (!result.ok) {
+                    throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
+                }
             }
 
             const assistantMessage = result.data?.choices?.[0]?.message || {};
