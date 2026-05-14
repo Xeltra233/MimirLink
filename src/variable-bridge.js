@@ -319,6 +319,13 @@ export function buildVariableStatusBlock(sessionManager, scopeOptions) {
             vars = sessionManager.listVariables?.({ ...scopeOptions, scopeKey: 'default' }) || [];
         }
 
+        // 过滤内部宏变量（{{setvar}} 产生的 COT-*/gs-* 等）
+        const SYSTEM_VAR_PREFIXES = ['COT-', 'gs-', 'mvuvar', 'supernsfw'];
+        vars = vars.filter(v => {
+            const key = v.key || v.title || '';
+            return !SYSTEM_VAR_PREFIXES.some(p => key.startsWith(p));
+        });
+
         if (vars.length === 0) return '';
 
         const entries = vars.map(v => {
@@ -374,6 +381,17 @@ export function resolveVariableMacros(text, sessionManager, scopeOptions) {
         const withPrefix = 'stat_data.' + cleanKey;
         if (varMap.has(withPrefix)) return varMap.get(withPrefix);
         return match;
+    });
+
+    // {{format_message_variable::stat_data}} — SillyTavern 标准宏，展示所有变量
+    result = result.replace(/\{\{format_message_variable::([^}]+)\}\}/gi, (match, prefix) => {
+        const lines = [];
+        for (const [k, v] of varMap) {
+            // 过滤掉 stat_data. 前缀重复键
+            if (k.startsWith('stat_data.')) continue;
+            lines.push(`${k}: ${v}`);
+        }
+        return lines.length > 0 ? lines.join('\n') : match;
     });
 
     return result;

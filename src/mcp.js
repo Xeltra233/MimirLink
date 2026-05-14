@@ -113,12 +113,57 @@ export function createMCPHandler(managers, config, saveConfig) {
                         { character, worldBook, presetConfig }
                     );
 
+                    // 变量注入：setvar/getvar 宏 + status_current_variable 状态块
+                    try {
+                        const { applyStaticSetvarsFromText, buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
+                        const scopeOpts = { scopeType: 'user_persistent', scopeKey: 'user:test', characterName: charName, presetName: presetConfig?.name || '' };
+                        const allMessages = built.messages;
+                        for (const msg of allMessages) {
+                            if (typeof msg.content === 'string') {
+                                const r = applyStaticSetvarsFromText(msg.content, sessionManager, scopeOpts, { keepMacros: false });
+                                msg.content = r.cleanedText;
+                            }
+                        }
+                        for (const msg of allMessages) {
+                            if (typeof msg.content === 'string') {
+                                msg.content = resolveVariableMacros(msg.content, sessionManager, scopeOpts);
+                            }
+                        }
+                        const statusBlock = buildVariableStatusBlock(sessionManager, scopeOpts);
+                        if (statusBlock) {
+                            const sysIdx = allMessages.findIndex(m => m.role === 'system');
+                            if (sysIdx >= 0) allMessages[sysIdx].content += '\n' + statusBlock;
+                            else allMessages.unshift({ role: 'system', content: statusBlock });
+                        }
+                    } catch {}
+
                     const aiResult = await aiClient.chat(built.messages, {});
                     const reply = aiClient.getVisibleResponseContent(aiResult);
                     const usage = aiResult?.usage || null;
 
+                    // 变量提取：UpdateVariable JSONPatch
+                    let appliedVars = [];
+                    try {
+                        const { extractAndApplyVariables } = await import('./variable-bridge.js');
+                        const scopeOpts = { scopeType: 'user_persistent', scopeKey: 'user:test', characterName: charName, presetName: presetConfig?.name || '' };
+                        const result = extractAndApplyVariables(reply, sessionManager, scopeOpts);
+                        appliedVars = result.applied || [];
+                    } catch {}
+
                     return {
-                        content: [{ type: 'text', text: JSON.stringify({ reply, tokenUsage: usage, fakeHistoryCount: recentMessages.length }, null, 2) }]
+                        content: [{ type: 'text', text: JSON.stringify({
+                            reply,
+                            tokenUsage: usage,
+                            fakeHistoryCount: recentMessages.length,
+                            variablesApplied: appliedVars.length,
+                            messages: built.messages.map(m => ({
+                                role: m.role,
+                                content: m.content.length > 3000
+                                    ? m.content.slice(0, 1500) + '\n...（截断，共' + m.content.length + '字）...\n' + m.content.slice(-1500)
+                                    : m.content,
+                                meta: m.meta
+                            }))
+                        }, null, 2) }]
                     };
                 } catch (e) {
                     return { content: [{ type: 'text', text: `测试失败: ${e.message}` }] };
