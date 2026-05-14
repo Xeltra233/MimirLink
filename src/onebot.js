@@ -456,7 +456,7 @@ export class OneBotClient extends EventEmitter {
     /**
      * 给消息添加表情回应，表示已收到
      * @param {string} messageId 原始消息 ID
-     * @param {string|number} emojiId QQ 表情 ID，默认 124 (OK 手势)
+     * @param {string|number} emojiId QQ 表情 ID，默认 289
      */
     async setMsgEmojiLike(messageId, emojiId = '289') {
         try {

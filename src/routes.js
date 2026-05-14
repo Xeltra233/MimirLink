@@ -1528,7 +1528,6 @@ export function setupRoutes(app, config, saveConfig, managers) {
             }
 
             // data 子目录按分类复制
-            const handledSubdirs = new Set();
             for (const cat of categories) {
                 const sub = BACKUP_DATA_SUBDIRS[cat];
                 if (sub === undefined) continue;
@@ -1537,7 +1536,6 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     const src = path.join(dataDir, sub);
                     const dst = path.join(tmpDataDir, sub);
                     if (fsSync.existsSync(src)) copyDirSync(src, dst, new Set());
-                    handledSubdirs.add(sub);
                 } else {
                     // data 根文件（corpus, regex imports, presets 在 config 里已包含）
                 }
@@ -3665,13 +3663,30 @@ export function setupRoutes(app, config, saveConfig, managers) {
         res.send(JSON.stringify(payload, null, 2));
     });
 
+    // 清理 ST 预设只保留 prompts 数组，踢掉 temperature/top_p/identifiers 等无用水印
+    function stripPresetToPrompts(importedPreset) {
+        if (!importedPreset?.prompts) return importedPreset;
+        const cleaned = (importedPreset.prompts || []).map(p => ({
+            name: String(p.name || '').trim(),
+            content: String(p.content || ''),
+            enabled: p.enabled !== false,
+            role: p.role || 'system',
+            injection_position: p.injection_position ?? 0,
+            injection_depth: p.injection_depth ?? 0,
+            system_prompt: p.system_prompt === true,
+            marker: p.marker === true,
+            forbid_overrides: p.forbid_overrides === true
+        }));
+        return { prompts: cleaned };
+    }
+
     app.post('/api/preset/import', requireAuth, (req, res) => {
         try {
             logger.info(`[API ${req.requestId || 'no-id'}] preset import started`, {
                 bodyPreview: summarizePayload(req.body, 1200)
             });
             ensureImportsConfig();
-            const preset = PromptBuilder.importPreset(req.body);
+            const preset = stripPresetToPrompts(PromptBuilder.importPreset(req.body));
             const diagnostics = PromptBuilder.diagnosePresetImport(req.body);
             const importedRegexRules = RegexProcessor.importRules(req.body);
             const regexDiagnostics = RegexProcessor.diagnoseImport(req.body);

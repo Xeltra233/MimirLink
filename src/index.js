@@ -132,6 +132,35 @@ function ensureBindingConfig(config) {
     }
 }
 
+function stripLegacyPresetMetadata(config) {
+    const presetFiles = config.imports?.presetFiles;
+    if (!Array.isArray(presetFiles)) return;
+    let cleaned = 0;
+    for (const record of presetFiles) {
+        const preset = record?.importedPreset;
+        if (!preset) continue;
+        // 如果 importedPreset 有 prompts 以外的顶层字段，说明是旧版 ST 水印
+        const keys = Object.keys(preset);
+        const hasWatermark = keys.some(k => !['prompts','prompt_order'].includes(k));
+        if (!hasWatermark) continue;
+        record.importedPreset = {
+            prompts: (preset.prompts || []).map(p => ({
+                name: String(p.name || '').trim(),
+                content: String(p.content || ''),
+                enabled: p.enabled !== false,
+                role: p.role || 'system',
+                injection_position: p.injection_position ?? 0,
+                injection_depth: p.injection_depth ?? 0,
+                system_prompt: p.system_prompt === true,
+                marker: p.marker === true,
+                forbid_overrides: p.forbid_overrides === true
+            }))
+        };
+        cleaned++;
+    }
+    if (cleaned > 0) saveConfig(config);
+}
+
 function syncPresetFiles(config) {
     const presetsDir = join(config.chat?.dataDir || join(ROOT_DIR, 'data'), 'presets');
     fs.mkdirSync(presetsDir, { recursive: true });
@@ -955,6 +984,8 @@ async function callWithTimeout(promiseFactory, timeoutMs) {
 
 const config = loadConfig();
 ensureBindingConfig(config);
+// 清理旧版 ST 预设水印（temperature/top_p/UUID identifiers 等无用水印）
+stripLegacyPresetMetadata(config);
 // 从 data/presets/ 同步预设文件到 config（支持备份独立恢复）
 syncPresetFiles(config);
 const logger = new Logger();
@@ -2766,7 +2797,8 @@ async function handlePokeEvent(event) {
         if (!defaultCharacter || !groupId) return;
         const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
         const senderName = event.sender?.nickname || event.sender?.card || '群友';
-        const pokeText = `[群聊|QQ:${userId}|昵称:${senderName}|群号:${groupId}|群名:${groupId}|时间:${timestamp}] （戳了戳你）`;
+        const groupName = event.group_name || groupId;
+        const pokeText = `[群聊|QQ:${userId}|昵称:${senderName}|群号:${groupId}|群名:${groupName}|时间:${timestamp}] （戳了戳你）`;
         const memoryScope = buildMemoryScope(config, { message_type: 'group', group_id: groupId, user_id: userId });
         runtime.enqueue({
             sessionKey: memoryScope.sessionKey,
