@@ -151,9 +151,9 @@ export class CharacterManager {
                     const nullIdx = chunkData.indexOf(0);
                     if (nullIdx !== -1) {
                         const keyword = chunkData.toString('ascii', 0, nullIdx);
-                        if (keyword === 'chara') {
+                        if (keyword === 'chara' || keyword === 'ccv3') {
                             // 替换这个 chunk
-                            const newKeyword = Buffer.from('chara\0', 'ascii');
+                            const newKeyword = Buffer.from(keyword + '\0', 'ascii');
                             const newData = Buffer.concat([newKeyword, Buffer.from(base64Str, 'utf8')]);
                             const newLength = Buffer.alloc(4);
                             newLength.writeUInt32BE(newData.length, 0);

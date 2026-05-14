@@ -5746,7 +5746,6 @@
                         <button class="secondary" onclick="document.getElementById('config-restore-file').click()" style="margin-left:8px;">📤 恢复备份</button>
                         <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="inspectRestoreFile(event)">
                     </div>
-                    </div>
                 </div>
                 </div>
             </div>
@@ -7652,12 +7651,12 @@
                 return;
             }
 
-            // 按 scopeKey 分组：纯数字开头 → 用户变量，其余 → 全局变量
+            // 按 scopeKey 分组：纯数字或 user: 开头 → 用户变量，其余 → 全局变量
             const groups = new Map();
             const globalVars = [];
             for (const item of variables) {
                 const sk = (item.scopeKey || 'default').trim();
-                if (/^\d+/.test(sk) && sk !== 'default') {
+                if ((/^\d+/.test(sk) || sk.startsWith('user:')) && sk !== 'default') {
                     if (!groups.has(sk)) groups.set(sk, []);
                     groups.get(sk).push(item);
                 } else {
@@ -7684,8 +7683,9 @@
             if (groups.size > 0) {
                 html += '<div class="variable-group-section"><div class="variable-group-title">👤 用户变量</div>';
                 for (const [userId, vars] of groups) {
+                    const label = userId.startsWith('user:') ? `用户 ${escapeHtml(userId.replace('user:',''))}` : `QQ: ${escapeHtml(userId)}`;
                     html += `<details class="variable-group" open>
-                        <summary class="variable-group-summary">QQ: ${escapeHtml(userId)} <span class="meta-inline">(${vars.length} 条)</span></summary>
+                        <summary class="variable-group-summary">${label} <span class="meta-inline">(${vars.length} 条)</span></summary>
                         <div class="variable-group-items">
                             ${vars.map(renderItem).join('')}
                         </div>
@@ -9178,18 +9178,32 @@
 
             const slotInfo = slotMap[identifier] || null;
             if (!content && slotInfo) {
+                // 尝试从当前角色卡读取实际内容
+                let actualContent = '';
+                const char = currentCharacterData;
+                if (char) {
+                    const fieldMap = {
+                        scenario: () => char.scenario || char.data?.scenario || '',
+                        charDescription: () => char.description || char.data?.description || '',
+                        charPersonality: () => char.personality || char.data?.personality || '',
+                        dialogueExamples: () => char.mes_example || char.data?.mes_example || '',
+                        personaDescription: () => char.persona_description || char.data?.persona_description || ''
+                    };
+                    if (fieldMap[identifier]) actualContent = fieldMap[identifier]();
+                }
+                const contentPreview = actualContent ? `（当前角色卡内容，${actualContent.length}字）` : '（未加载角色卡）';
                 return {
-                    summary: `这是酒馆固定槽位：${slotInfo.slotTitle}`,
+                    summary: `固定槽位：${slotInfo.slotTitle}`,
                     details: [
                         `槽位标识：${identifier}`,
-                        `运行时来源键：${slotInfo.runtimeSource}`,
-                        `运行时实际内容：${slotInfo.runtimeValue}`,
-                        `发送角色：${slotInfo.role}`,
+                        `数据来源：角色卡 ${slotInfo.runtimeSource} 字段`,
+                        `内容状态：${contentPreview}`,
+                        actualContent ? `内容预览：${actualContent.slice(0, 200)}${actualContent.length > 200 ? '...' : ''}` : '未加载角色卡，无法显示内容预览',
                     ],
                     mappedFields: [slotInfo.runtimeSource],
                     isRuntimeSlot: true,
                     isReadonly: true,
-                    displayContent: `[SillyTavern 运行时槽位]\nidentifier: ${identifier}\nruntime source: ${slotInfo.runtimeSource}\nruntime value: ${slotInfo.runtimeValue}`
+                    displayContent: actualContent || `[运行时槽位，数据来源于角色卡 ${slotInfo.runtimeSource}]`
                 };
             }
 
@@ -9470,7 +9484,10 @@
                     </div>
                 </div>
             `;
+            // 固定槽位：显示来源，隐藏请求参数面板
+            const aiPanel = document.querySelector('.preset-ai-panel');
             if (sourceDetails.isRuntimeSlot) {
+                if (aiPanel) aiPanel.style.display = 'none';
                 container.innerHTML = `
                     <div class="preset-editor-header">
                         <div>
@@ -9481,18 +9498,15 @@
                     <div class="preset-editor-content">
                         <div class="preset-editor-grid">
                             <div class="form-group full">
-                                <label>固定槽位说明</label>
+                                <label>数据来源</label>
                                 <div class="runtime-preview-meta" style="white-space:pre-wrap;line-height:1.8;">${escapeHtml(sourceDetails.details.join('\n'))}</div>
-                            </div>
-                            <div class="form-group full">
-                                <label>酒馆行为</label>
-                                <div class="runtime-preview-meta" style="line-height:1.8;">SillyTavern 会在真正发送请求时，把对应来源的运行时内容塞进这个槽位。它不是普通预设正文，所以这里不提供编辑框。</div>
                             </div>
                         </div>
                     </div>
                 `;
                 return;
             }
+            if (aiPanel) aiPanel.style.display = '';
             const readonlyAttr = sourceDetails.isReadonly ? 'readonly' : '';
             const readonlyHintHtml = sourceDetails.isReadonly
                 ? `<div class="form-group full"><div class="runtime-preview-meta" style="color:var(--warning);line-height:1.7;">该条目来源于外部字段映射，这里只读展示，不能在预设编辑器里直接修改。</div></div>`
