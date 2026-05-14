@@ -117,26 +117,28 @@ Claude Code 挂载（`.claude/settings.json`）：
 {"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}
 ```
 
-**25 个工具：**
+**27 个工具：**
 
 | 工具 | 描述 |
 |---|---|
 | **靶场测试** | |
-| `range_test` | 发送测试消息，获取 AI 回复 |
+| `range_test` | 发送测试消息，支持 `fakeHistory` 伪造记忆 |
 | `range_analyze` | 评分回复质量，检测八股/冗余/角色偏离 |
 | `range_batch_test` | 批量发送测试消息 |
 | `range_get_prefs` | 读取靶场偏好（角色/世界书/预设/模型） |
 | **角色卡** | |
 | `range_list_characters` | 列出所有可用角色 |
+| `range_get_character_card` | 获取角色卡完整内容（system_prompt、first_mes 等） |
 | `range_validate_character` | 校验角色卡：必要字段、八股词、HTML标签、ST兼容性 |
 | `range_update_character` | 修改角色卡字段，直接写入 PNG tEXt 块 |
 | **世界书** | |
+| `range_get_worldbook_entries` | 获取世界书所有条目完整内容，支持 `search` 过滤 |
 | `range_load_worldbook` | 加载指定角色的世界书为当前活跃 |
 | `range_validate_worldbook` | 校验世界书 ST 格式兼容性 |
 | `range_fix_worldbook_format` | 自动修复非标字段（uid→id, order→insertion_order 等） |
 | `range_update_worldbook_entry` | 添加/修改/删除/合并世界书条目 |
 | **预设** | |
-| `range_get_preset_status` | 列出所有预设 prompt 及启用状态 |
+| `range_get_preset_status` | 列出所有预设 prompt 及启用状态，支持 `includeContent` 返回完整内容 |
 | `range_set_preset_prompt` | 启用/禁用/修改指定预设 prompt |
 | `range_batch_set_prompts` | 批量启用/禁用预设 prompt（关键词匹配） |
 | `range_validate_preset` | 校验预设格式完整性 |
@@ -161,8 +163,20 @@ Claude Code 挂载（`.claude/settings.json`）：
 - 角色劫持/越狱/权限伪装/上下文污染全覆盖
 
 ### 备份恢复
-- 配置页一键导出 tar.gz（safe 脱敏 / full 含 Key）
-- 含全部角色卡、世界书、数据库、会话、语料
+- 配置页分类勾选导出 tar.gz（配置/角色/世界书/记忆/预设/语料/知识/正则）
+- 安全模式（脱敏）和完整模式（含 Key）
+- 恢复支持同分类过滤，升级角色卡不勾记忆库即可保留数据
+- 恢复前自动备份当前状态
+
+### 表情回应与戳一戳
+- 收到消息自动加 QQ 表情回应（`set_msg_emoji_like`），表示已读
+- 支持戳一戳通知，注入对话流让角色自然感知
+- 配置开关：`chat.emojiReaction` / `chat.pokeReaction`
+
+### 靶场伪造记忆
+- 工具面板粘贴对话历史，模拟继承记忆测试
+- MCP `range_test` 支持 `fakeHistory` 参数
+- 携带元数据格式：`[群聊|QQ:号码|昵称:XXX|...]`
 
 ---
 
@@ -177,19 +191,42 @@ Claude Code 挂载（`.claude/settings.json`）：
 
 ## 角色卡调教指南
 
-酒馆导入的角色卡不会开箱即用，需要手动调整：
+酒馆导入的角色卡不会开箱即用，需要手动调整。
 
 ### 预设元数据会牵着角色走
-ST 角色卡通常带大量预设 prompt（COT 思维链、格式检查、文风指导等），这些元数据优先级高于角色人设，会导致角色被"系统指令"绑架。**导入后第一件事：用 MCP `range_get_preset_status` 审查全部启用预设，关掉不需要的。**
 
-常见需要关闭的：
-- 行动选项（A/B/C/D 多选）
-- NPC 内心独白、咪咪点评
-- 平行事件、显示时间地点
-- 摘要自动输出
-- 瑟瑟/NSFW 相关（QQ 群聊不需要）
+ST 角色卡通常捆绑大量预设 prompt —— COT 思维链、格式检查、文风指导、变量更新校验等。这些元数据注入 system prompt 后优先级高于角色人设，AI 会优先服从"系统指令"而非"角色性格"。
 
-操作：`range_set_preset_prompt { namePattern: "行动选项", enabled: false }`
+**最容易被牵着走的元数据类型：**
+
+- **UUID 标识符**：每条 prompt 带 `identifier: "b98b0f27-96aa-...` 这样的 UUID，AI 可能在回复中引用这些 ID 或将其误认为角色信息
+- **创建时间戳、版本号**：预设文件中 `createdAt`、`version`、`importedFields` 等字段会被 AI 当成"角色背景知识"
+- **文件名和路径**：`TGbreakV3.0.6.json`、`sourceFilename` 等会被 AI 泄露到对话中
+- **COT 思维链标签**：`<draft_notes>` `</draft_notes>` `{{setvar::xxx}}` 等模板宏——AI 可能输出这些标签而非正文
+- **格式检查器**："防全知""防不读世界书""审视剧情"等——让 AI 花 token 在内部审查上，而非角色表达上
+
+**导入后第一件事：**
+
+用 MCP 审查全部启用预设：
+```
+range_get_preset_status → 看哪些 enabled=true
+range_get_preset_status { includeContent: true } → 看具体内容
+```
+
+**常见需要关闭的：**
+- 行动选项（A/B/C/D 多选）——QQ 群聊不需要
+- NPC 内心独白、咪咪吐槽——拖慢回复、泄漏元信息
+- 平行事件、显示时间地点——打破沉浸感
+- 话痨/抢话相关——群聊频道不适合
+- 摘要自动输出——LLM 会在回复末尾附摘要
+- 瑟瑟/NSFW 相关——QQ 群聊不需要
+- 格式检查器、格式稳定器——会让 AI 过度关注格式
+
+操作：`range_batch_set_prompts { disablePatterns: ["行动选项","防抢话","格式检查","平行事件"] }`
+
+**进阶：把角色规则从预设搬到世界书**
+
+预设是整个角色卡共享的，世界书可以按需注入。把关键行为规则写进世界书条目（设高 `insertion_order`），比放预设里更精准可控。
 
 ### 单人场景 → 多人 QQ 群适配
 酒馆卡设计给 1v1 私聊，变量体系也是单用户视角。放到 QQ 群需要：
@@ -219,7 +256,8 @@ MimirLink/
 │   ├── ai.js / prompt.js    # AI 调用 & prompt 构建
 │   ├── character.js         # 角色卡管理
 │   ├── worldbook.js         # 世界书管理
-│   ├── mcp.js               # MCP 端点
+│   ├── onebot.js            # OneBot 客户端（消息/表情/戳一戳）
+│   ├── mcp.js               # MCP 端点（Streamable HTTP）
 │   ├── security.js          # 反注入
 │   └── runtime/             # 运行时工具
 ├── public/index.html        # Web 面板 SPA
