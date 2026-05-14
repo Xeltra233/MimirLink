@@ -5050,6 +5050,11 @@
                                 <select id="config-chat-model-ref"></select>
                                 <p class="hint-text">&#x5148;&#x5728;&#x201C;&#x6A21;&#x578B;&#x4F9B;&#x5E94;&#x5546;&#x201D;&#x91CC;&#x7ED9;&#x4F9B;&#x5E94;&#x5546;&#x6DFB;&#x52A0;&#x5E76;&#x542F;&#x7528;&#x6A21;&#x578B;&#xFF0C;&#x8FD9;&#x91CC;&#x9009;&#x62E9;&#x804A;&#x5929;&#x5B9E;&#x9645;&#x4F7F;&#x7528;&#x7684;&#x6A21;&#x578B;&#x3002;</p>
                             </div>
+                            <div class="form-group full">
+                                <label>备用模型（可选）</label>
+                                <select id="config-chat-backup-model-ref"></select>
+                                <p class="hint-text">主模型调用失败时自动切换到此模型重试。留空不启用</p>
+                            </div>
                         </div>
                     </div>
                     <div class="config-subsection">
@@ -6072,13 +6077,25 @@
             updateKnowledgeImportFileLabel();
             await loadStatus();
             await loadCharacters();
+            await loadConfig();
             await loadWorldBooks();
             await loadSessions();
             await loadRegexRules();
-            await loadConfig();
             await loadTTSConfig();
             await loadMemoryDatabases();
             connectLogWebSocket();
+            // 自动加载默认角色详情
+            if (currentCharacterSelectedFile) {
+                try {
+                    const detailRes = await fetch(`/api/characters/${encodeURIComponent(currentCharacterSelectedFile)}/detail`);
+                    const detailData = await detailRes.json();
+                    if (detailData.success) {
+                        currentCharacterData = detailData.character;
+                        currentCharacterMetadataSummary = detailData.metadataSummary || null;
+                        renderCharacterDetail(detailData.character, currentCharacterSelectedFile, detailData.metadataSummary || null, detailData.bindingSummary || null);
+                    }
+                } catch (e) { /* ignore */ }
+            }
             updateRuntimePreviewIdentityFields();
 
             // 定时刷新状
