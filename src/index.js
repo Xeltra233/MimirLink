@@ -993,7 +993,7 @@ const characterManager = new CharacterManager(DATA_DIR);
 const worldBookManager = new WorldBookManager(DATA_DIR);
 const sessionManager = new SessionManager(DATA_DIR, config, logger);
 const regexProcessor = new RegexProcessor(config.regex, logger);
-const aiClient = new AIClient(config.ai, logger);
+const aiClient = new AIClient({ ...config.ai, chat: config.chat }, logger);
 const promptBuilder = new PromptBuilder(characterManager, worldBookManager, config, logger);
 const ttsManager = new TTSManager(logger);
 

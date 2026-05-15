@@ -1202,7 +1202,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
     };
 
     const applyRuntimeConfig = () => {
-        aiClient.updateConfig(config.ai || {});
+        aiClient.updateConfig({ ...(config.ai || {}), chat: config.chat });
         const currentCharacter = config.chat?.defaultCharacter || '';
         const effectiveBinding = currentCharacter ? PromptBuilder.getEffectiveBinding(config, currentCharacter) : PromptBuilder.getEffectiveBinding(config, '');
         sessionManager.setConfig(config, { storagePath: effectiveBinding.memoryDbPath || config.memory?.storage?.path });
