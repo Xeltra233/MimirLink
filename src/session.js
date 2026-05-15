@@ -2143,6 +2143,15 @@ export class SessionManager {
     getDbPath() {
         return this.dbPath;
     }
+
+    // 强制 WAL checkpoint，确保所有数据写入主库文件（备份前必须调用）
+    checkpoint() {
+        try {
+            if (this.db && this.db.open) {
+                this.db.pragma('wal_checkpoint(TRUNCATE)');
+            }
+        } catch {}
+    }
 }
 
 export function getGlobalMemory(dataDir) {

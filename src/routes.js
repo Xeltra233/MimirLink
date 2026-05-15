@@ -1517,6 +1517,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const { createGzip } = await import('zlib');
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             fsSync.mkdirSync(tmpDir, { recursive: true });
+            // 强制 SQLite WAL checkpoint，确保备份完整性
+            try { sessionManager.checkpoint(); } catch {}
+
             const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
             const tmpDataDir = path.join(tmpDir, 'data');
             fsSync.mkdirSync(tmpDataDir, { recursive: true });
