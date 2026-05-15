@@ -1720,6 +1720,14 @@ export function setupRoutes(app, config, saveConfig, managers) {
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             characterManager.clearCache?.();
             if (categories.has('config')) applyRuntimeConfig();
+            // 预设文件恢复后同步到 config.imports.presetFiles
+            if (categories.has('presets')) {
+                try {
+                    const { syncPresetFiles } = await import('./index.js');
+                    syncPresetFiles(config);
+                    applyRuntimeConfig();
+                } catch {}
+            }
 
             logger.info('[恢复] 完成:', JSON.stringify(changes));
             res.json({ success: true, changes, autoBackup: autoBackupFile });

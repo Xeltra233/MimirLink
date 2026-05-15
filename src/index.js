@@ -161,7 +161,7 @@ function stripLegacyPresetMetadata(config) {
     if (cleaned > 0) saveConfig(config);
 }
 
-function syncPresetFiles(config) {
+export function syncPresetFiles(config) {
     const presetsDir = join(config.chat?.dataDir || join(ROOT_DIR, 'data'), 'presets');
     fs.mkdirSync(presetsDir, { recursive: true });
     try {
