@@ -10940,18 +10940,23 @@
 
         async function loadWorldBookContent(filename) {
             try {
-                console.log('加载世界书内', filename);
+                console.log('加载世界书内容', filename);
                 const res = await fetch(`/api/worldbooks/${encodeURIComponent(filename)}/content`);
                 const data = await res.json();
-                console.log('世界书数', data);
-                    if (data.success) {
+                console.log('世界书数据:', data);
+                if (!res.ok) {
+                    showToast('加载世界书内容失败 HTTP ' + res.status, true);
+                    return;
+                }
+                if (data.success) {
                     currentWorldBookData = data.worldbook;
                     renderWorldBookEditor();
                 } else {
-                    showToast('加载世界书内容失败' + data.error, true);
+                    showToast('加载世界书内容失败: ' + (data.error || '未知错误'), true);
                 }
             } catch (e) {
-                showToast('加载世界书内容失败', true);
+                console.error('加载世界书内容异常:', e);
+                showToast('加载世界书内容失败: ' + e.message, true);
             }
         }
 

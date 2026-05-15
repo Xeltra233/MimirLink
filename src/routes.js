@@ -551,10 +551,29 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             } catch { /* 变量扫描失败不影响世界书提取 */ }
 
+            // 兼容 ST V1 (对象) 和 V2 (数组) 格式，统一转 V2
+            const rawEntries = metadata.worldBook.entries || {};
+            const v1Entries = Array.isArray(rawEntries)
+                ? rawEntries
+                : Object.values(rawEntries);
+            const normalizedEntries = v1Entries.map(e => ({
+                id: e.uid || e.id || 0,
+                keys: typeof e.key === 'string' ? e.key.split(',').map(k => k.trim()).filter(Boolean) : (e.keys || []),
+                secondary_keys: e.secondary_keys || [],
+                comment: e.comment || '',
+                content: e.content || '',
+                constant: e.constant || false,
+                selective: e.selective !== false,
+                insertion_order: e.order || e.insertion_order || 100,
+                enabled: e.enabled !== false,
+                position: (e.position === 0 || e.position === 'before_char') ? 'before_char' : 'after_char',
+                use_regex: e.use_regex !== false,
+                extensions: e.extensions || {}
+            }));
             const worldbook = {
                 name: `${metadata.name} 世界书`,
                 description: `从角色卡 ${metadata.name} 自动提取的世界书`,
-                entries: [...(metadata.worldBook.entries || []), ...extraEntries]
+                entries: [...normalizedEntries, ...extraEntries]
             };
 
             await fs.writeFile(worldbookPath, JSON.stringify(worldbook, null, 2), 'utf-8');
@@ -1896,9 +1915,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // 选择角色（需要认证）
     app.post('/api/characters/select', requireAuth, async (req, res) => {
         try {
-            const { filename, importOptions, memoryBinding } = req.body;
+            const { filename, characterName: bodyCharName, importOptions, memoryBinding } = req.body;
             // 移除 .png 扩展名
-            const characterName = filename.replace(/\.png$/i, '');
+            const rawName = filename || bodyCharName || '';
+            const characterName = rawName.replace(/\.png$/i, '');
             const character = characterManager.loadCharacter(characterName);
             const characterMeta = await applyCharacterMetadata(characterName, importOptions || {});
 

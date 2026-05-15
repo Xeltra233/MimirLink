@@ -2975,7 +2975,39 @@ server.listen(config.server.port, config.server.host, () => {
             logger.info(`已加载默认角色: ${defaultCharacter}`);
 
             const charName = character.name || defaultCharacter;
-            const worldBook = worldBookManager.readWorldBook(charName);
+            let worldBook = worldBookManager.readWorldBook(charName);
+            // 如果没有独立世界书文件，尝试从角色卡提取内嵌世界书
+            if (!worldBook) {
+                const meta = characterManager.extractSillyTavernMetadata(defaultCharacter);
+                const embedded = meta?.metadata?.worldBook;
+                if (embedded?.entries) {
+                    const wbDir = config.chat?.dataDir || join(ROOT_DIR, 'data');
+                    const wbPath = join(wbDir, 'worlds', `${charName}'s Lorebook.json`);
+                    const rawEntries = embedded.entries;
+                    const v1Entries = Array.isArray(rawEntries) ? rawEntries : Object.values(rawEntries);
+                    // 统一转为 MimirLink V2 格式
+                    const entries = v1Entries.map(e => ({
+                        id: e.uid || e.id || 0,
+                        keys: typeof e.key === 'string' ? e.key.split(',').map(k => k.trim()).filter(Boolean) : (e.keys || []),
+                        secondary_keys: e.secondary_keys || [],
+                        comment: e.comment || '',
+                        content: e.content || '',
+                        constant: e.constant || false,
+                        selective: e.selective !== false,
+                        insertion_order: e.order || e.insertion_order || 100,
+                        enabled: e.enabled !== false,
+                        position: (e.position === 0 || e.position === 'before_char') ? 'before_char' : 'after_char',
+                        use_regex: e.use_regex !== false,
+                        extensions: e.extensions || {}
+                    }));
+                    const wb = { name: `${charName} 世界书`, description: `从角色卡提取`, entries };
+                    fs.mkdirSync(dirname(wbPath), { recursive: true });
+                    fs.writeFileSync(wbPath, JSON.stringify(wb, null, 2), 'utf8');
+                    worldBookManager.scanWorldBooks();
+                    worldBook = worldBookManager.readWorldBook(charName);
+                    logger.info(`[启动] 从角色卡提取内嵌世界书: ${charName} (${entries.length} 条)`);
+                }
+            }
             if (worldBook) {
                 worldBookManager.currentWorldBook = worldBook;
                 worldBookManager.currentWorldBookName = charName;
