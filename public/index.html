@@ -3384,6 +3384,25 @@
         .preset-manager-select-row select {
             flex: 1;
         }
+        .preset-import-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 10px;
+            cursor: pointer;
+            font-size: 0.82rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+        .preset-import-item:hover { background: var(--bg-elevated); }
+        .preset-import-item.active { background: color-mix(in srgb, var(--bg-elevated) 85%, var(--accent) 15%); }
+        .preset-import-name {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+        .preset-import-name:hover { color: var(--accent); text-decoration: underline; }
 
         .preset-list-head {
             display: grid;
@@ -5726,14 +5745,25 @@
                                         <select id="preset-active-select" onchange="handlePresetSelectionChange()">
                                             <option value="">没有已导入的预设文件</option>
                                         </select>
+                                        <button type="button" class="secondary" onclick="openPresetImportManager()">📋 管理导入文件</button>
                                     </div>
-                                    <div class="preset-import-batch-bar" id="preset-import-batch-bar" style="display:none;">
-                                        <span class="meta-inline" id="preset-import-batch-count">已选 0 项</span>
-                                        <button type="button" class="secondary" onclick="batchExportPresetImports()">📥 导出选中</button>
-                                        <button type="button" class="secondary" onclick="toggleSelectAllPresetImports()">☐ 全选</button>
-                                        <button type="button" class="danger" onclick="batchDeletePresetImports()">🗑 删除选中</button>
+                                    <!-- 预设导入管理弹窗 -->
+                                    <div id="preset-import-modal" class="modal" style="display:none;">
+                                        <div class="modal-content" style="max-width:620px;">
+                                            <div class="modal-header">
+                                                <h3>预设导入管理</h3>
+                                                <button class="modal-close" onclick="closePresetImportManager()">×</button>
+                                            </div>
+                                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                                                <span class="meta-inline" id="preset-import-batch-count">已选 0 项</span>
+                                                <div style="flex:1;"></div>
+                                                <button type="button" class="secondary" onclick="toggleSelectAllPresetImports()">全选/取消</button>
+                                                <button type="button" class="secondary" onclick="batchExportPresetImports()">📥 导出选中</button>
+                                                <button type="button" class="danger" onclick="batchDeletePresetImports()">🗑 删除选中</button>
+                                            </div>
+                                            <div id="preset-import-list" class="preset-import-list" style="max-height:400px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:6px;"></div>
+                                        </div>
                                     </div>
-                                    <div id="preset-import-list" class="preset-import-list" style="max-height:180px;overflow-y:auto;"></div>
                                     <div class="form-group">
                                         <label>预设名称</label>
                                         <input type="text" id="config-preset-name" placeholder="例如: Tavern Default">
@@ -9542,11 +9572,19 @@
 
         let selectedPresetImportIds = new Set();
 
+        function openPresetImportManager() {
+            document.getElementById('preset-import-modal').style.display = 'flex';
+            updatePresetImportSelectionUi();
+        }
+
+        function closePresetImportManager() {
+            document.getElementById('preset-import-modal').style.display = 'none';
+        }
+
         function updatePresetImportSelectionUi() {
             const badge = document.getElementById('preset-prompt-count-badge');
             const select = document.getElementById('preset-active-select');
             const list = document.getElementById('preset-import-list');
-            const batchBar = document.getElementById('preset-import-batch-bar');
             const batchCount = document.getElementById('preset-import-batch-count');
             const records = getCurrentPresetImportRecords();
             if (badge) {
@@ -9570,26 +9608,23 @@
                     selectedPresetImportRecordId = '';
                 }
             }
-            // 多选列表
+            // 弹窗内的多选列表
             if (list) {
                 if (records.length === 0) {
-                    list.innerHTML = '<div class="empty-state" style="padding:8px">暂无导入记录</div>';
+                    list.innerHTML = '<div class="empty-state" style="padding:12px">暂无导入记录</div>';
                 } else {
                     list.innerHTML = records.map(r => {
                         const checked = selectedPresetImportIds.has(r.id) ? 'checked' : '';
                         const isActive = r.id === selectedPresetImportRecordId;
                         const label = r.filename || '未命名';
                         const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
-                        return `<label class="preset-import-item ${isActive ? 'active' : ''}" style="display:flex;align-items:center;gap:8px;padding:4px 8px;cursor:pointer;font-size:0.82rem;">
+                        return `<label class="preset-import-item${isActive ? ' active' : ''}">
                             <input type="checkbox" ${checked} onchange="togglePresetImportCheck('${escapeHtml(r.id)}', this.checked)" onclick="event.stopPropagation()">
-                            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" onclick="event.stopPropagation();selectPresetImportById('${escapeHtml(r.id)}')">${escapeHtml(label)}</span>
-                            <span class="meta-inline">${escapeHtml(date)}</span>
+                            <span class="preset-import-name" onclick="event.stopPropagation();selectPresetImportById('${escapeHtml(r.id)}');closePresetImportManager();" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                            <span class="meta-inline" style="flex-shrink:0;width:80px;text-align:right;">${escapeHtml(date)}</span>
                         </label>`;
                     }).join('');
                 }
-            }
-            if (batchBar) {
-                batchBar.style.display = records.length > 1 ? 'flex' : 'none';
             }
             if (batchCount) {
                 batchCount.textContent = `已选 ${selectedPresetImportIds.size} 项`;
