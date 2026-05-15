@@ -516,40 +516,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 });
             } catch { /* 文件不存在, 无额外条目 */ }
 
-            // 扫描卡内变量, 自动生成变量初始化条目
-            try {
-                const cardSources = buildCharacterVariableSources(characterName, metadata);
-                const varScan = scanVariableUsage(cardSources);
-                if (!extraEntries.some(e => (e.id || e.uid) === 1001) && varScan.writes.length === 0) {
-                    // 生成通用变量追踪条目
-                    const initVars = ['好感度', '关系状态', '心情', '今日互动次数'];
-                    const initContent = initVars.map(k => `{{setvar::${k}::0}}`).join('');
-                    extraEntries.push({
-                        id: 1001,
-                        keys: [`${sanitizeFilename(metadata.name)}_变量初始化`],
-                        secondary_keys: [],
-                        content: initContent,
-                        constant: true,
-                        enabled: true,
-                        selective: false,
-                        position: 'before_char',
-                        insertion_order: 1000,
-                        comment: '自动生成的通用变量初始化'
-                    });
-                    extraEntries.push({
-                        id: 1002,
-                        keys: [`${sanitizeFilename(metadata.name)}_变量更新`],
-                        secondary_keys: [],
-                        content: `[变量更新规则]\n在回复末尾如有变化，输出：\n<UpdateVariable>\n[{"op":"replace","path":"/变量名","value":数值}]\n</UpdateVariable>\n跟踪变量：${initVars.join('、')}`,
-                        constant: true,
-                        enabled: true,
-                        selective: false,
-                        position: 'after_char',
-                        insertion_order: 999,
-                        comment: '自动生成的变量更新规则'
-                    });
-                }
-            } catch { /* 变量扫描失败不影响世界书提取 */ }
+            // 变量初始化：优先用角色卡 variable_defaults，新 scope 首次互动时自动创建
+            // 不再生成常驻世界书条目，避免每条 prompt 都注入初始化宏
 
             // 兼容 ST V1 (对象) 和 V2 (数组) 格式，统一转 V2
             const rawEntries = metadata.worldBook.entries || {};
