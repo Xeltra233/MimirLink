@@ -351,6 +351,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
     const summarizePresetImportRecord = (record = {}) => ({
         id: record.id,
         filename: record.filename,
+        presetName: record.presetName || null,
         createdAt: record.createdAt,
         importedFields: Array.isArray(record.importedFields) ? record.importedFields : [],
         importedPreset: cloneImportSnapshot(record.importedPreset || {}),
