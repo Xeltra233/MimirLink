@@ -2,6 +2,9 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MimirLink - 控制面板</title>
     <style>
@@ -2848,14 +2851,23 @@
         }
 
         .modal {
-            width: min(520px, calc(100vw - 32px));
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.5);
+            overflow: auto;
+        }
+        .modal-content {
+            width: min(620px, calc(100vw - 32px));
             max-height: calc(100vh - 32px);
             background: var(--bg-inset);
             border: 1px solid var(--border);
             border-radius: 14px;
             padding: 20px;
             box-shadow: 0 20px 40px rgba(0,0,0,0.18);
-            margin: auto;
             overflow-y: auto;
         }
 
@@ -3384,7 +3396,7 @@
         .preset-manager-select-row select {
             flex: 1;
         }
-        .preset-import-item {
+        .preset-import-row {
             display: flex;
             align-items: center;
             gap: 10px;
@@ -3393,22 +3405,34 @@
             font-size: 0.82rem;
             border-bottom: 1px solid var(--border-subtle);
         }
-        .preset-import-item:hover { background: var(--bg-elevated); }
-        .preset-import-item.active { background: color-mix(in srgb, var(--bg-elevated) 85%, var(--accent) 15%); }
+        .preset-import-row:hover { background: var(--bg-elevated); }
+        .preset-import-row.active { background: color-mix(in srgb, var(--bg-elevated) 85%, var(--accent) 15%); }
+        .preset-import-row input[type=checkbox] { flex-shrink: 0; margin: 0; }
         .preset-import-name {
             flex: 1;
+            min-width: 0;
+            font-weight: 500;
+            color: var(--text-primary);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
-            min-width: 0;
         }
-        .preset-import-name:hover { color: var(--accent); text-decoration: underline; }
+        .preset-import-name:hover { color: var(--accent); }
         .preset-import-sub {
+            flex: 1;
+            min-width: 0;
             font-size: 0.7rem;
             color: var(--text-muted);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
+        }
+        .preset-import-date {
+            flex-shrink: 0;
+            width: 80px;
+            text-align: right;
+            color: var(--text-muted);
+            font-size: 0.78rem;
         }
 
         .preset-list-head {
@@ -5062,7 +5086,7 @@
                     </div>
                     <div class="form-group">
                         <label>API Key</label>
-                        <input type="password" id="tts-apikey" placeholder="供应商 API Key">
+                        <input type="password" id="tts-apikey" placeholder="供应商 API Key" autocomplete="new-password">
                         <div id="tts-apikey-status" style="margin-top: 6px; font-size: 0.85rem; color: var(--text-muted); display: none;">
                             已配置密钥，留空表示不修改
                         </div>
@@ -5179,7 +5203,7 @@
                             </div>
                             <div class="form-group">
                                 <label>Access Token（可选）</label>
-                                <input type="password" id="config-onebot-token" placeholder="留空表示无需认证">
+                                <input type="password" id="config-onebot-token" placeholder="留空表示无需认证" autocomplete="new-password">
                             </div>
                             <div class="form-group">
                                 <label>Token 发送方式</label>
@@ -5488,7 +5512,7 @@
                             </div>
                             <div class="form-group" id="config-ai-tool-web-search-apikey-row" style="display:none;">
                                 <label>API Key</label>
-                                <input type="password" id="config-ai-tool-web-search-apikey" placeholder="Tavily / SerpAPI 需填 Key">
+                                <input type="password" id="config-ai-tool-web-search-apikey" placeholder="Tavily / SerpAPI 需填 Key" autocomplete="new-password">
                             </div>
                             <div class="form-group" id="config-ai-tool-web-search-google-engine-row" style="display:none;">
                                 <input type="hidden" id="config-ai-tool-web-search-google-engine-id">
@@ -5710,7 +5734,7 @@
                                         </div>
                                         <div class="form-group full">
                                             <label>API Key</label>
-                                            <input type="password" id="config-ai-apikey" placeholder="留空表示不修改当前已保存密钥" oninput="syncActiveAIProviderFromInputs(); markConfigDirty('模型供应商密钥已修改')">
+                                            <input type="password" id="config-ai-apikey" placeholder="留空表示不修改当前已保存密钥" oninput="syncActiveAIProviderFromInputs(); markConfigDirty('模型供应商密钥已修改')" autocomplete="new-password">
                                             <div id="config-ai-apikey-status" class="hint-text" style="margin-top: 6px; display: none;">已配置密钥，留空表示不修改</div>
                                         </div>
                                     </div>
@@ -9581,6 +9605,8 @@
 
         function openPresetImportManager() {
             document.getElementById('preset-import-modal').style.display = 'flex';
+            const records = getCurrentPresetImportRecords();
+            console.log('[DEBUG] preset records:', records.length, records.slice(0,3).map(r => ({pn: r.presetName, fn: r.filename, id: r.id?.slice(-8)})));
             updatePresetImportSelectionUi();
         }
 
@@ -9627,14 +9653,12 @@
                         const label = r.presetName || r.filename || '未命名';
                         const sub = r.presetName ? r.filename : '';
                         const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
-                        return `<label class="preset-import-item${isActive ? ' active' : ''}">
+                        return `<div class="preset-import-row${isActive ? ' active' : ''}" onclick="selectPresetImportById('${escapeHtml(r.id)}');closePresetImportManager();">
                             <input type="checkbox" ${checked} onchange="togglePresetImportCheck('${escapeHtml(r.id)}', this.checked)" onclick="event.stopPropagation()">
-                            <div style="flex:1;min-width:0;">
-                                <div class="preset-import-name" onclick="event.stopPropagation();selectPresetImportById('${escapeHtml(r.id)}');closePresetImportManager();" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
-                                ${sub ? `<div class="preset-import-sub" title="${escapeHtml(sub)}">${escapeHtml(sub)}</div>` : ''}
-                            </div>
-                            <span class="meta-inline" style="flex-shrink:0;width:80px;text-align:right;">${escapeHtml(date)}</span>
-                        </label>`;
+                            <span class="preset-import-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                            ${sub ? `<span class="preset-import-sub" title="${escapeHtml(sub)}">${escapeHtml(sub)}</span>` : ''}
+                            <span class="preset-import-date">${escapeHtml(date)}</span>
+                        </div>`;
                     }).join('');
                 }
             }
