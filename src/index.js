@@ -2626,13 +2626,62 @@ async function processBatch(batch) {
                 const ns = runtimeContext?.recallNamespace;
                 if (ns) {
                     const varScopeKey = event.user_id ? `user:${event.user_id}` : ns.scopeKey;
-                    const result = extractAndApplyVariables(processedReply, sessionManager, {
+                    const scopeOpts = {
                         scopeType: 'user_persistent', scopeKey: varScopeKey,
                         characterName: ns.characterName, presetName: ns.presetName
-                    });
+                    };
+                    const result = extractAndApplyVariables(processedReply, sessionManager, scopeOpts);
                     processedReply = result.cleanedOutput;
                     if (result.applied.length > 0) {
                         logger.info('[变量] 已应用', { count: result.applied.length, patches: result.applied });
+                    }
+
+                    // 额外模型解析：主回复未含 UpdateVariable 时，异步调 AI 提取变量
+                    if (result.applied.length === 0 && config.ai?.variableParsing?.enabled !== false) {
+                        setImmediate(async () => {
+                            try {
+                                const vpModel = config.chat?.varparseModel || config.ai?.variableParsing?.model || config.ai.model;
+                                const vpProviderId = config.chat?.varparseModelProviderId || config.ai?.variableParsing?.providerId || config.ai.activeProviderId;
+                                if (!config.chat?.varparseModel && !config.ai?.variableParsing?.model) { return; } // 未配置变量解析模型则跳过
+                                const vpProvider = config.ai.providers?.find(p => p.id === vpProviderId) || {};
+                                const vpBaseUrl = config.ai?.variableParsing?.baseUrl || vpProvider.baseUrl || config.ai.baseUrl;
+                                const vpApiKey = vpProvider.apiKey || config.ai.apiKey;
+
+                                let varStatus = '';
+                                try {
+                                    const { buildVariableStatusBlock } = await import('./variable-bridge.js');
+                                    varStatus = buildVariableStatusBlock(sessionManager, scopeOpts) || '';
+                                } catch {}
+
+                                const varParsePrompt = `你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。
+
+当前变量：
+${varStatus || '(无)'}
+
+用户：${processedInput}
+角色：${processedReply}
+
+请输出变量更新（无变化输出空数组）：
+<UpdateVariable>
+[{"op":"replace","path":"/变量名","value":新值}]
+</UpdateVariable>`;
+
+                                const vpMessages = [{ role: 'user', content: varParsePrompt }];
+                                const vpResult = await aiClient.chat(vpMessages, {
+                                    temperature: 0.1, maxTokens: 1024,
+                                    model: vpModel,
+                                    baseUrl: vpBaseUrl || undefined,
+                                    apiKey: vpApiKey || undefined
+                                });
+                                const vpReply = aiClient.getVisibleResponseContent(vpResult);
+                                if (vpReply && vpReply.includes('<UpdateVariable>')) {
+                                    const vpExtract = extractAndApplyVariables(vpReply, sessionManager, scopeOpts);
+                                    if (vpExtract.applied.length > 0) {
+                                        logger.info('[变量-额外解析] 已应用', { count: vpExtract.applied.length, patches: vpExtract.applied });
+                                    }
+                                }
+                            } catch (e) { logger.warn('[变量-额外解析] 失败:', e.message); }
+                        });
                     }
                 }
             } catch (e) { logger.warn('[变量] 提取失败:', e.message); }

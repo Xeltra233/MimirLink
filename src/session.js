@@ -1483,10 +1483,11 @@ export class SessionManager {
         };
 
         if (existing) {
+            const mergedTags = [...new Set([...(variable.tags || []), ...parseJson(existing.tags_json, [])])];
             this.statements.updateMemoryEntry.run(
                 key,
                 rawValue,
-                JSON.stringify(variable.tags || parseJson(existing.tags_json, [])),
+                JSON.stringify(mergedTags),
                 JSON.stringify(metadata),
                 variable.sourceSessionId || existing.source_session_id || null,
                 variable.sourceMessageId || existing.source_message_id || null,

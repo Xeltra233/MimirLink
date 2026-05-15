@@ -198,7 +198,8 @@ export function applyStaticSetvarsFromText(text, sessionManager, scopeOptions, o
             key,
             rawValue: String(parsedValue ?? ''),
             valueType: inferType(parsedValue),
-            source: 'imported-card'
+            source: 'imported-card',
+            tags: ['system']  // 预设注入变量标记，UI据此折叠
         });
         applied.push({ key, rawKey, rawValue, parsedValue });
         if (!keepMacros) {
@@ -225,7 +226,8 @@ export function applyScannedVariableInitializers(scanResult, sessionManager, sco
             key: item.key,
             rawValue: String(item.parsedValue ?? ''),
             valueType: inferType(item.parsedValue),
-            source: 'imported-card'
+            source: 'imported-card',
+            tags: ['system']
         });
         applied.push(item);
     }

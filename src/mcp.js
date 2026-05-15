@@ -76,11 +76,12 @@ export function createMCPHandler(managers, config, saveConfig) {
                 properties: {
                     message: { type: 'string', description: '测试消息内容' },
                     characterName: { type: 'string', description: '角色名，可选，默认用当前靶场选择的角色' },
-                    fakeHistory: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: '可选，伪造的聊天记录 [{role:"user"|"assistant", content}]' }
+                    fakeHistory: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: '可选，伪造的聊天记录 [{role:"user"|"assistant", content}]' },
+                    scopeKey: { type: 'string', description: '可选，变量作用域标识，默认 user:test。用不同值模拟不同用户隔离' }
                 },
                 required: ['message']
             },
-            handler: async ({ message, characterName, fakeHistory }) => {
+            handler: async ({ message, characterName, fakeHistory, scopeKey }) => {
                 const resolvedChar = characterName || config.chat?.defaultCharacter || '';
                 if (!resolvedChar) return { content: [{ type: 'text', text: '请指定 characterName' }] };
 
@@ -114,9 +115,10 @@ export function createMCPHandler(managers, config, saveConfig) {
                     );
 
                     // 变量注入：setvar/getvar 宏 + status_current_variable 状态块
+                    const resolvedScopeKey = scopeKey || 'user:test';
                     try {
                         const { applyStaticSetvarsFromText, buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
-                        const scopeOpts = { scopeType: 'user_persistent', scopeKey: 'user:test', characterName: charName, presetName: presetConfig?.name || '' };
+                        const scopeOpts = { scopeType: 'user_persistent', scopeKey: resolvedScopeKey, characterName: charName, presetName: presetConfig?.name || '' };
                         const allMessages = built.messages;
                         for (const msg of allMessages) {
                             if (typeof msg.content === 'string') {
@@ -143,12 +145,49 @@ export function createMCPHandler(managers, config, saveConfig) {
 
                     // 变量提取：UpdateVariable JSONPatch
                     let appliedVars = [];
+                    const extractScopeOpts = { scopeType: 'user_persistent', scopeKey: resolvedScopeKey, characterName: charName, presetName: presetConfig?.name || '' };
                     try {
                         const { extractAndApplyVariables } = await import('./variable-bridge.js');
-                        const scopeOpts = { scopeType: 'user_persistent', scopeKey: 'user:test', characterName: charName, presetName: presetConfig?.name || '' };
-                        const result = extractAndApplyVariables(reply, sessionManager, scopeOpts);
+                        const result = extractAndApplyVariables(reply, sessionManager, extractScopeOpts);
                         appliedVars = result.applied || [];
                     } catch {}
+
+                    // 额外模型解析：主回复无 UpdateVariable 时，单独调 AI 提取
+                    if (appliedVars.length === 0) {
+                        try {
+                            const { buildVariableStatusBlock, extractAndApplyVariables: eav } = await import('./variable-bridge.js');
+                            let varStatus = '';
+                            try { varStatus = buildVariableStatusBlock(sessionManager, extractScopeOpts) || ''; } catch {}
+
+                            // 读取变量解析模型配置（前端 chat.varparseModel 或 ai.variableParsing）
+                            const vpModel = config.chat?.varparseModel || config.ai?.variableParsing?.model || '';
+                            const vpProviderId = config.chat?.varparseModelProviderId || config.ai?.variableParsing?.providerId || '';
+                            logger.info('[变量-额外解析] 配置检查', { vpModel, vpProviderId, hasChat: !!config.chat });
+                            if (!vpModel) { logger.info('[变量-额外解析] 跳过 - 未配置变量解析模型'); }
+                            else {
+                                const vpProvider = (config.ai?.providers || []).find(p => p.id === vpProviderId) || {};
+                                logger.info('[变量-额外解析] 开始', { vpModel, vpProviderId, providerType: vpProvider.provider });
+
+                                const varParsePrompt = '你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。\n\n当前变量：\n' + (varStatus || '(无)') + '\n\n用户：' + message + '\n角色：' + reply + '\n\n请输出变量更新（无变化输出空数组）：\n<UpdateVariable>\n[{"op":"replace","path":"/变量名","value":新值}]\n</UpdateVariable>';
+
+                                const vpResult = await aiClient.chat([{ role: 'user', content: varParsePrompt }], {
+                                    temperature: 0.1, maxTokens: 1024,
+                                    model: vpModel,
+                                    baseUrl: vpProvider.baseUrl || undefined,
+                                    apiKey: vpProvider.apiKey || undefined
+                                });
+                                const vpReply = aiClient.getVisibleResponseContent(vpResult);
+                                logger.info('[变量-额外解析] 回复', { hasUpdateVariable: vpReply?.includes('<UpdateVariable>') || false, preview: vpReply?.slice(0, 200) });
+                                if (vpReply && vpReply.includes('<UpdateVariable>')) {
+                                    const vpExtract = eav(vpReply, sessionManager, extractScopeOpts);
+                                    if (vpExtract.applied.length > 0) {
+                                        appliedVars = [...appliedVars, ...vpExtract.applied];
+                                        logger.info('[变量-额外解析] 成功', { count: vpExtract.applied.length });
+                                    }
+                                }
+                            }
+                        } catch (e) { /* 额外解析失败不影响主流程 */ }
+                    }
 
                     return {
                         content: [{ type: 'text', text: JSON.stringify({
@@ -877,7 +916,7 @@ ${wbSummary || '(未提供)'}
             handler: async ({ characterName, scopeKey, search, limit }) => {
                 const filters = { characterName: characterName || '', scopeKey: scopeKey || '', search: search || '', limit: limit || 100 };
                 const vars = sessionManager.listVariables(filters);
-                const items = vars.map(v => ({ id: v.id, key: v.key || v.title, value: v.rawValue || v.value, valueType: v.valueType, characterName: v.characterName, scopeKey: v.scopeKey }));
+                const items = vars.map(v => ({ id: v.id, key: v.key || v.title, value: v.rawValue || v.value, valueType: v.valueType, characterName: v.characterName, scopeKey: v.scopeKey, tags: v.tags || [] }));
                 return { content: [{ type: 'text', text: JSON.stringify(items, null, 2) }] };
             }
         },

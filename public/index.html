@@ -3089,6 +3089,106 @@
             letter-spacing: 0.04em;
         }
 
+        .variable-tag-sys {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--bg-elevated) 80%, #888 20%);
+            color: #999;
+            font-size: 0.7rem;
+            letter-spacing: 0.04em;
+        }
+
+        .variable-item-meta {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-shrink: 0;
+        }
+
+        .variable-group-sys {
+            color: #888;
+            font-size: 0.82rem;
+        }
+        .variable-group-sys:hover {
+            color: #aaa;
+        }
+        .sys-vars-collapsed {
+            opacity: 0.75;
+            max-height: 240px;
+            overflow-y: auto;
+        }
+
+        /* ── 楼层导航 ── */
+        .floor-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-subtle);
+            cursor: pointer;
+            transition: background 0.15s ease;
+            gap: 12px;
+        }
+        .floor-item:hover {
+            background: color-mix(in srgb, var(--bg-elevated) 90%, var(--accent) 10%);
+        }
+        .floor-item.floor-active {
+            background: color-mix(in srgb, var(--bg-elevated) 80%, var(--accent) 20%);
+            border-left: 3px solid var(--accent);
+            padding-left: 11px;
+        }
+        .floor-item-main {
+            flex: 1;
+            min-width: 0;
+        }
+        .floor-label {
+            font-weight: 600;
+            font-size: 0.9rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .floor-char {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+        .floor-meta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+        .floor-user-count {
+            background: var(--accent);
+            color: #000;
+            border-radius: 999px;
+            min-width: 22px;
+            height: 22px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0 6px;
+        }
+        .floor-total {
+            color: var(--text-muted);
+            font-size: 0.78rem;
+        }
+        .floor-meta-label {
+            font-size: 0.65rem;
+            color: var(--text-muted);
+            margin-left: 2px;
+            margin-right: 6px;
+        }
+        .floor-sublist {
+            padding-left: 8px;
+        }
+
         .variable-preview {
             margin-top: 8px;
             color: var(--text-muted);
@@ -5084,6 +5184,11 @@
                                 <label>备用模型（可选）</label>
                                 <select id="config-chat-backup-model-ref"></select>
                                 <p class="hint-text">主模型调用失败时自动切换到此模型重试。留空不启用</p>
+                            </div>
+                            <div class="form-group full">
+                                <label>变量解析模型（可选）</label>
+                                <select id="config-chat-varparse-model-ref"></select>
+                                <p class="hint-text">额外模型解析变量更新（如好感度变化）。DS不擅长此格式，建议选Claude/Gemini。留空不启用</p>
                             </div>
                         </div>
                     </div>
@@ -7637,6 +7742,126 @@
             return normalized.length > 120 ? `${normalized.slice(0, 120)}...` : normalized;
         }
 
+        // 楼层结构: { floorKey: { scopeKey, characterName, userVars:[], sysVars:[] } }
+        let variableFloors = {};
+        let selectedFloorKey = null;
+
+        function buildVariableFloors() {
+            const floors = {};
+            const hasTag = (item, tag) => {
+                const tags = Array.isArray(item.tags) ? item.tags : [];
+                return tags.includes(tag);
+            };
+            for (const item of variables) {
+                const sk = (item.scopeKey || 'default').trim();
+                const cn = (item.characterName || '').trim();
+                // 生成楼层 key: scopeKey + characterName
+                let floorKey;
+                if ((/^\d+/.test(sk) || sk.startsWith('user:')) && sk !== 'default') {
+                    const qq = sk.startsWith('user:') ? sk.replace('user:','') : sk;
+                    floorKey = `user:${qq}` + (cn ? `|${cn}` : '');
+                } else {
+                    floorKey = cn || 'global';
+                }
+                if (!floors[floorKey]) {
+                    floors[floorKey] = {
+                        floorKey,
+                        scopeKey: sk,
+                        characterName: cn,
+                        qq: sk.startsWith('user:') ? sk.replace('user:','') : (sk !== 'default' ? sk : ''),
+                        userVars: [],
+                        sysVars: []
+                    };
+                }
+                if (hasTag(item, 'system')) {
+                    floors[floorKey].sysVars.push(item);
+                } else {
+                    floors[floorKey].userVars.push(item);
+                }
+            }
+            return floors;
+        }
+
+        function selectFloor(floorKey) {
+            selectedFloorKey = floorKey;
+            selectedVariableId = null;
+            const floors = buildVariableFloors();
+            const floor = floors[floorKey];
+            if (floor) {
+                // 同步筛选条件到选中的楼层
+                variableFilters.scopeKey = floor.scopeKey;
+                variableFilters.characterName = floor.characterName || '';
+                syncVariableFilterInputs();
+            }
+            renderVariableDetailForFloor();
+            renderVariableList();
+        }
+
+        function renderVariableDetailForFloor() {
+            const panel = document.getElementById('variable-detail');
+            if (!panel) return;
+            const floors = buildVariableFloors();
+            const floor = floors[selectedFloorKey];
+            if (!floor) {
+                panel.innerHTML = '<div class="empty-state">选择一个楼层查看变量</div>';
+                return;
+            }
+
+            const renderItem = (item, showSysBadge) => {
+                const selectedClass = selectedVariableId === item.id ? 'selected' : '';
+                const val = item.rawValue || item.value || item.content || '';
+                const key = item.key || item.title || '?';
+                const badge = showSysBadge ? '<span class="variable-tag-sys">系统</span>' : '';
+                return `
+                    <div class="variable-item ${selectedClass}" onclick="selectVariable('${escapeInlineJsString(item.id)}')">
+                        <div class="variable-item-head">
+                            <div class="variable-key">${escapeHtml(key)}: ${escapeHtml(String(val).slice(0, 80))}</div>
+                            <div class="variable-item-meta">
+                                ${badge}
+                                <span class="variable-type-badge">${escapeHtml(item.valueType || 'string')}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            };
+
+            const scopeLabel = floor.qq ? `QQ: ${escapeHtml(floor.qq)}` : escapeHtml(floor.scopeKey);
+            const charLabel = floor.characterName ? ` — ${escapeHtml(floor.characterName)}` : '';
+
+            let html = `<div class="section-head">
+                <div>
+                    <div class="name">${scopeLabel}${charLabel}</div>
+                    <div class="meta">${floor.userVars.length + floor.sysVars.length} 条变量</div>
+                </div>
+            </div>`;
+
+            // 用户可编辑变量（置顶）
+            if (floor.userVars.length > 0) {
+                html += '<div class="variable-group-section"><div class="variable-group-title">✏️ 可编辑变量 <span class="meta-inline">— 好感度、装逼值等</span></div>';
+                html += '<div class="variable-group-items">';
+                html += floor.userVars.map(v => renderItem(v, false)).join('');
+                html += '</div></div>';
+            } else {
+                html += '<div class="variable-group-section"><div class="variable-group-title">✏️ 可编辑变量</div>';
+                html += '<div class="empty-state" style="padding:12px">暂无用户变量，<a href="#" onclick="startCreateVariable()">新建一个</a></div>';
+                html += '</div>';
+            }
+
+            // 系统注入变量（折叠）
+            if (floor.sysVars.length > 0) {
+                html += '<div class="variable-group-section">';
+                html += `<details class="variable-group">
+                    <summary class="variable-group-summary variable-group-sys">🔧 系统注入 <span class="meta-inline">(${floor.sysVars.length} 条) — 预设自动管理</span></summary>
+                    <div class="variable-group-items sys-vars-collapsed">
+                        ${floor.sysVars.map(v => renderItem(v, true)).join('')}
+                    </div>
+                </details>`;
+                html += '</div>';
+            }
+
+            panel.innerHTML = html;
+        }
+
         function renderVariableList() {
             const list = document.getElementById('variable-list');
             const count = document.getElementById('variable-count');
@@ -7644,64 +7869,75 @@
                 return;
             }
 
-            count.textContent = `${variables.length} 条`;
+            const floors = buildVariableFloors();
+            const floorKeys = Object.keys(floors).sort((a, b) => {
+                const aUser = a.startsWith('user:');
+                const bUser = b.startsWith('user:');
+                if (aUser && !bUser) return -1;
+                if (!aUser && bUser) return 1;
+                return a.localeCompare(b);
+            });
+
+            // 按用户 QQ 二次分组
+            const userFloorMap = new Map();
+            for (const fk of floorKeys) {
+                const f = floors[fk];
+                const qq = f.qq || f.scopeKey || '全局';
+                if (!userFloorMap.has(qq)) userFloorMap.set(qq, []);
+                userFloorMap.get(qq).push(f);
+            }
+
+            const totalVars = variables.length;
+            const totalUsers = userFloorMap.size;
+            count.textContent = `${totalUsers} 用户 / ${floorKeys.length} 角色 / ${totalVars} 条`;
 
             if (variables.length === 0) {
                 list.innerHTML = '<div class="empty-state">暂无变量</div>';
                 return;
             }
 
-            // 按 scopeKey 分组：纯数字或 user: 开头 → 用户变量，其余 → 全局变量
-            const groups = new Map();
-            const globalVars = [];
-            for (const item of variables) {
-                const sk = (item.scopeKey || 'default').trim();
-                if ((/^\d+/.test(sk) || sk.startsWith('user:')) && sk !== 'default') {
-                    if (!groups.has(sk)) groups.set(sk, []);
-                    groups.get(sk).push(item);
-                } else {
-                    globalVars.push(item);
-                }
+            if (!selectedFloorKey && floorKeys.length > 0) {
+                selectedFloorKey = floorKeys[0];
             }
-
-            const renderItem = (item) => {
-                const selectedClass = selectedVariableId === item.id ? 'selected' : '';
-                const val = item.rawValue || item.value || item.content || '';
-                return `
-                    <div class="variable-item ${selectedClass}" onclick="selectVariable('${escapeInlineJsString(item.id)}')">
-                        <div class="variable-item-head">
-                            <div class="variable-key">${escapeHtml(item.key || item.title || '?')}: ${escapeHtml(String(val).slice(0, 60))}</div>
-                            <span class="variable-type-badge">${escapeHtml(item.valueType || 'string')}</span>
-                        </div>
-                    </div>
-                `;
-            };
 
             let html = '';
+            for (const [qq, userFloors] of userFloorMap) {
+                const totalUserVars = userFloors.reduce((s, f) => s + f.userVars.length + f.sysVars.length, 0);
+                const totalUserEditable = userFloors.reduce((s, f) => s + f.userVars.length, 0);
+                html += `<details class="variable-group" open>
+                    <summary class="variable-group-summary">
+                        👤 QQ:${escapeHtml(qq)}
+                        <span class="meta-inline">(${totalUserEditable} 可编辑 / ${totalUserVars} 总)</span>
+                    </summary>
+                    <div class="floor-sublist">`;
 
-            // 用户分组
-            if (groups.size > 0) {
-                html += '<div class="variable-group-section"><div class="variable-group-title">👤 用户变量</div>';
-                for (const [userId, vars] of groups) {
-                    const label = userId.startsWith('user:') ? `用户 ${escapeHtml(userId.replace('user:',''))}` : `QQ: ${escapeHtml(userId)}`;
-                    html += `<details class="variable-group" open>
-                        <summary class="variable-group-summary">${label} <span class="meta-inline">(${vars.length} 条)</span></summary>
-                        <div class="variable-group-items">
-                            ${vars.map(renderItem).join('')}
+                for (const f of userFloors) {
+                    const activeClass = selectedFloorKey === f.floorKey ? 'floor-active' : '';
+                    const charLabel = f.characterName
+                        ? escapeHtml(f.characterName.replace('炸天帮','').replace('（QQbot）','').trim() || f.characterName.slice(0, 10))
+                        : '默认角色';
+                    const total = f.userVars.length + f.sysVars.length;
+                    const userCount = f.userVars.length;
+
+                    html += `<div class="floor-item ${activeClass}" onclick="event.stopPropagation();selectFloor('${escapeInlineJsString(f.floorKey)}')">
+                        <div class="floor-item-main">
+                            <div class="floor-label">🏠 ${charLabel}</div>
                         </div>
-                    </details>`;
+                        <div class="floor-meta">
+                            ${userCount > 0 ? `<span class="floor-user-count">${userCount}</span><span class="floor-meta-label">可编辑</span>` : ''}
+                            <span class="floor-total">${total}</span><span class="floor-meta-label">总计</span>
+                        </div>
+                    </div>`;
                 }
-                html += '</div>';
-            }
 
-            // 全局变量
-            if (globalVars.length > 0) {
-                html += '<div class="variable-group-section"><div class="variable-group-title">🌐 全局变量</div>';
-                html += `<div class="variable-group-items">${globalVars.map(renderItem).join('')}</div>`;
-                html += '</div>';
+                html += `</div></details>`;
             }
 
             list.innerHTML = html;
+
+            if (selectedFloorKey && floors[selectedFloorKey]) {
+                renderVariableDetailForFloor();
+            }
         }
 
         function renderVariableDetail(item) {
@@ -7728,6 +7964,7 @@
             const updatedByText = currentItem.metadata?.updatedBy || 'admin-panel';
 
             panel.innerHTML = `
+                <div style="margin-bottom:8px"><a href="#" onclick="showFloorOverview();return false;" style="font-size:0.82rem">← 返回楼层视图</a></div>
                 <form class="variable-detail-form" onsubmit="event.preventDefault(); saveVariable();">
                     <input type="hidden" id="variable-id" value="${escapeHtml(currentItem.id || '')}">
                     <div class="section-head">
@@ -7851,6 +8088,12 @@
                 }
                 renderVariableDetail(null);
             }
+        }
+
+        function showFloorOverview() {
+            selectedVariableId = null;
+            renderVariableDetailForFloor();
+            renderVariableList();
         }
 
         async function selectVariable(id) {
@@ -11404,7 +11647,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
         function refreshAIModelSelectOptions() {
             const providers = (aiProviderEntries || []).filter(e => e.baseUrl);
-            const targetIds = ['config-chat-model-ref', 'config-chat-backup-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
+            const targetIds = ['config-chat-model-ref', 'config-chat-backup-model-ref', 'config-chat-varparse-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
             targetIds.forEach((selectId) => {
                 const select = document.getElementById(selectId);
                 if (!select) return;
@@ -11427,6 +11670,13 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                     });
                     select.appendChild(group);
                 });
+                // 为可选模型下拉加"不启用"选项
+                if (selectId === 'config-chat-varparse-model-ref' || selectId === 'config-chat-backup-model-ref') {
+                    const emptyOpt = document.createElement('option');
+                    emptyOpt.value = '';
+                    emptyOpt.textContent = '— 不启用 —';
+                    select.insertBefore(emptyOpt, select.firstChild);
+                }
                 const matchingOption = currentValue ? Array.from(select.options).find(o => o.value === currentValue) : null;
                 if (matchingOption) {
                     select.value = currentValue;
@@ -12310,6 +12560,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 refreshAIModelSelectOptions();
                 document.getElementById('config-chat-model-ref').value = buildAIModelRef(currentConfig.chat?.modelProviderId || currentConfig.ai?.activeProviderId || '', currentConfig.chat?.model || currentConfig.ai?.model || '');
                 document.getElementById('config-chat-backup-model-ref').value = buildAIModelRef(currentConfig.chat?.backupModelProviderId || '', currentConfig.chat?.backupModel || '');
+                document.getElementById('config-chat-varparse-model-ref').value = buildAIModelRef(currentConfig.chat?.varparseModelProviderId || currentConfig.ai?.variableParsing?.providerId || '', currentConfig.chat?.varparseModel || currentConfig.ai?.variableParsing?.model || '');
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
                 document.getElementById('config-memory-summary-model').value = currentConfig.memory?.summary?.model || '';
 
@@ -12520,6 +12771,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             });
             const chatModelSelection = getSelectedAIModelRef('config-chat-model-ref');
             const backupModelSelection = getSelectedAIModelRef('config-chat-backup-model-ref');
+            const varparseModelSelection = getSelectedAIModelRef('config-chat-varparse-model-ref');
             const participantProfileModelSelection = getSelectedAIModelRef('config-memory-participant-profile-model');
 
             const newConfig = {
@@ -12576,6 +12828,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     model: chatModelSelection.model,
                     backupModelProviderId: backupModelSelection.providerId || '',
                     backupModel: backupModelSelection.model || '',
+                    varparseModelProviderId: varparseModelSelection.providerId || '',
+                    varparseModel: varparseModelSelection.model || '',
                     accessControlMode: document.getElementById('config-chat-access-mode').value,
                     triggerMode: document.getElementById('config-chat-trigger-mode').value,
                     triggerPrefix: document.getElementById('config-chat-trigger').value,
