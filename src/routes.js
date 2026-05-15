@@ -3745,7 +3745,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const diagnostics = PromptBuilder.diagnosePresetImport(req.body);
             const importedRegexRules = RegexProcessor.importRules(req.body);
             const regexDiagnostics = RegexProcessor.diagnoseImport(req.body);
-            const sourceFilename = String(req.body?.sourceFilename || '').trim() || `preset-${Date.now()}.json`;
+            const presetName = String(req.body?.name || '').trim();
+            const sourceFilename = String(req.body?.sourceFilename || '').trim() || presetName || `preset-${Date.now()}.json`;
             logger.info(`[API ${req.requestId || 'no-id'}] preset import diagnostics`, diagnostics);
             logger.info(`[API ${req.requestId || 'no-id'}] preset-linked regex diagnostics`, regexDiagnostics);
             const previousPreset = { ...(config.preset || {}) };
@@ -3771,6 +3772,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 id: presetImportRecordId,
                 type: 'preset',
                 filename: sourceFilename,
+                presetName: presetName || null,
                 createdAt: new Date().toISOString(),
                 importedFields,
                 importedPreset: cloneImportSnapshot(preset),

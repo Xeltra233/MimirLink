@@ -3403,6 +3403,13 @@
             min-width: 0;
         }
         .preset-import-name:hover { color: var(--accent); text-decoration: underline; }
+        .preset-import-sub {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
 
         .preset-list-head {
             display: grid;
@@ -9591,7 +9598,8 @@
                 badge.textContent = `${presetDraft.prompts?.length || 0} 项`;
             }
             if (select) {
-                const options = records.map((record) => `<option value="import:${escapeHtml(record.id || '')}">${escapeHtml(record.filename || '未命名预设文件')}</option>`);
+                const label = (r) => r.presetName || r.filename || '未命名';
+                const options = records.map((record) => `<option value="import:${escapeHtml(record.id || '')}">${escapeHtml(label(record))}</option>`);
                 if (options.length === 0) {
                     options.push('<option value="">没有已导入的预设文件</option>');
                 }
@@ -9616,11 +9624,15 @@
                     list.innerHTML = records.map(r => {
                         const checked = selectedPresetImportIds.has(r.id) ? 'checked' : '';
                         const isActive = r.id === selectedPresetImportRecordId;
-                        const label = r.filename || '未命名';
+                        const label = r.presetName || r.filename || '未命名';
+                        const sub = r.presetName ? r.filename : '';
                         const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
                         return `<label class="preset-import-item${isActive ? ' active' : ''}">
                             <input type="checkbox" ${checked} onchange="togglePresetImportCheck('${escapeHtml(r.id)}', this.checked)" onclick="event.stopPropagation()">
-                            <span class="preset-import-name" onclick="event.stopPropagation();selectPresetImportById('${escapeHtml(r.id)}');closePresetImportManager();" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
+                            <div style="flex:1;min-width:0;">
+                                <div class="preset-import-name" onclick="event.stopPropagation();selectPresetImportById('${escapeHtml(r.id)}');closePresetImportManager();" title="${escapeHtml(label)}">${escapeHtml(label)}</div>
+                                ${sub ? `<div class="preset-import-sub" title="${escapeHtml(sub)}">${escapeHtml(sub)}</div>` : ''}
+                            </div>
                             <span class="meta-inline" style="flex-shrink:0;width:80px;text-align:right;">${escapeHtml(date)}</span>
                         </label>`;
                     }).join('');
