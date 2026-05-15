@@ -9677,7 +9677,7 @@
         let selectedPresetImportIds = new Set();
 
         async function clearAllData() {
-            if (!confirm('⚠️ 确定清空所有数据？\n\n这将删除：\n- 所有会话和消息\n- 所有变量（好感度、装逼值等）\n- 所有人/物档案\n- 所有知识库条目\n\n此操作不可撤销！建议先导出备份。')) return;
+            if (!confirm('⚠️ 确定清空所有数据？\n\n这将删除：\n- 所有会话和消息\n- 所有变量\n- 所有人/物档案\n- 所有知识库条目\n\n此操作不可撤销！建议先导出备份。')) return;
             const secondConfirm = prompt('请输入 确认清空 以继续：');
             if (secondConfirm !== '确认清空') { showToast('已取消', true); return; }
             try {
