@@ -2153,6 +2153,30 @@ export class SessionManager {
             }
         } catch {}
     }
+
+    clearAllData() {
+        const cleared = { sessions: 0, messages: 0, summaries: 0, variables: 0, namespaces: 0, profiles: 0, knowledge: 0 };
+        const dbs = [this.db];
+        if (this.charDb && this.charDb !== this.db) dbs.push(this.charDb);
+
+        for (const db of dbs) {
+            if (!db || !db.open) continue;
+            try {
+                cleared.variables += db.prepare('DELETE FROM memory_entries WHERE entry_type = ?').run('variable').changes;
+                cleared.profiles += db.prepare('DELETE FROM memory_entries WHERE entry_type = ?').run('participant_profile').changes;
+                cleared.knowledge += db.prepare('DELETE FROM memory_entries WHERE entry_type = ?').run('knowledge').changes;
+                cleared.knowledge += db.prepare('DELETE FROM memory_entries WHERE entry_type NOT IN (?,?,?)').run('variable','participant_profile','knowledge').changes;
+                cleared.messages += db.prepare('DELETE FROM messages').run().changes;
+                cleared.summaries += db.prepare('DELETE FROM summaries').run().changes;
+                cleared.sessions += db.prepare('DELETE FROM sessions').run().changes;
+                cleared.namespaces += db.prepare('DELETE FROM memory_namespaces').run().changes;
+                db.prepare('DELETE FROM sticky_entries').run();
+                db.prepare('DELETE FROM summary_index_entries').run();
+            } catch (e) { /* some tables may not exist in all dbs */ }
+        }
+        this.checkpoint();
+        return cleared;
+    }
 }
 
 export function getGlobalMemory(dataDir) {

@@ -2448,6 +2448,27 @@ async function processBatch(batch) {
                             msg.content = r.cleanedText;
                         }
                     }
+                    // 1.5步：新用户变量初始化 —— 如 scope 下只有系统变量，从角色卡 variable_defaults 初始化
+                    try {
+                        const allVars = sessionManager.listVariables({ scopeKey: varScopeKey, characterName: ns.characterName });
+                        const hasUserVars = allVars.some(v => !(v.tags || []).includes('system'));
+                        if (!hasUserVars) {
+                            const char = characterManager.readFromPng(ns.characterName);
+                            const overrides = characterManager.readOverrides?.(ns.characterName) || {};
+                            const defaults = char?.variable_defaults || overrides?.variable_defaults;
+                            if (defaults && typeof defaults === 'object') {
+                                for (const [k, v] of Object.entries(defaults)) {
+                                    sessionManager.upsertVariable(scopeOpts, {
+                                        key: k, rawValue: String(v ?? ''),
+                                        valueType: typeof v === 'number' ? 'number' : 'string',
+                                        source: 'auto-init'
+                                    });
+                                }
+                                logger.info('[变量] 新用户初始化', { scopeKey: varScopeKey, count: Object.keys(defaults).length });
+                            }
+                        }
+                    } catch {}
+
                     // 第二步：解析所有消息中的 {{get_message_variable::}} / {{getvar::}} 宏
                     for (const msg of messages) {
                         if (typeof msg.content === 'string') {

@@ -1739,6 +1739,22 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
+    // 清空所有数据库
+    app.post('/api/data/clear', requireAuth, async (req, res) => {
+        try {
+            const confirmed = req.body?.confirm === true;
+            if (!confirmed) {
+                return res.status(400).json({ success: false, error: '需要 confirm: true 确认清空操作' });
+            }
+            const cleared = sessionManager.clearAllData();
+            logger.warn('[数据] 所有数据库已清空', { details: cleared });
+            res.json({ success: true, cleared, message: '所有会话、消息、变量、档案、知识库已清空' });
+        } catch (e) {
+            logger.error('[数据] 清空失败:', e.message);
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
     // 递归复制目录（跳过指定目录名）
     function copyDirSync(src, dest, skipNames = new Set()) {
         fsSync.mkdirSync(dest, { recursive: true });
@@ -2131,6 +2147,28 @@ export function setupRoutes(app, config, saveConfig, managers) {
             logger.error('刷新世界书列表失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
+    });
+
+    // 角色卡变量初始化脚本
+    app.get('/api/characters/:filename/variable-defaults', requireAuth, (req, res) => {
+        try {
+            const charName = decodeURIComponent(req.params.filename).replace(/\.png$/i, '');
+            const char = characterManager.readFromPng(charName);
+            const overrides = characterManager.readOverrides?.(charName) || {};
+            res.json({ success: true, variableDefaults: char?.variable_defaults || overrides?.variable_defaults || {} });
+        } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+    });
+
+    app.put('/api/characters/:filename/variable-defaults', requireAuth, (req, res) => {
+        try {
+            const charName = decodeURIComponent(req.params.filename).replace(/\.png$/i, '');
+            const defaults = req.body?.variableDefaults;
+            if (!defaults || typeof defaults !== 'object') {
+                return res.status(400).json({ success: false, error: 'variableDefaults 必须是对象' });
+            }
+            characterManager.updateCharacter(charName, { variable_defaults: defaults });
+            res.json({ success: true });
+        } catch (e) { res.status(500).json({ success: false, error: e.message }); }
     });
 
     // 上传世界书（需要认证）

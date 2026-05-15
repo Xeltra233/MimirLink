@@ -4801,6 +4801,24 @@
                             </div>
                         </div>
                     </div>
+                    <details class="card variable-init-card" ontoggle="if(this.open)refreshInitCharList()">
+                        <summary class="section-head" style="cursor:pointer;list-style:none;">
+                            <h3>🔰 初始化脚本</h3>
+                            <span class="meta-inline" id="variable-init-char-label">点击展开</span>
+                        </summary>
+                        <p class="hint-text">新用户首次互动时自动创建变量。绑定到角色卡，JSON格式。</p>
+                        <div style="display:flex;gap:8px;margin-bottom:8px;">
+                            <select id="variable-init-char-select" onchange="onInitCharSelect()" style="flex:1;">
+                                <option value="">— 选择角色 —</option>
+                            </select>
+                            <button type="button" class="secondary" onclick="refreshInitCharList()">🔄</button>
+                        </div>
+                        <textarea id="variable-init-script" rows="4" placeholder='{"好感度":0,"装逼值":500}' style="font-family:monospace;font-size:0.82rem;"></textarea>
+                        <div style="display:flex;gap:8px;margin-top:8px;">
+                            <button type="button" onclick="saveVariableInitScript()">💾 保存到角色卡</button>
+                            <button type="button" class="secondary" onclick="loadSelectedInitScript()">📖 重新加载</button>
+                        </div>
+                    </details>
                     <div class="card variable-list-card">
                         <div class="section-head">
                             <h3>变量列表</h3>
@@ -5918,6 +5936,11 @@
                         <button class="success" onclick="showBackupModal()">📥 导出备份</button>
                         <button class="secondary" onclick="document.getElementById('config-restore-file').click()" style="margin-left:8px;">📤 恢复备份</button>
                         <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="inspectRestoreFile(event)">
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">危险操作</div>
+                        <p class="hint-text" style="margin-bottom:8px;">清空所有会话、消息、变量、档案、知识库。不可撤销。</p>
+                        <button class="danger" onclick="clearAllData()">🗑 清空所有数据</button>
                     </div>
                 </div>
                 </div>
@@ -8107,6 +8130,7 @@
         async function loadVariables(force = false) {
             syncVariableCharacterFilter();
             syncVariableFilterInputs();
+            refreshInitCharList();
             if (variablesLoaded && !force) {
                 renderVariableList();
                 if (!selectedVariableId && variables.length === 0) {
@@ -8156,6 +8180,54 @@
                 }
                 renderVariableDetail(null);
             }
+        }
+
+        let initCharList = [];
+
+        async function refreshInitCharList() {
+            try {
+                const { res, data } = await fetchJsonSafe('/api/characters');
+                if (!res.ok) throw new Error('加载失败');
+                const chars = Array.isArray(data) ? data : (data.characters || []);
+                initCharList = chars.map(c => typeof c === 'string' ? { name: c.replace(/\.png$/i,'') } : c);
+                const select = document.getElementById('variable-init-char-select');
+                select.innerHTML = '<option value="">— 选择角色 —</option>' +
+                    initCharList.map(c => `<option value="${escapeHtml(c.name)}">${escapeHtml(c.name)}</option>`).join('');
+            } catch {}
+        }
+
+        function onInitCharSelect() {
+            const charName = document.getElementById('variable-init-char-select').value;
+            if (!charName) { document.getElementById('variable-init-char-label').textContent = '未选择角色'; return; }
+            loadSelectedInitScript();
+        }
+
+        async function loadSelectedInitScript() {
+            const charName = document.getElementById('variable-init-char-select').value;
+            if (!charName) { showToast('请先选择角色', true); return; }
+            try {
+                const { res, data } = await fetchJsonSafe(`/api/characters/${encodeURIComponent(charName)}/variable-defaults`);
+                if (!res.ok || !data.success) throw new Error(data.error || '加载失败');
+                const defaults = data.variableDefaults || {};
+                document.getElementById('variable-init-script').value = JSON.stringify(defaults, null, 2);
+                document.getElementById('variable-init-char-label').textContent = `角色: ${charName}`;
+            } catch (e) { showToast('加载失败: ' + e.message, true); }
+        }
+
+        async function saveVariableInitScript() {
+            const charName = document.getElementById('variable-init-char-select').value;
+            if (!charName) { showToast('请先选择角色', true); return; }
+            let defaults;
+            try { defaults = JSON.parse(document.getElementById('variable-init-script').value); }
+            catch { showToast('JSON格式错误', true); return; }
+            try {
+                const { res, data } = await fetchJsonSafe(`/api/characters/${encodeURIComponent(charName)}/variable-defaults`, {
+                    method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ variableDefaults: defaults })
+                });
+                if (!res.ok || !data.success) throw new Error(data.error || '保存失败');
+                showToast('已保存到角色卡');
+            } catch (e) { showToast('保存失败: ' + e.message, true); }
         }
 
         function showFloorOverview() {
@@ -9603,6 +9675,21 @@
         }
 
         let selectedPresetImportIds = new Set();
+
+        async function clearAllData() {
+            if (!confirm('⚠️ 确定清空所有数据？\n\n这将删除：\n- 所有会话和消息\n- 所有变量（好感度、装逼值等）\n- 所有人/物档案\n- 所有知识库条目\n\n此操作不可撤销！建议先导出备份。')) return;
+            const secondConfirm = prompt('请输入 确认清空 以继续：');
+            if (secondConfirm !== '确认清空') { showToast('已取消', true); return; }
+            try {
+                const { res, data } = await fetchJsonSafe('/api/data/clear', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: true })
+                });
+                if (!res.ok || !data.success) throw new Error(data.error || '清空失败');
+                showToast('已清空：' + JSON.stringify(data.cleared));
+                variablesLoaded = false; loadVariables(true);
+            } catch (e) { showToast('清空失败: ' + e.message, true); }
+        }
 
         function openPresetImportManager() {
             document.getElementById('preset-import-modal').style.display = 'flex';

@@ -104,6 +104,14 @@ export class CharacterManager {
      * @param {Object} updates - 要更新的字段
      * @returns {Object} 更新后的完整角色数据
      */
+    readOverrides(characterName) {
+        const overridePath = path.join(this.overridesDir, characterName + '.json');
+        if (fs.existsSync(overridePath)) {
+            try { return JSON.parse(fs.readFileSync(overridePath, 'utf-8')); } catch {}
+        }
+        return {};
+    }
+
     updateCharacter(characterName, updates) {
         this.cache.delete(characterName);
 
@@ -124,7 +132,7 @@ export class CharacterManager {
         }
 
         // ST 卡字段 → 写入 PNG；MimirLink 独有字段 → 写入覆盖层
-        const stFields = ['name','description','personality','scenario','first_mes','mes_example','system_prompt','post_history_instructions','creator_notes','creatorcomment','talkativeness','fav','tags','alternate_greetings','extensions','character_book'];
+        const stFields = ['name','description','personality','scenario','first_mes','mes_example','system_prompt','post_history_instructions','creator_notes','creatorcomment','talkativeness','fav','tags','alternate_greetings','extensions','character_book','variable_defaults'];
         const stUpdates = {};
         const localUpdates = {};
         for (const [k, v] of Object.entries(updates)) {

@@ -139,6 +139,26 @@ export function createMCPHandler(managers, config, saveConfig) {
                         }
                     } catch {}
 
+                    // 新用户变量初始化：scope下无用户变量时从角色卡variable_defaults初始化
+                    try {
+                        const allVars = sessionManager.listVariables({ scopeKey: resolvedScopeKey, characterName: charName });
+                        const hasUserVars = allVars.some(v => !(v.tags || []).includes('system'));
+                        if (!hasUserVars) {
+                            const char = characterManager.readFromPng(charName);
+                            const overrides = characterManager.readOverrides?.(charName) || {};
+                            const defaults = char?.variable_defaults || overrides?.variable_defaults;
+                            if (defaults && typeof defaults === 'object') {
+                                for (const [k, v] of Object.entries(defaults)) {
+                                    sessionManager.upsertVariable({ scopeType: 'user_persistent', scopeKey: resolvedScopeKey, characterName: charName, presetName: presetConfig?.name || '' }, {
+                                        key: k, rawValue: String(v ?? ''),
+                                        valueType: typeof v === 'number' ? 'number' : 'string',
+                                        source: 'auto-init'
+                                    });
+                                }
+                            }
+                        }
+                    } catch {}
+
                     const aiResult = await aiClient.chat(built.messages, {});
                     const reply = aiClient.getVisibleResponseContent(aiResult);
                     const usage = aiResult?.usage || null;
