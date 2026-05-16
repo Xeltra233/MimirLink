@@ -600,6 +600,56 @@ function sanitizeContent(text) {
     return (text || '').replace(/\r/g, '').trim();
 }
 
+/**
+ * 非管理员消息防注入过滤
+ *
+ * 背景：世界书中使用特定前缀（如 &）作为管理员指令触发符。
+ * 恶意用户可能通过在消息内容中伪造指令前缀、消息头格式或管理员QQ号来
+ * 欺骗 AI 执行非授权操作。此过滤在消息到达 AI 之前清洗这些注入向量。
+ *
+ * 过滤规则（仅对非管理员生效）：
+ * 1. 指令前缀：将配置的管理员指令前缀替换为全角字符，防止伪造指令
+ * 2. 消息头格式：将 [群聊| [私聊| QQ: 等系统格式转义，防止伪造身份结构
+ * 3. 管理员QQ号：将内容中出现的管理员QQ号替换为 [已屏蔽]，防止身份伪造
+ *
+ * 配置项（config.chat.injectionFilter）：
+ * - enabled: 是否启用过滤（默认 true）
+ * - adminCommandPrefix: 管理员指令前缀（默认 "&"，对应世界书中的 & 指令系统）
+ * - replacementChar: 替换为的全角字符（默认 "＆"）
+ */
+function sanitizeForInjection(text, config, userId) {
+    if (!text) return text;
+    if (isAdminUser(config, userId)) return text;
+
+    const filterConfig = config.chat?.injectionFilter || {};
+    if (filterConfig.enabled === false) return text;
+
+    let result = text;
+
+    // 1. 管理员指令前缀过滤
+    const prefix = filterConfig.adminCommandPrefix ?? '&';
+    const replacement = filterConfig.replacementChar ?? '＆';
+    if (prefix) {
+        const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        result = result.replace(new RegExp(`^${escapedPrefix}`, 'gm'), replacement);
+    }
+
+    // 2. 消息头格式伪造过滤
+    result = result.replace(/\[群聊\|/g, '【群聊|');
+    result = result.replace(/\[私聊\|/g, '【私聊|');
+    result = result.replace(/QQ:/gi, '扣扣:');
+
+    // 3. 管理员QQ号屏蔽
+    const admins = Array.isArray(config.chat?.adminUsers) ? config.chat.adminUsers.map(String) : [];
+    for (const adminQQ of admins) {
+        if (adminQQ && result.includes(adminQQ)) {
+            result = result.replaceAll(adminQQ, '[已屏蔽]');
+        }
+    }
+
+    return result;
+}
+
 function buildStructuredMessage(event, plainText) {
     const { message_type, user_id, group_id, sender } = event;
     const chatType = message_type === 'private' ? '私聊' : '群聊';
@@ -633,6 +683,7 @@ function extractMessageInfo(config, event, bot) {
     }
 
     plainText = sanitizeContent(plainText || event.raw_message || '');
+    plainText = sanitizeForInjection(plainText, config, event.user_id);
     const structuredText = plainText
         ? (config.chat?.attachMetadata === false ? plainText : buildStructuredMessage(event, plainText))
         : '';

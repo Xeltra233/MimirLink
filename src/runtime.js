@@ -65,7 +65,38 @@ export class MessageRuntime {
         this.lastEnqueueAt = null;
         this.lastFlushAt = null;
         this.totalBatches = 0;
+        this.cleanupTimer = null; // 定时清理 timer
         this.updateConfig(config);
+        this.startCleanupTimer();
+    }
+
+    startCleanupTimer() {
+        // 每 30 秒清理一次过期的去重记录
+        if (this.cleanupTimer) {
+            clearInterval(this.cleanupTimer);
+        }
+        this.cleanupTimer = setInterval(() => {
+            this.cleanupSeenMessages();
+        }, 30000);
+    }
+
+    destroy() {
+        // 清理所有 timer
+        if (this.cleanupTimer) {
+            clearInterval(this.cleanupTimer);
+            this.cleanupTimer = null;
+        }
+
+        for (const [sessionKey, state] of this.buffers.entries()) {
+            if (state.timer) {
+                clearTimeout(state.timer);
+                state.timer = null;
+            }
+        }
+
+        this.buffers.clear();
+        this.chains.clear();
+        this.seenMessages.clear();
     }
 
     updateConfig(config = {}) {

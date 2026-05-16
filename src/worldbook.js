@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { safeJsonParse, safeJsonParseWithFallback } from './json-utils.js';
 
 export class WorldBookManager {
     constructor(dataDir) {
@@ -42,7 +43,7 @@ export class WorldBookManager {
         for (const name of possibleNames) {
             const filePath = path.join(this.worldsDir, name);
             if (fs.existsSync(filePath)) {
-                const worldBook = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                const worldBook = safeJsonParse(fs.readFileSync(filePath, 'utf8'), 10 * 1024 * 1024); // 世界书限制 10MB
                 this.cache.set(characterName, worldBook);
                 return worldBook;
             }
@@ -54,7 +55,7 @@ export class WorldBookManager {
             for (const file of files) {
                 if (file.includes(characterName) && file.endsWith('.json')) {
                     const filePath = path.join(this.worldsDir, file);
-                    const worldBook = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+                    const worldBook = safeJsonParse(fs.readFileSync(filePath, 'utf8'), 10 * 1024 * 1024);
                     this.cache.set(characterName, worldBook);
                     return worldBook;
                 }
@@ -272,8 +273,8 @@ export class WorldBookManager {
         if (!fs.existsSync(filePath)) {
             throw new Error(`世界书文件不存在: ${filePath}`);
         }
-        
-        const worldBook = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+
+        const worldBook = safeJsonParse(fs.readFileSync(filePath, 'utf8'), 10 * 1024 * 1024);
         this.currentWorldBook = worldBook;
         this.currentWorldBookName = filename.replace('.json', '');
         this.cache.set(filename, worldBook);

@@ -96,8 +96,11 @@ export function extractAndApplyVariables(rawOutput, sessionManager, scopeOptions
                     applied.push(patch);
                 }
             }
-        } catch {
-            // 不是合法 JSON，跳过
+        } catch (error) {
+            // JSON 解析失败，记录日志并跳过
+            console.warn(`[变量桥接] UpdateVariable 解析失败: ${error.message}`, {
+                blockContent: blockContent.slice(0, 100)
+            });
         }
         cleanedOutput = cleanedOutput.replace(match[0], '');
     }

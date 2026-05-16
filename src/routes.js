@@ -118,13 +118,43 @@ const __dirname = path.dirname(__filename);
  * @param {Object} deps - 依赖注入
  */
 export function setupRoutes(app, config, saveConfig, managers) {
-    const sanitizeFilename = (name) => String(name || 'unknown').replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_').replace(/\.\.+/g, '.').substring(0, 200);
+    const sanitizeFilename = (name) => {
+        const normalized = String(name || 'unknown')
+            .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_')  // 替换非法字符
+            .replace(/\.\.+/g, '.')                    // 防止多个点
+            .replace(/^\.+/, '')                       // 去掉开头的点
+            .replace(/\.+$/, '');                      // 去掉结尾的点
+
+        // 限制长度（文件名 + 扩展名）
+        const maxLength = 200;
+        if (normalized.length > maxLength) {
+            const lastDot = normalized.lastIndexOf('.');
+            if (lastDot > 0 && lastDot > maxLength - 10) {
+                // 保留扩展名
+                const ext = normalized.slice(lastDot);
+                const base = normalized.slice(0, maxLength - ext.length);
+                return base + ext;
+            }
+            return normalized.substring(0, maxLength);
+        }
+
+        return normalized || 'unnamed';
+    };
 
     const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES, runtime, getLastRoutingSnapshot, formatSessionLabel, getLastInjectionObservation, getRecentInjectionObservations, getLastRecallSnapshot, clearParticipantProfileTimers, analyzeParticipantProfile, updateKnowledgeImportProgress, getParticipantProfileProgress, getKnowledgeImportProgress, getDashboardMetricsSnapshot, recordDashboardMetric } = managers;
 
     const summarizePayload = (payload, maxLen = 400) => {
         try {
-            const text = JSON.stringify(payload);
+            // 脱敏：移除敏感字段
+            const sanitized = { ...payload };
+            const sensitiveKeys = ['password', 'apiKey', 'accessToken', 'sessionSecret', 'secret', 'token'];
+            for (const key of sensitiveKeys) {
+                if (key in sanitized) {
+                    sanitized[key] = '******';
+                }
+            }
+
+            const text = JSON.stringify(sanitized);
             if (!text) {
                 return '';
             }
@@ -1330,8 +1360,23 @@ export function setupRoutes(app, config, saveConfig, managers) {
         },
         filename: (req, file, cb) => {
             // 保持原文件名，处理中文编码
-            const originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
-            cb(null, originalName);
+            let originalName;
+            try {
+                originalName = Buffer.from(file.originalname, 'latin1').toString('utf8');
+            } catch {
+                originalName = file.originalname;
+            }
+
+            // 防止路径遍历：去除路径分隔符
+            const safeName = originalName
+                .replace(/\\/g, '_')
+                .replace(/\//g, '_')
+                .replace(/\.\./g, '_');
+
+            // 使用 sanitizeFilename 进一步清理
+            const cleanName = sanitizeFilename(safeName);
+
+            cb(null, cleanName);
         }
     });
     
@@ -2191,6 +2236,72 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
+    // 下载角色卡 PNG 文件
+    app.get('/api/characters/:filename/download', requireAuth, (req, res) => {
+        const { filename } = req.params;
+        const filePath = path.join(config.chat.dataDir || './data', 'characters', filename);
+        if (!fsSync.existsSync(filePath)) {
+            return res.status(404).json({ error: '文件不存在' });
+        }
+        res.download(filePath, filename);
+    });
+
+    // 批量下载角色卡（tar.gz）
+    app.post('/api/characters/batch-download', requireAuth, async (req, res) => {
+        const { filenames } = req.body;
+        if (!Array.isArray(filenames) || filenames.length === 0) {
+            return res.status(400).json({ error: '请提供文件名列表' });
+        }
+        try {
+            const { pack } = await import('tar-fs');
+            const { createGzip } = await import('zlib');
+            const charDir = path.join(config.chat.dataDir || './data', 'characters');
+            const validFiles = filenames.filter(f => fsSync.existsSync(path.join(charDir, f)));
+            if (validFiles.length === 0) return res.status(404).json({ error: '没有有效文件' });
+
+            res.setHeader('Content-Type', 'application/gzip');
+            res.setHeader('Content-Disposition', `attachment; filename="characters-${Date.now()}.tar.gz"`);
+            const tarStream = pack(charDir, { entries: validFiles });
+            tarStream.pipe(createGzip()).pipe(res);
+        } catch (e) {
+            logger.error('批量导出角色卡失败', e);
+            if (!res.headersSent) res.status(500).json({ error: e.message });
+        }
+    });
+
+    // 下载世界书 JSON 文件
+    app.get('/api/worldbooks/:filename/download', requireAuth, (req, res) => {
+        const { filename } = req.params;
+        const filePath = path.join(config.chat.dataDir || './data', 'worlds', filename);
+        if (!fsSync.existsSync(filePath)) {
+            return res.status(404).json({ error: '文件不存在' });
+        }
+        res.download(filePath, filename);
+    });
+
+    // 批量下载世界书（tar.gz）
+    app.post('/api/worldbooks/batch-download', requireAuth, async (req, res) => {
+        const { filenames } = req.body;
+        if (!Array.isArray(filenames) || filenames.length === 0) {
+            return res.status(400).json({ error: '请提供文件名列表' });
+        }
+        try {
+            const { pack } = await import('tar-fs');
+            const { createGzip } = await import('zlib');
+            const worldsDir = path.join(config.chat.dataDir || './data', 'worlds');
+            const validFiles = filenames.filter(f => fsSync.existsSync(path.join(worldsDir, f)));
+            if (validFiles.length === 0) return res.status(404).json({ error: '没有有效文件' });
+
+            res.setHeader('Content-Type', 'application/gzip');
+            res.setHeader('Content-Disposition', `attachment; filename="worldbooks-${Date.now()}.tar.gz"`);
+            const tarStream = pack(worldsDir, { entries: validFiles });
+            tarStream.pipe(createGzip()).pipe(res);
+        } catch (e) {
+            logger.error('批量导出世界书失败', e);
+            if (!res.headersSent) res.status(500).json({ error: e.message });
+        }
+    });
+
     // 测试世界书匹配（需要认证）
     app.post('/api/worldbooks/test', requireAuth, (req, res) => {
         try {
@@ -2528,6 +2639,42 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
+    // 角色世界书绑定/解绑
+    app.post('/api/characters/:filename/worldbook-binding', requireAuth, (req, res) => {
+        try {
+            const { filename } = req.params;
+            const { worldbook } = req.body;
+            const characterName = filename.replace(/\.png$/i, '');
+            const binding = getCharacterBinding(characterName);
+            binding.worldbook = worldbook || null;
+            saveConfig(config);
+
+            // 如果是当前角色，立即加载/卸载世界书
+            if (config.chat.defaultCharacter === characterName) {
+                if (worldbook) {
+                    try { worldBookManager.loadWorldBook(worldbook); } catch(e) {
+                        logger.warn(`加载绑定世界书失败: ${e.message}`);
+                    }
+                } else {
+         // 解绑后回退到全局默认
+                    const globalWb = config.bindings?.global?.worldbook;
+                    if (globalWb) {
+                        try { worldBookManager.loadWorldBook(globalWb); } catch(e) {}
+                    }
+                }
+            }
+
+            res.json({
+                success: true,
+                bindingSummary: getBindingSummary(characterName),
+                message: worldbook ? `已绑定世界书: ${worldbook}` : '已解绑世界书'
+            });
+        } catch (error) {
+            logger.error('更新角色世界书绑定失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     // 获取全局记忆（需要认证）
     app.get('/api/memory/global', requireAuth, (req, res) => {
         const limit = parseInt(req.query.limit) || 100;
@@ -2588,6 +2735,29 @@ export function setupRoutes(app, config, saveConfig, managers) {
             res.json({ success: true, message: '变量已删除' });
         } catch (error) {
             logger.error('删除变量失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // 批量删除某个 scope 下的所有变量（包括系统变量）
+    app.delete('/api/memory/variables', requireAuth, (req, res) => {
+        try {
+            const { scopeType, scopeKey, characterName, presetName } = req.query;
+            if (!scopeKey) {
+                return res.status(400).json({ success: false, error: '必须指定 scopeKey' });
+            }
+            const filters = { scopeType, scopeKey, characterName, presetName };
+            const items = sessionManager.listVariables(filters);
+            let deleted = 0;
+            for (const item of items) {
+                try {
+                    sessionManager.deleteVariable(item.id);
+                    deleted++;
+                } catch {}
+            }
+            res.json({ success: true, message: `已彻底删除 ${deleted} 个变量（含系统变量）`, deleted });
+        } catch (error) {
+            logger.error('批量删除变量失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });
@@ -3406,6 +3576,60 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.get('/api/logs', requireAuth, (req, res) => {
         const logs = logger.getRecentLogs();
         res.json(logs);
+    });
+
+    // 获取历史日志文件列表
+    app.get('/api/logs/files', requireAuth, async (req, res) => {
+        try {
+            const logDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'logs');
+            const exists = fsSync.existsSync(logDir);
+            if (!exists) return res.json([]);
+            const files = await fs.readdir(logDir);
+            const logFiles = [];
+            for (const name of files) {
+                if (!name.endsWith('.log')) continue;
+                const stat = await fs.stat(path.join(logDir, name));
+                logFiles.push({ name, size: stat.size, mtime: stat.mtimeMs });
+            }
+            logFiles.sort((a, b) => b.mtime - a.mtime);
+            res.json(logFiles);
+        } catch (e) {
+            logger.error('获取日志文件列表失败', e);
+            res.status(500).json({ error: '获取日志文件列表失败' });
+        }
+    });
+
+    // 下载指定日志文件
+    app.get('/api/logs/download/:filename', requireAuth, (req, res) => {
+        const filename = req.params.filename;
+        if (!/^[\w\-\.]+\.log$/.test(filename)) {
+            return res.status(400).json({ error: '无效的文件名' });
+        }
+        const logDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'logs');
+        const filePath = path.join(logDir, filename);
+        if (!fsSync.existsSync(filePath)) {
+            return res.status(404).json({ error: '文件不存在' });
+        }
+        res.download(filePath, filename);
+    });
+
+    // 读取指定日志文件内容（文本）
+    app.get('/api/logs/content/:filename', requireAuth, async (req, res) => {
+        const filename = req.params.filename;
+        if (!/^[\w\-\.]+\.log$/.test(filename)) {
+            return res.status(400).json({ error: '无效的文件名' });
+        }
+        const logDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'logs');
+        const filePath = path.join(logDir, filename);
+        if (!fsSync.existsSync(filePath)) {
+            return res.status(404).json({ error: '文件不存在' });
+        }
+        try {
+            const content = await fs.readFile(filePath, 'utf8');
+            res.type('text/plain').send(content);
+        } catch (e) {
+            res.status(500).json({ error: '读取文件失败' });
+        }
     });
 
     app.get('/api/participant-profiles', requireAuth, (req, res) => {
@@ -5449,7 +5673,9 @@ ${lastResultText}
             const embedPath = path.join(__dirname, '..', 'data', 'range-corpus-embeddings.json');
             if (fsSync.existsSync(storePath)) fsSync.unlinkSync(storePath);
             if (fsSync.existsSync(embedPath)) fsSync.unlinkSync(embedPath);
-        } catch (e) {}
+        } catch (e) {
+            logger.error?.('[API] 清理靶场数据失败', { error: e.message });
+        }
         res.json({ success: true });
     });
 

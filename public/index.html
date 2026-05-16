@@ -114,11 +114,12 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 12px 20px;
+            padding: 14px 20px;
             border-bottom: 1px solid var(--border);
             gap: 16px;
             flex-wrap: wrap;
-            background: var(--bg);
+            background: var(--bg-elevated);
+            backdrop-filter: blur(12px);
             z-index: 100;
         }
 
@@ -230,18 +231,20 @@
         .tabs {
             flex: 0 0 200px;
             display: grid;
-            gap: 4px;
+            gap: 2px;
             align-content: start;
             overflow-y: auto;
             z-index: 10;
             background: var(--bg);
-            padding: 16px 12px;
+            padding: 16px 10px;
             border-right: 1px solid var(--border);
+            scrollbar-width: thin;
         }
 
         .content-shell {
             flex: 1;
             min-width: 0;
+            max-width: 100%;
             overflow-y: auto;
             overflow-x: hidden;
             padding: 20px 20px 48px;
@@ -253,7 +256,7 @@
             border: none;
             border-radius: var(--radius);
             cursor: pointer;
-            transition: background 0.12s;
+            transition: background 0.15s, color 0.15s, transform 0.1s;
             text-align: left;
             font-weight: 500;
             font-size: 0.88rem;
@@ -263,12 +266,15 @@
         .tab:hover {
             background: var(--bg-inset);
             color: var(--text);
+            transform: translateX(2px);
         }
 
         .tab.active {
-            background: var(--bg-inset);
-            color: var(--text);
+            background: var(--accent-soft);
+            color: var(--accent);
             font-weight: 600;
+            border-left: 3px solid var(--accent);
+            padding-left: 9px;
         }
 
         .panel {
@@ -279,11 +285,18 @@
             border: none;
             box-shadow: none;
             overflow: visible;
+            width: 100%;
+            min-width: 0;
+            max-width: 100%;
         }
 
         .panel.active {
             display: block;
             animation: panel-enter 200ms ease;
+        }
+
+        #logs.panel.active {
+            overflow: hidden;
         }
 
         #prompt-range.panel.active {
@@ -304,22 +317,31 @@
 
         .panel h2 {
             margin-bottom: 20px;
-            color: var(--accent);
-            font-size: 1.4rem;
+            color: var(--text);
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.01em;
         }
 
         .card {
             background: var(--bg-elevated);
             border-radius: var(--radius-lg);
             padding: 20px 24px;
-            margin-bottom: 16px;
+            margin-bottom: 0;
             border: 1px solid var(--border);
             box-shadow: var(--shadow-sm);
+            transition: box-shadow 0.2s, border-color 0.2s;
+        }
+
+        .card:hover {
+            box-shadow: var(--shadow);
+            border-color: var(--border-strong);
         }
 
         .card h3 {
             margin-bottom: 15px;
-            font-size: 1.1rem;
+            font-size: 1.05rem;
+            font-weight: 600;
         }
 
         .knowledge-import-source-panel {
@@ -429,19 +451,19 @@
 
         .form-group label {
             display: block;
-            margin-bottom: 5px;
+            margin-bottom: 4px;
             color: var(--text-muted);
-            font-size: 0.9rem;
+            font-size: 0.82rem;
         }
 
         input, select, textarea {
             width: 100%;
-            padding: 9px 14px;
+            padding: 7px 12px;
             background: var(--bg-inset);
             border: 1px solid var(--border);
             border-radius: var(--radius);
             color: var(--text);
-            font-size: 0.9rem;
+            font-size: 0.85rem;
             transition: border-color 0.15s, box-shadow 0.15s;
         }
 
@@ -497,31 +519,41 @@
         }
 
         .list {
-            max-height: 300px;
+            max-height: 400px;
             overflow-y: auto;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            padding-right: 6px;
         }
 
         .list-item {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            gap: 8px;
             padding: 10px 14px;
             background: var(--bg-inset);
             border-radius: var(--radius);
             margin-bottom: 4px;
             cursor: pointer;
-            transition: background 0.12s;
+            transition: background 0.25s ease, border-color 0.25s ease, transform 0.15s ease;
             border: 1px solid transparent;
+            overflow: hidden;
         }
 
         .list-item:hover {
             background: var(--bg-elevated);
             border-color: var(--border);
+            transform: translateX(2px);
         }
 
         .list-item.selected {
             border-color: var(--accent);
             background: var(--accent-soft);
+            transform: translateX(2px);
+        }
+
+        .list-item.selected .name {
+            color: var(--accent);
         }
 
         .list-item .name {
@@ -538,6 +570,52 @@
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 20px;
             align-items: start;
+        }
+
+        /* 统一的两栏布局：窄侧边栏 + 宽主区域 */
+        .grid.panel-two-col {
+            grid-template-columns: minmax(280px, 350px) minmax(0, 1fr);
+        }
+        .panel-sidebar-card {
+            max-width: 350px;
+            overflow: hidden;
+        }
+        .panel-main-card {
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        /* 统一上传按钮样式 */
+        .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 10px 20px;
+            background: var(--btn-primary);
+            border: none;
+            border-radius: var(--radius);
+            color: white;
+            cursor: pointer;
+            font-size: 0.95rem;
+            box-shadow: var(--shadow-sm);
+            transition: background 0.15s;
+        }
+        .upload-btn:hover {
+            background: var(--btn-primary-hover);
+        }
+
+        /* 提示文本 */
+        .hint-text {
+            color: var(--text-muted);
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+
+        /* 内联 meta 标签 */
+        .meta-inline {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: normal;
         }
 
         #dashboard {
@@ -1116,28 +1194,29 @@
             display: flex;
             flex-direction: column;
             gap: 2px;
+            padding: 16px 18px;
         }
 
         .config-subtabs {
             display: flex;
-            gap: 8px;
+            gap: 6px;
             flex-wrap: wrap;
-            margin-bottom: 16px;
-            padding: 10px;
+            margin-bottom: 14px;
+            padding: 6px 8px;
             border: 1px solid var(--border);
-            border-radius: 16px;
+            border-radius: 12px;
             background: color-mix(in srgb, var(--bg-elevated) 86%, transparent 14%);
         }
 
         .config-subtab {
-            padding: 8px 12px;
+            padding: 6px 11px;
             border: 1px solid var(--border);
             border-radius: 999px;
             background: var(--bg-inset);
             color: var(--text-muted);
             cursor: pointer;
             font-weight: 600;
-            font-size: 0.88rem;
+            font-size: 0.82rem;
         }
 
         .config-subtab.active {
@@ -1154,7 +1233,7 @@
 
         .config-subpanel.active {
             display: grid;
-            gap: 16px;
+            gap: 12px;
         }
 
         /* ====== 提示词优化靶场 ====== */
@@ -1601,23 +1680,24 @@
         #config .config-card-header {
             display: flex;
             flex-direction: column;
-            gap: 6px;
-            margin-bottom: 14px;
+            gap: 4px;
+            margin-bottom: 10px;
         }
 
         #config .config-card-header h3 {
             margin-bottom: 0;
+            font-size: 0.95rem;
         }
 
         #config .config-card-intro {
             color: var(--text-muted);
-            font-size: 0.84rem;
-            line-height: 1.55;
+            font-size: 0.8rem;
+            line-height: 1.45;
         }
 
         #config .config-subsection {
-            margin-top: 8px;
-            padding-top: 12px;
+            margin-top: 6px;
+            padding-top: 10px;
             border-top: 1px dashed color-mix(in srgb, var(--border) 78%, transparent 22%);
         }
 
@@ -1628,16 +1708,16 @@
         }
 
         #config .config-subsection-title {
-            margin-bottom: 12px;
-            font-size: 0.95rem;
+            margin-bottom: 8px;
+            font-size: 0.88rem;
             font-weight: 600;
             color: var(--accent);
         }
 
         #config .config-subgrid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
-            gap: 14px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+            gap: 10px;
         }
 
         #config .config-subgrid .form-group {
@@ -1645,18 +1725,19 @@
         }
 
         #config .config-subgrid--compact {
-            grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+            gap: 8px;
         }
 
         #config .config-subgrid--timing {
-            grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-            gap: 12px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+            gap: 8px;
         }
 
         #config .config-subgrid .hint-text,
         #config .config-subsection .hint-text {
-            margin-top: 6px;
+            margin-top: 3px;
+            font-size: 0.75rem;
         }
 
         .checkbox-label {
@@ -1890,12 +1971,21 @@
             border: 1px solid var(--border);
             border-radius: 14px;
             padding: 20px;
-            transition: border-color 0.3s;
+            transition: border-color 0.3s, opacity 0.5s, transform 0.5s;
         }
 
         .task-card.is-active {
             border-color: var(--accent);
             box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent 82%);
+        }
+
+        .task-card.is-done {
+            opacity: 0.5;
+            transform: scale(0.98);
+        }
+
+        .task-card.is-done:hover {
+            opacity: 0.85;
         }
 
         .task-card-icon {
@@ -2349,6 +2439,14 @@
                 grid-template-columns: 1fr;
             }
 
+            .grid.panel-two-col {
+                grid-template-columns: 1fr;
+            }
+
+            .panel-sidebar-card {
+                max-width: none;
+            }
+
             header h1 {
                 font-size: 1.5rem;
             }
@@ -2722,29 +2820,149 @@
             }
         }
 
-        .log-container {
-            background: var(--bg);
-            border-radius: 8px;
-            padding: 15px;
-            max-height: 400px;
-            overflow-y: auto;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 0.85rem;
+        /* 日志页面 - Tab 切换 */
+        .log-tabs {
+            display: inline-flex;
+            padding: 4px;
+            gap: 4px;
+            border-radius: var(--radius);
+            background: rgba(255,255,255,0.4);
+            backdrop-filter: blur(12px);
         }
+        [data-theme="dark"] .log-tabs { background: rgba(0,0,0,0.2); }
+        [data-theme="sakura"] .log-tabs { background: rgba(255,255,255,0.4); }
 
-        .log-entry {
-            padding: 5px 0;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .log-entry.info { color: var(--text); }
-        .log-entry.warn { color: var(--warning); }
-        .log-entry.error { color: var(--error); }
-        .log-entry.debug { color: var(--text-muted); }
-
-        .log-time {
+        .log-tab-btn {
+            padding: 6px 14px;
+            border-radius: 6px;
+            border: none;
+            background: transparent;
             color: var(--text-muted);
-            margin-right: 10px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            position: relative;
+            transition: color 0.2s;
+        }
+        .log-tab-btn.active {
+            color: var(--text);
+            background: rgba(255,255,255,0.8);
+            backdrop-filter: blur(12px);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+        }
+        [data-theme="dark"] .log-tab-btn.active {
+            background: rgba(255,255,255,0.1);
+        }
+
+        /* 日志工具栏 */
+        .log-toolbar {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--border);
+            background: rgba(255,255,255,0.6);
+            backdrop-filter: blur(12px);
+            box-shadow: var(--shadow-sm);
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+        [data-theme="dark"] .log-toolbar {
+            background: rgba(0,0,0,0.4);
+            border-color: rgba(255,255,255,0.1);
+        }
+
+        /* 日志级别筛选 Chip */
+        .log-level-chips {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .log-level-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 10px;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.2s, transform 0.1s;
+            user-select: none;
+        }
+        .log-level-chip:active { transform: scale(0.95); }
+        .log-level-chip.inactive { opacity: 0.35; }
+
+        .log-level-chip[data-level="debug"] {
+            background: rgba(108,117,125,0.15);
+            color: #6c757d;
+        }
+        .log-level-chip[data-level="info"] {
+            background: rgba(45,138,94,0.15);
+            color: var(--success);
+        }
+        .log-level-chip[data-level="warn"] {
+            background: rgba(214,137,14,0.15);
+            color: var(--warning);
+        }
+        .log-level-chip[data-level="error"] {
+            background: rgba(217,64,64,0.15);
+            color: var(--error);
+        }
+
+        .log-toolbar-actions {
+            margin-left: auto;
+            display: flex;
+            gap: 6px;
+        }
+        .log-toolbar-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: var(--radius);
+            border: none;
+            font-size: 0.8rem;
+            cursor: pointer;
+            background: var(--accent-soft);
+            color: var(--accent);
+            transition: opacity 0.2s;
+        }
+        .log-toolbar-btn:hover { opacity: 0.75; }
+
+        /* xterm 终端容器 */
+        .log-xterm-wrapper {
+            flex: 1;
+            min-height: 0;
+            overflow: hidden;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow-sm);
+            background: #0d1117;
+        }
+        .log-xterm-wrapper .xterm {
+            padding: 8px;
+        }
+
+        /* 历史日志选择器 */
+        .log-history-select-wrapper {
+            flex: 0 0 auto;
+            min-width: 180px;
+        }
+        .log-history-select {
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg-elevated);
+            color: var(--text);
+            font-size: 0.82rem;
+            outline: none;
+            cursor: pointer;
+        }
+        .log-history-select:focus {
+            border-color: var(--accent);
         }
 
         .session-item {
@@ -2843,49 +3061,61 @@
             inset: 0;
             background: rgba(0, 0, 0, 0.45);
             display: flex;
-            align-items: flex-start;
+            align-items: center;
             justify-content: center;
             z-index: 3000;
             padding: 16px;
             overflow-y: auto;
+            backdrop-filter: blur(4px);
         }
 
         .modal {
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(0,0,0,0.5);
-            overflow: auto;
+            position: relative;
+            width: min(560px, calc(100vw - 32px));
+            max-height: calc(100vh - 64px);
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+            overflow-y: auto;
         }
         .modal-content {
-            width: min(620px, calc(100vw - 32px));
-            max-height: calc(100vh - 32px);
-            background: var(--bg-inset);
+            width: min(560px, calc(100vw - 32px));
+            max-height: calc(100vh - 64px);
+            background: var(--bg-elevated);
             border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 20px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.18);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.25);
             overflow-y: auto;
         }
 
         .modal h3 {
-            margin-bottom: 10px;
-            color: var(--accent);
+            margin-bottom: 12px;
+            color: var(--text);
+            font-size: 1.1rem;
+            font-weight: 700;
         }
 
         .modal .option-row {
             display: flex;
             gap: 10px;
             align-items: flex-start;
-            padding: 10px 0;
-            border-top: 1px solid rgba(0,0,0,0.06);
+            padding: 10px 12px;
+            margin: 4px 0;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            background: var(--bg-inset);
+            transition: border-color 0.15s;
+        }
+
+        .modal .option-row:hover {
+            border-color: var(--accent);
         }
 
         .modal .option-row:first-of-type {
-            border-top: none;
+            margin-top: 0;
         }
 
         .modal .option-row input {
@@ -2929,8 +3159,10 @@
 
         .empty-state {
             text-align: center;
-            padding: 40px;
+            padding: 40px 20px;
             color: var(--text-muted);
+            font-size: 0.9rem;
+            opacity: 0.7;
         }
 
         .badge {
@@ -3139,7 +3371,7 @@
             align-items: center;
             justify-content: space-between;
             padding: 10px 14px;
-            border-bottom: 1px solid var(--border-subtle);
+            border-bottom: 1px solid var(--border);
             cursor: pointer;
             transition: background 0.15s ease;
             gap: 12px;
@@ -3397,42 +3629,42 @@
             flex: 1;
         }
         .preset-import-row {
-            display: flex;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
             align-items: center;
-            gap: 10px;
-            padding: 6px 10px;
+            gap: 8px;
+            padding: 10px 14px;
             cursor: pointer;
-            font-size: 0.82rem;
-            border-bottom: 1px solid var(--border-subtle);
+            font-size: 0.84rem;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.3s ease, border-color 0.3s ease;
         }
-        .preset-import-row:hover { background: var(--bg-elevated); }
-        .preset-import-row.active { background: color-mix(in srgb, var(--bg-elevated) 85%, var(--accent) 15%); }
-        .preset-import-row input[type=checkbox] { flex-shrink: 0; margin: 0; }
+        .preset-import-row:last-child { border-bottom: none; }
+        .preset-import-row:hover { background: var(--bg-inset); }
+        .preset-import-row.active {
+            background: var(--accent-soft);
+            border-color: var(--accent);
+        }
+        .preset-import-row input[type=checkbox] {
+            flex-shrink: 0;
+            margin: 0;
+            accent-color: var(--accent);
+        }
         .preset-import-name {
-            flex: 1;
-            min-width: 0;
             font-weight: 500;
-            color: var(--text-primary);
+            color: var(--text);
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
-        .preset-import-name:hover { color: var(--accent); }
-        .preset-import-sub {
-            flex: 1;
-            min-width: 0;
-            font-size: 0.7rem;
-            color: var(--text-muted);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
+        .preset-import-row.active .preset-import-name { color: var(--accent); }
+        .preset-import-sub { display: none; }
         .preset-import-date {
             flex-shrink: 0;
-            width: 80px;
             text-align: right;
             color: var(--text-muted);
-            font-size: 0.78rem;
+            font-size: 0.75rem;
+            white-space: nowrap;
         }
 
         .preset-list-head {
@@ -4423,6 +4655,10 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -4654,23 +4890,42 @@
             <h2>角色卡管理</h2>
             <div class="btn-group" style="margin-bottom: 20px;">
                 <button onclick="refreshCharacters()">🔄 刷新列表</button>
-                <label class="upload-btn" style="padding: 10px 20px; background: var(--btn-primary); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.95rem; box-shadow: 0 8px 18px rgba(45, 35, 25, 0.12);">
+                <label class="upload-btn">
                     📤 上传角色(PNG)
                     <input type="file" accept=".png" onchange="uploadCharacter(this)" style="display: none;">
                 </label>
+                <button class="secondary" onclick="openCharacterManager()">📋 管理角色</button>
             </div>
-            <p style="color: var(--text-muted); margin-bottom: 15px; font-size: 0.9rem;">
+            <p class="hint-text">
                 💡 支持 SillyTavern 格式的角色卡 PNG 文件（包含 tEXt/iTXt 块的角色数据）
             </p>
-            <div class="grid">
-                <div class="card" style="max-width: 350px;">
+            <!-- 角色管理弹窗 -->
+            <div id="character-manager-modal" class="modal-overlay" style="display:none;">
+                <div class="modal" style="max-width:500px; width: min(500px, calc(100vw - 32px));">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                        <h3 style="margin:0;">角色管理</h3>
+                        <button class="secondary" onclick="closeCharacterManager()" style="padding:4px 10px;font-size:1.1rem;line-height:1;">×</button>
+                    </div>
+                    <p class="hint-text" style="margin-bottom:10px;">点击条目切换角色，勾选框可批量选中用于导出/删除</p>
+                    <div id="character-manager-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;justify-content:flex-end;">
+                        <span class="meta-inline" id="character-manager-count">已选 0 项</span>
+                        <div style="flex:1;"></div>
+                        <button type="button" class="secondary" onclick="toggleSelectAllCharacters()">全选</button>
+                        <button type="button" class="secondary" onclick="batchExportCharacters()">📥 导出选中</button>
+                        <button type="button" class="danger" onclick="batchDeleteCharacters()">🗑 删除选中</button>
+                    </div>
+                </div>
+            </div>
+            <div class="grid panel-two-col">
+                <div class="card panel-sidebar-card">
                     <h3>角色列表</h3>
                     <input type="text" id="character-filter" placeholder="搜索角色..." oninput="filterCharacterList()" style="margin-bottom:8px;width:100%;font-size:0.82rem;padding:6px 10px;border-radius:8px;">
                     <div class="list" id="character-list">
                         <div class="empty-state">加载中...</div>
                     </div>
                 </div>
-                <div class="card" style="flex: 1; min-width: 500px;">
+                <div class="card panel-main-card">
                     <h3>角色详情 <span id="char-edit-status" style="font-size: 0.8rem; color: var(--text-muted);"></span></h3>
                     <div id="character-detail">
                         <div class="empty-state">选择一个角色查看详情</div>
@@ -4684,22 +4939,41 @@
             <h2>世界书管理</h2>
             <div class="btn-group" style="margin-bottom: 20px;">
                 <button onclick="refreshWorldBooks()">🔄 刷新列表</button>
-                <label class="upload-btn" style="padding: 10px 20px; background: var(--btn-primary); border: none; border-radius: 8px; color: white; cursor: pointer; font-size: 0.95rem; box-shadow: 0 8px 18px rgba(45, 35, 25, 0.12);">
+                <label class="upload-btn">
                     📤 上传世界(JSON)
                     <input type="file" accept=".json" onchange="uploadWorldBook(this)" style="display: none;">
                 </label>
+                <button class="secondary" onclick="openWorldBookManager()">📋 管理世界书</button>
             </div>
-            <p style="color: var(--text-muted); margin-bottom: 15px; font-size: 0.9rem;">
+            <p class="hint-text">
                 💡 支持 SillyTavern 格式的世界书 JSON 文件（WorldInfo 格式）
             </p>
-            <div class="grid">
-                <div class="card">
+            <!-- 世界书管理弹窗 -->
+            <div id="worldbook-manager-modal" class="modal-overlay" style="display:none;">
+                <div class="modal" style="max-width:500px; width: min(500px, calc(100vw - 32px));">
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                        <h3 style="margin:0;">世界书管理</h3>
+                        <button class="secondary" onclick="closeWorldBookManager()" style="padding:4px 10px;font-size:1.1rem;line-height:1;">×</button>
+                    </div>
+                    <p class="hint-text" style="margin-bottom:10px;">点击条目切换世界书，勾选框可批量选中用于导出/删除</p>
+                    <div id="worldbook-manager-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-top:12px;justify-content:flex-end;">
+                        <span class="meta-inline" id="worldbook-manager-count">已选 0 项</span>
+                        <div style="flex:1;"></div>
+                        <button type="button" class="secondary" onclick="toggleSelectAllWorldBooks()">全选</button>
+                        <button type="button" class="secondary" onclick="batchExportWorldBooks()">📥 导出选中</button>
+                        <button type="button" class="danger" onclick="batchDeleteWorldBooks()">🗑 删除选中</button>
+                    </div>
+                </div>
+            </div>
+            <div class="grid panel-two-col">
+                <div class="card panel-sidebar-card">
                     <h3>世界书列表</h3>
                     <div class="list" id="worldbook-list">
                         <div class="empty-state">加载中...</div>
                     </div>
                 </div>
-                <div class="card" style="flex: 1; min-width: 500px;">
+                <div class="card panel-main-card">
                     <h3>世界书条目编辑器</h3>
                     <div id="worldbook-editor">
                         <div class="empty-state">选择一个世界书查看和编辑条目</div>
@@ -4711,14 +4985,21 @@
         <!-- 会话 -->
         <div class="panel" id="sessions">
             <h2>会话管理</h2>
-            <div class="grid">
-                <div class="card">
-                    <h3>活跃会话</h3>
-                    <div id="session-list">
+            <div class="btn-group" style="margin-bottom: 15px;">
+                <button onclick="loadSessions()">🔄 刷新</button>
+                <button class="secondary" onclick="clearInactiveSessions()">🗑 清理非活跃会话</button>
+            </div>
+            <div class="grid panel-two-col">
+                <div class="card panel-sidebar-card">
+                    <div class="section-head">
+                        <h3>活跃会话</h3>
+                        <span id="session-count" class="meta-inline">0</span>
+                    </div>
+                    <div class="list" id="session-list">
                         <div class="empty-state">暂无会话</div>
                     </div>
                 </div>
-                <div class="card">
+                <div class="card panel-main-card">
                     <h3>会话历史</h3>
                     <div id="session-history">
                         <div class="empty-state">选择一个会话查看历史</div>
@@ -4822,7 +5103,10 @@
                     <div class="card variable-list-card">
                         <div class="section-head">
                             <h3>变量列表</h3>
-                            <span id="variable-count" class="meta-inline">0 </span>
+                            <div class="btn-group" style="margin:0;">
+                                <span id="variable-count" class="meta-inline">0 </span>
+                                <button class="danger" onclick="clearScopeVariables()" style="padding:4px 8px;font-size:0.75rem;">清空当前scope</button>
+                            </div>
                         </div>
                         <div id="variable-list" class="list">
                             <div class="empty-state">加载中...</div>
@@ -5167,8 +5451,6 @@
                 <button class="success" onclick="saveTTSConfig()">💾 保存 TTS 配置</button>
             </div>
         </div>
-
-        <!-- 配置 -->
         <div class="panel" id="config">
             <h2>系统配置</h2>
             <div class="config-subtabs">
@@ -5335,6 +5617,30 @@
                                 <input type="text" id="config-chat-blocked-users" placeholder="拉黑的用户 QQ">
                             </div>
                         </div>
+                        <details class="config-advanced-section">
+                            <summary>防注入过滤</summary>
+                            <p class="hint-text">非管理员消息在到达 AI 之前会被过滤，防止伪造管理员指令或身份。管理员消息不受影响。</p>
+                            <div class="config-subgrid config-subgrid--compact" style="margin-top: 14px;">
+                                <div class="form-group">
+                                    <label>启用防注入过滤</label>
+                                    <select id="config-chat-injection-filter-enabled">
+                                        <option value="true">启用</option>
+                                        <option value="false">关闭</option>
+                                    </select>
+                                    <p class="hint-text">关闭后所有消息原样透传给 AI，不做任何清洗</p>
+                                </div>
+                                <div class="form-group">
+                                    <label>管理员指令前缀</label>
+                                    <input type="text" id="config-chat-injection-prefix" placeholder="&">
+                                    <p class="hint-text">世界书中用于触发管理员指令的前缀符号。非管理员消息中出现此前缀开头的行会被替换为全角字符</p>
+                                </div>
+                                <div class="form-group">
+                                    <label>替换为字符</label>
+                                    <input type="text" id="config-chat-injection-replacement" placeholder="＆">
+                                    <p class="hint-text">将指令前缀替换为此字符（建议用对应的全角符号）</p>
+                                </div>
+                            </div>
+                        </details>
                         <details class="config-advanced-section">
                             <summary>高级设置</summary>
                             <p class="hint-text">这些是聊天调度和发送节奏参数，正常使用保持默认即可。</p>
@@ -5798,20 +6104,21 @@
                                         <button type="button" class="secondary" onclick="openPresetImportManager()">📋 管理导入文件</button>
                                     </div>
                                     <!-- 预设导入管理弹窗 -->
-                                    <div id="preset-import-modal" class="modal" style="display:none;">
-                                        <div class="modal-content" style="max-width:620px;">
-                                            <div class="modal-header">
-                                                <h3>预设导入管理</h3>
-                                                <button class="modal-close" onclick="closePresetImportManager()">×</button>
+                                    <div id="preset-import-modal" class="modal-overlay" style="display:none;">
+                                        <div class="modal" style="max-width:500px; width: min(500px, calc(100vw - 32px));">
+                                            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+                                                <h3 style="margin:0;">预设文件</h3>
+                                                <button class="secondary" onclick="closePresetImportManager()" style="padding:4px 10px;font-size:1.1rem;line-height:1;">×</button>
                                             </div>
-                                            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+                                            <p class="hint-text" style="margin-bottom:10px;">点击条目切换预设，勾选框可批量选中用于导出/删除</p>
+                                            <div id="preset-import-list" class="preset-import-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>
+                                            <div style="display:flex;align-items:center;gap:8px;margin-top:12px;justify-content:flex-end;">
                                                 <span class="meta-inline" id="preset-import-batch-count">已选 0 项</span>
                                                 <div style="flex:1;"></div>
-                                                <button type="button" class="secondary" onclick="toggleSelectAllPresetImports()">全选/取消</button>
+                                                <button type="button" class="secondary" onclick="toggleSelectAllPresetImports()">全选</button>
                                                 <button type="button" class="secondary" onclick="batchExportPresetImports()">📥 导出选中</button>
                                                 <button type="button" class="danger" onclick="batchDeletePresetImports()">🗑 删除选中</button>
                                             </div>
-                                            <div id="preset-import-list" class="preset-import-list" style="max-height:400px;overflow-y:auto;border:1px solid var(--border-subtle);border-radius:6px;"></div>
                                         </div>
                                     </div>
                                     <div class="form-group">
@@ -6096,22 +6403,74 @@
         </div>
 
         <!-- 日志 -->
-        <div class="panel" id="logs">
-            <h2>实时日志</h2>
-            <div class="btn-group" style="margin-bottom: 15px;">
-                <button onclick="clearLogs()">清空日志</button>
-                <button class="secondary" onclick="refreshLogs()">刷新</button>
-            </div>
-            <div class="log-container" id="log-container">
-                <div class="empty-state">等待日志...</div>
+        <div class="panel" id="logs" style="width: 100%; max-width: 100%; overflow: hidden;">
+            <div style="display: flex; flex-direction: column; gap: 12px; height: calc(100vh - 8rem); padding-top: 8px; width: 100%; max-width: 100%; overflow: hidden;">
+                <!-- Tab 切换 -->
+                <div style="display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                    <div class="log-tabs">
+                        <button class="log-tab-btn active" data-log-tab="realtime" onclick="switchLogTab('realtime')">实时日志</button>
+                        <button class="log-tab-btn" data-log-tab="history" onclick="switchLogTab('history')">历史日志</button>
+                    </div>
+                </div>
+
+                <!-- 实时日志面板 -->
+                <div id="log-panel-realtime" style="display: flex; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow: hidden;">
+                    <!-- 工具栏 -->
+                    <div class="log-toolbar">
+                        <div class="log-level-chips">
+                            <button class="log-level-chip" data-level="debug" onclick="toggleLogLevel('debug')">Debug</button>
+                            <button class="log-level-chip active" data-level="info" onclick="toggleLogLevel('info')">Info</button>
+                            <button class="log-level-chip active" data-level="warn" onclick="toggleLogLevel('warn')">Warn</button>
+                            <button class="log-level-chip active" data-level="error" onclick="toggleLogLevel('error')">Error</button>
+                        </div>
+                        <div class="log-toolbar-actions">
+                            <button class="log-toolbar-btn" onclick="downloadLogs()">
+                                <svg width="14" height="14" viewBox="0 0 512 512" fill="none" stroke="currentColor" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"><path d="M336 176h40a40 40 0 0 1 40 40v208a40 40 0 0 1-40 40H136a40 40 0 0 1-40-40V216a40 40 0 0 1 40-40h40"/><path d="m176 272 80 80 80-80"/><path d="M256 48v288"/></svg>
+                                下载日志
+                            </button>
+                            <button class="log-toolbar-btn" onclick="clearLogs()">清空</button>
+                        </div>
+                    </div>
+                    <!-- xterm 终端容器 -->
+                    <div class="log-xterm-wrapper">
+                        <div id="log-xterm-container" style="width: 100%; height: 100%;"></div>
+                    </div>
+                </div>
+
+                <!-- 历史日志面板 -->
+                <div id="log-panel-history" style="display: none; flex-direction: column; gap: 12px; flex: 1; min-height: 0; overflow: hidden;">
+                    <!-- 历史日志工具栏 -->
+                    <div class="log-toolbar">
+                        <div class="log-history-select-wrapper">
+                            <select id="log-history-select" class="log-history-select" onchange="onHistoryLogSelect(this.value)">
+                                <option value="">选择日志文件...</option>
+                            </select>
+                        </div>
+                        <div class="log-level-chips">
+                            <button class="log-level-chip" data-level="debug" data-history onclick="toggleHistoryLogLevel('debug')">Debug</button>
+                            <button class="log-level-chip active" data-level="info" data-history onclick="toggleHistoryLogLevel('info')">Info</button>
+                            <button class="log-level-chip active" data-level="warn" data-history onclick="toggleHistoryLogLevel('warn')">Warn</button>
+                            <button class="log-level-chip active" data-level="error" data-history onclick="toggleHistoryLogLevel('error')">Error</button>
+                        </div>
+                        <div class="log-toolbar-actions">
+                            <button class="log-toolbar-btn" onclick="downloadHistoryLog()">下载日志</button>
+                            <button class="log-toolbar-btn" onclick="loadLogHistory()">刷新列表</button>
+                        </div>
+                    </div>
+                    <!-- 历史日志 xterm 终端 -->
+                    <div class="log-xterm-wrapper">
+                        <div id="log-history-xterm-container" style="width: 100%; height: 100%;"></div>
+                    </div>
+                </div>
             </div>
         </div>
-        <div class="save-row" style="margin-top:24px;">
-            <div id="config-save-status" class="save-status" data-state="idle">尚未修改配置</div>
-            <div class="save-row-actions">
-                <button class="success" onclick="saveConfig()">💾 保存配置</button>
-            </div>
-        </div>
+    </div>
+
+    <!-- 保存配置按钮（固定定位，独立于面板） -->
+    <div class="save-row">
+        <div id="config-save-status" class="save-status" data-state="idle">尚未修改配置</div>
+        <div class="save-row-actions">
+            <button class="success" onclick="saveConfig()">💾 保存配置</button>
         </div>
     </div>
 
@@ -6334,6 +6693,7 @@
             await loadTTSConfig();
             await loadMemoryDatabases();
             connectLogWebSocket();
+            initLogTerminal();
             // 自动加载默认角色详情
             await autoLoadCurrentCharacterDetail();
             updateRuntimePreviewIdentityFields();
@@ -6651,6 +7011,14 @@
                 panel.classList.toggle('active', panel.id === panelId);
             });
 
+            // 切换页面时更新保存按钮显示状态
+            const saveRow = document.querySelector('.save-row');
+            if (saveRow && panelId !== 'config') {
+                saveRow.classList.remove('is-visible');
+            } else if (saveRow && panelId === 'config' && configDirty) {
+                setConfigSaveStatus('dirty', '当前配置有未保存改动');
+            }
+
             if (options.scrollToPanel !== false) {
                 requestAnimationFrame(() => {
                     animateWindowScrollTo(targetTop, 420);
@@ -6708,6 +7076,19 @@
 
         function goToPanel(panelId) {
             setActivePanel(panelId, { smooth: true });
+        }
+
+        function jumpToWorldBook() {
+            setActivePanel('worldbooks', { smooth: true });
+            // 找到当前角色绑定的世界书并自动选中展开
+            setTimeout(() => {
+                const wbs = window.worldbookFilenames || [];
+                if (currentWorldBookFilename && wbs.includes(currentWorldBookFilename)) {
+                    selectWorldBook(currentWorldBookFilename);
+                } else if (wbs.length > 0) {
+                    selectWorldBook(wbs[0]);
+                }
+            }, 200);
         }
 
         async function refreshDashboardStatus(showFeedback = false) {
@@ -7155,7 +7536,10 @@
             if (knowledge?.running) activeTasks.push({ type: '知识导入', stage: knowledge.stage, msg: knowledge.currentMessage, cardId: 'task-card-knowledge' });
             if (embed?.running) activeTasks.push({ type: '语料嵌入', stage: embed.stage, msg: embed.currentMessage, cardId: 'task-card-embed' });
 
-            document.querySelectorAll('.task-card').forEach(c => c.classList.remove('is-active'));
+            document.querySelectorAll('.task-card').forEach(c => {
+                c.classList.remove('is-active');
+                c.classList.remove('is-done');
+            });
 
             if (activeTasks.length > 0) {
                 banner.classList.add('is-active');
@@ -7180,6 +7564,36 @@
             updateParticipantProfileProgressPanels();
             updateKnowledgeImportProgressPanels();
             updateCorpusEmbedProgressPanel(embed);
+
+            // 完成的任务淡出：检查非活跃且有完成标记的卡片
+        markDoneTaskCards(participant, knowledge, embed);
+        }
+
+        let taskDoneTimers = {};
+
+        function markDoneTaskCards(participant, knowledge, embed) {
+            const checks = [
+                { id: 'task-card-profile', done: participant && !participant.running && participant.stage === 'completed' },
+                { id: 'task-card-knowledge', done: knowledge && !knowledge.running && knowledge.stage === 'completed' },
+                { id: 'task-card-embed', done: embed && !embed.running && embed.stage === 'completed' },
+            ];
+            checks.forEach(({ id, done }) => {
+                const card = document.getElementById(id);
+                if (!card) return;
+                if (done && !card.classList.contains('is-active')) {
+                    if (!taskDoneTimers[id]) {
+                        taskDoneTimers[id] = setTimeout(() => {
+                            card.classList.add('is-done');
+                        }, 30000);
+                    }
+                } else {
+                    if (taskDoneTimers[id]) {
+                        clearTimeout(taskDoneTimers[id]);
+                        delete taskDoneTimers[id];
+                    }
+                    card.classList.remove('is-done');
+                }
+            });
         }
 
         function formatDashboardCompactNumber(value) {
@@ -8350,6 +8764,32 @@
             }
         }
 
+        async function clearScopeVariables() {
+            const scopeType = variableFilters.scopeType || '';
+            const scopeKey = variableFilters.scopeKey || '';
+            if (!scopeKey) {
+                showToast('请先在筛选条件中指定 scope', true);
+                return;
+            }
+            if (!confirm(`确定要清空当前 scope（${scopeType}/${scopeKey}）下的所有变量吗？此操作不可撤销。`)) return;
+            try {
+                const params = new URLSearchParams({
+                    scopeType,
+                    scopeKey,
+                    characterName: variableFilters.characterName || '',
+                    presetName: variableFilters.presetName || ''
+                });
+                const { res, data } = await fetchJsonSafe(`/api/memory/variables?${params.toString()}`, { method: 'DELETE' });
+                if (!res.ok || !data.success) throw new Error(data.error || '清空失败');
+                showToast(data.message || '已清空');
+                selectedVariableId = null;
+                variablesLoaded = false;
+                await loadVariables(true);
+            } catch (e) {
+                showToast(`清空失败: ${e.message}`, true);
+            }
+        }
+
         function formatKnowledgeTypeLabel(value) {
             return value === 'fixed' ? '固定知识' : 'AI 学习后写';
         }
@@ -9117,12 +9557,17 @@
                 list.innerHTML = `<div class="empty-state">无匹配"${filter}"</div>`;
                 return;
             }
-            list.innerHTML = filtered.map(c => `
-                <div class="list-item ${currentCharacterSelectedFile === c.filename ? 'selected' : ''}" onclick="selectCharacter('${c.filename}')">
-                    <div><div class="name">${escapeHtml(c.name)}</div><div class="meta">${escapeHtml(c.filename)}</div></div>
-                    <button class="danger" onclick="event.stopPropagation(); deleteCharacter('${c.filename}')" style="padding:5px 10px;">删</button>
-                </div>
-            `).join('');
+            list.innerHTML = filtered.map(c => {
+                const isSelected = currentCharacterSelectedFile === c.filename;
+                return `
+                <div class="list-item ${isSelected ? 'selected' : ''}" onclick="selectCharacter('${escapeHtml(c.filename)}')">
+                    <div style="min-width:0;flex:1;overflow:hidden;">
+                        <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.name)}</div>
+                        <div class="meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(c.filename)}</div>
+                    </div>
+                    <button class="danger" onclick="event.stopPropagation(); deleteCharacter('${escapeHtml(c.filename)}')" style="padding:4px 8px;flex-shrink:0;font-size:0.75rem;">删除</button>
+                </div>`;
+            }).join('');
         }
 
         // 当前选中的角色数
@@ -9218,6 +9663,7 @@
             `;
 
             document.body.appendChild(overlay);
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
             overlay.querySelector('#import-cancel-btn').addEventListener('click', () => overlay.remove());
             overlay.querySelector('#import-confirm-btn').addEventListener('click', () => {
                 const selected = { importWorldBook: false, importPreset: false, importRegex: false };
@@ -9278,26 +9724,37 @@
                 const detailRes = await fetch(`/api/characters/${encodeURIComponent(filename)}/detail`);
                 const detailData = await detailRes.json();
                 if (!detailData.success) {
-                    throw new Error(detailData.error || '读取角色卡信息失');
+                    throw new Error(detailData.error || '读取角色卡信息失败');
                 }
 
-                const hasExistingBinding = detailData.bindingSummary?.memoryDbPath?.value;
-                const existingDbLabel = hasExistingBinding
-                    ? `\n⚠️ 角色卡已存在，当前记忆库 ${hasExistingBinding} 将保留，不会被覆盖。`
-                    : '';
-                showImportOptionsModal(
-                    `导入角色卡：${detailData.character?.name || filename}${existingDbLabel}`,
-                    detailData.metadataSummary,
-                    detailData.importPlan || {
-                        importWorldBook: detailData.metadataSummary?.hasEmbeddedWorldBook,
-                        importPreset: detailData.metadataSummary?.hasPostHistoryInstructions || detailData.metadataSummary?.hasSystemPrompt,
-                        importRegex: (detailData.metadataSummary?.importableRegexScriptCount || 0) > 0
-                    },
-                    (selected, memoryBinding) => doSelectCharacter(filename, selected, memoryBinding)
-                );
+                // 更新选中状态和详情显示
+                currentCharacterSelectedFile = filename;
+                currentCharacterFilename = filename;
+                currentCharacterData = detailData.character;
+                currentCharacterMetadataSummary = detailData.metadataSummary || null;
+                renderCharacterDetail(detailData.character, filename, detailData.metadataSummary || null, detailData.bindingSummary || null);
+                filterCharacterList();
             } catch (e) {
                 showToast(`选择角色失败: ${e.message}`, true);
             }
+        }
+
+        function applyCharacter(filename) {
+            const detailData = { character: currentCharacterData, metadataSummary: currentCharacterMetadataSummary };
+            const hasExistingBinding = currentCharacterData?._bindingSummary?.memoryDbPath?.value;
+            const existingDbLabel = hasExistingBinding
+                ? `\n⚠️ 角色卡已存在，当前记忆库 ${hasExistingBinding} 将保留，不会被覆盖。`
+                : '';
+            showImportOptionsModal(
+                `导入角色卡：${currentCharacterData?.name || filename}${existingDbLabel}`,
+                currentCharacterMetadataSummary,
+                {
+                    importWorldBook: currentCharacterMetadataSummary?.hasEmbeddedWorldBook,
+                    importPreset: currentCharacterMetadataSummary?.hasPostHistoryInstructions || currentCharacterMetadataSummary?.hasSystemPrompt,
+                    importRegex: (currentCharacterMetadataSummary?.importableRegexScriptCount || 0) > 0
+                },
+                (selected, memoryBinding) => doSelectCharacter(filename, selected, memoryBinding)
+            );
         }
 
         function renderCharacterDetail(char, filename, metadataSummary = null, bindingSummary = null) {
@@ -9354,8 +9811,24 @@
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <span style="font-size: 1.2rem; font-weight: bold;">${char.name || '未命名'}</span>
                     <div class="btn-group">
-                        ${hasWorldBook ? `<button onclick="extractWorldBook()" style="padding: 5px 10px; background: #1a1a1a; color: white;">📚 提取世界书(${worldBookEntries})</button>` : ''}
-                        <button onclick="saveCharacter()" style="padding: 5px 10px; background: #1a1a1a; color: white;">💾 保存</button>
+                        <button onclick="applyCharacter('${escapeHtml(filename)}')" style="padding: 5px 10px;">🚀 启用角色</button>
+                        ${hasWorldBook ? `<button class="secondary" onclick="extractWorldBook()" style="padding: 5px 10px;">📚 提取世界书(${worldBookEntries})</button>` : ''}
+                        <button class="secondary" onclick="jumpToWorldBook()" style="padding: 5px 10px;">📚 跳转世界书</button>
+                        <button class="secondary" onclick="saveCharacter()" style="padding: 5px 10px;">💾 保存</button>
+                    </div>
+                </div>
+                <!-- 世界书绑定管理 -->
+                <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 15px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <div style="font-weight: 600;">📚 世界书绑定</div>
+                        <div class="btn-group" style="margin:0;">
+                            <button class="secondary" onclick="bindWorldBookToCharacter('${escapeHtml(filename)}')" style="padding:4px 10px;font-size:0.8rem;">绑定世界书</button>
+                            <button class="secondary" onclick="unbindWorldBookFromCharacter('${escapeHtml(filename)}')" style="padding:4px 10px;font-size:0.8rem;">解绑</button>
+                        </div>
+                    </div>
+                    <div style="font-size: 0.85rem; color: var(--text-muted);">
+                        当前绑定: <strong style="color: var(--text);">${bindingSummary?.worldbook?.value ? escapeHtml(bindingSummary.worldbook.value) : '无（使用全局默认）'}</strong>
+                        <span style="margin-left: 8px; opacity: 0.7;">(来源: ${bindingSummary?.worldbook?.source || 'none'})</span>
                     </div>
                 </div>
                 ${metadataPanel}
@@ -9560,10 +10033,24 @@
             };
 
             const slotInfo = slotMap[identifier] || null;
-            if (!content && slotInfo) {
+
+            // 通过 name 匹配没有 identifier 的 marker 槽位
+            const nameSlotMap = {
+                '⚫角色描述': { slotTitle: 'Char Description', runtimeSource: 'charDescription', runtimeValue: '角色卡 description' },
+                '⚫角色性格': { slotTitle: 'Char Personality', runtimeSource: 'charPersonality', runtimeValue: '角色卡 ity' },
+                '⚫角色情景': { slotTitle: 'Scenario', runtimeSource: 'scenario', runtimeValue: '角色卡 scenario' },
+                'Chat Examples': { slotTitle: 'Chat Examples', runtimeSource: 'dialogueExamples', runtimeValue: '角色卡 mes_example / 示例对话' },
+                'Chat History': { slotTitle: 'Chat History', runtimeSource: 'chatHistory', runtimeValue: '当前会话聊天记录' },
+                '🔵角色定义之前': { slotTitle: 'World Info (before)', runtimeSource: 'worldInfoBefore', runtimeValue: '世界书前置内容' },
+                '🟢角色定义之后': { slotTitle: 'World Info (after)', runtimeSource: 'worldInfoAfter', runtimeValue: '世界书后置内容' },
+            };
+            const nameBasedSlot = isMarker && !identifier && nameSlotMap[String(item.name || '').trim()] ? nameSlotMap[String(item.name || '').trim()] : null;
+            const effectiveSlot = slotInfo || nameBasedSlot;
+            if ((!content && effectiveSlot) || (isMarker && effectiveSlot)) {
                 // 尝试从当前角色卡读取实际内容
                 let actualContent = '';
                 const char = currentCharacterData;
+                const effId = effectiveSlot.runtimeSource;
                 if (char) {
                     const fieldMap = {
                         scenario: () => char.scenario || char.data?.scenario || '',
@@ -9572,21 +10059,31 @@
                         dialogueExamples: () => char.mes_example || char.data?.mes_example || '',
                         personaDescription: () => char.persona_description || char.data?.persona_description || ''
                     };
-                    if (fieldMap[identifier]) actualContent = fieldMap[identifier]();
+                    if (fieldMap[effId]) actualContent = fieldMap[effId]();
                 }
-                const contentPreview = actualContent ? `（当前角色卡内容，${actualContent.length}字）` : '（未加载角色卡）';
+                const sourceLabels = {
+                    worldInfoBefore: '📚 来源：世界书（关键词匹配后自动注入到此位置之前）',
+                    worldInfoAfter: '📚 来源：世界书（关键词匹配后自动注入到此位置之后）',
+                    charDescription: '👤 来源：角色卡 → description 字段',
+                    charPersonality: '👤 来源：角色卡 → personality 字段',
+                    scenario: '👤 来源：角色卡 → scenario 字段',
+                    personaDescription: '🧑 来源：用户 persona 描述',
+                    dialogueExamples: '👤 来源：角色卡 → mes_example 示例对话',
+                    chatHistory: '💬 来源：运行时自动注入聊天历史记录',
+                };
+                const sourceDesc = sourceLabels[effId] || `来源：运行时槽位 ${effId}`;
+                const contentPreview = actualContent ? `内容预览（${actualContent.length}字）：\n${actualContent.slice(0, 300)}${actualContent.length > 300 ? '...' : ''}` : '运行时动态填充，当前无静态内容';
                 return {
-                    summary: `固定槽位：${slotInfo.slotTitle}`,
+                    summary: `固定槽位：${effectiveSlot.slotTitle}`,
                     details: [
-                        `槽位标识：${identifier}`,
-                        `数据来源：角色卡 ${slotInfo.runtimeSource} 字段`,
-                        `内容状态：${contentPreview}`,
-                        actualContent ? `内容预览：${actualContent.slice(0, 200)}${actualContent.length > 200 ? '...' : ''}` : '未加载角色卡，无法显示内容预览',
+                        sourceDesc,
+                        `说明：${effectiveSlot.runtimeValue}`,
+                        contentPreview,
                     ],
-                    mappedFields: [slotInfo.runtimeSource],
+                    mappedFields: [effectiveSlot.runtimeSource],
                     isRuntimeSlot: true,
                     isReadonly: true,
-                    displayContent: actualContent || `[运行时槽位，数据来源于角色卡 ${slotInfo.runtimeSource}]`
+                    displayContent: actualContent || `[运行时动态填充 — ${effectiveSlot.runtimeValue}]`
                 };
             }
 
@@ -9602,17 +10099,19 @@
             if (details.length === 0) {
                 if (isMarker) {
                     details.push(`槽位标识：${identifier || 'marker'}`);
-                    details.push('这是 marker prompt。');
+                    details.push('📌 这是位置标记，运行时不产生内容，仅用于标记插入点。');
                 }
-                if (role === 'assistant' && !isSystemPrompt) {
-                    details.push('运行时用途：assistant prefill');
-                }
-                if (injectionPosition === 1) {
-                    details.push('运行时用途：post-history prompt');
+                if (identifier === 'chatHistory' || identifier === 'chat_history') {
+                    details.push('💬 来源：运行时自动注入');
+                    details.push('此处会在运行时插入聊天历史记录，不需要手动编辑。');
+                } else if (role === 'assistant' && !isSystemPrompt) {
+                    details.push('🤖 运行时用途：assistant prefill（AI 回复前缀）');
+                } else if (injectionPosition === 1) {
+                    details.push('📝 运行时用途：post-history prompt（历史消息之后注入）');
                 } else if (injectionDepth > 0) {
-                    details.push(`运行时用途：history injection（depth=${injectionDepth}）`);
+                    details.push(`📝 运行时用途：history injection（插入到历史第 ${injectionDepth} 层）`);
                 } else if (role === 'system' || isSystemPrompt || isMarker) {
-                    details.push('运行时用途：system prompt');
+                    details.push('📝 运行时用途：system prompt');
                 }
             }
 
@@ -9692,7 +10191,9 @@
         }
 
         function openPresetImportManager() {
-            document.getElementById('preset-import-modal').style.display = 'flex';
+            const modal = document.getElementById('preset-import-modal');
+            modal.style.display = 'flex';
+            modal.onclick = (e) => { if (e.target === modal) closePresetImportManager(); };
             const records = getCurrentPresetImportRecords();
             console.log('[DEBUG] preset records:', records.length, records.slice(0,3).map(r => ({pn: r.presetName, fn: r.filename, id: r.id?.slice(-8)})));
             updatePresetImportSelectionUi();
@@ -9736,15 +10237,13 @@
                     list.innerHTML = '<div class="empty-state" style="padding:12px">暂无导入记录</div>';
                 } else {
                     list.innerHTML = records.map(r => {
-                        const checked = selectedPresetImportIds.has(r.id) ? 'checked' : '';
                         const isActive = r.id === selectedPresetImportRecordId;
+                        const isChecked = selectedPresetImportIds.has(r.id);
                         const label = r.presetName || r.filename || '未命名';
-                        const sub = r.presetName ? r.filename : '';
                         const date = r.createdAt ? new Date(r.createdAt).toLocaleDateString() : '';
-                        return `<div class="preset-import-row${isActive ? ' active' : ''}" onclick="selectPresetImportById('${escapeHtml(r.id)}');closePresetImportManager();">
-                            <input type="checkbox" ${checked} onchange="togglePresetImportCheck('${escapeHtml(r.id)}', this.checked)" onclick="event.stopPropagation()">
+                        return `<div class="preset-import-row${isActive ? ' active' : ''}" onclick="selectPresetImportRow(this, '${escapeHtml(r.id)}');">
+                            <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); togglePresetImportCheck('${escapeHtml(r.id)}', this.checked);">
                             <span class="preset-import-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span>
-                            ${sub ? `<span class="preset-import-sub" title="${escapeHtml(sub)}">${escapeHtml(sub)}</span>` : ''}
                             <span class="preset-import-date">${escapeHtml(date)}</span>
                         </div>`;
                     }).join('');
@@ -9759,6 +10258,12 @@
             if (checked) selectedPresetImportIds.add(id);
             else selectedPresetImportIds.delete(id);
             updatePresetImportSelectionUi();
+        }
+
+        function selectPresetImportRow(el, id) {
+            document.querySelectorAll('.preset-import-row').forEach(r => r.classList.remove('active'));
+            el.classList.add('active');
+            selectPresetImportById(id);
         }
 
         function toggleSelectAllPresetImports() {
@@ -9784,7 +10289,7 @@
             if (!confirm(`确定删除 ${selectedPresetImportIds.size} 个预设导入文件？此操作不可撤销。`)) return;
             let deleted = 0;
             for (const id of selectedPresetImportIds) {
-                try { await deletePresetImportFile(id); deleted++; } catch {}
+                try { await deletePresetImportFile(id, true); deleted++; } catch {}
             }
             selectedPresetImportIds.clear();
             if (selectedPresetImportRecordId && !getCurrentPresetImportRecords().some(r => r.id === selectedPresetImportRecordId)) {
@@ -9796,16 +10301,32 @@
 
         async function batchExportPresetImports() {
             if (selectedPresetImportIds.size === 0) { showToast('请先勾选要导出的预设', true); return; }
-            for (const id of selectedPresetImportIds) {
-                const record = getCurrentPresetImportRecords().find(r => r.id === id);
-                if (!record?.importedPreset) continue;
+            const records = getCurrentPresetImportRecords().filter(r => selectedPresetImportIds.has(r.id) && r.importedPreset);
+            if (records.length === 0) { showToast('没有可导出的预设数据', true); return; }
+            if (records.length === 1) {
+                const record = records[0];
                 const blob = new Blob([JSON.stringify(record.importedPreset, null, 2)], { type: 'application/json' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url; a.download = (record.filename || id) + '.json';
+                a.href = url; a.download = (record.filename || record.id) + '.json';
                 a.click(); URL.revokeObjectURL(url);
+                showToast('已导出预设');
+                return;
             }
-            showToast(`已导出 ${selectedPresetImportIds.size} 个文件`);
+            // 多选：打包为单个 JSON 文件（包含所有预设）
+            const exportData = records.map(r => ({
+                filename: r.filename || r.id,
+                presetName: r.presetName || '',
+                preset: r.importedPreset
+            }));
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `presets-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast(`已导出 ${records.length} 个预设（合并JSON）`);
         }
 
         function updatePresetSummaryUi() {
@@ -9971,18 +10492,27 @@
             const aiPanel = document.querySelector('.preset-ai-panel');
             if (sourceDetails.isRuntimeSlot) {
                 if (aiPanel) aiPanel.style.display = 'none';
+                const displayContent = sourceDetails.displayContent || '';
                 container.innerHTML = `
                     <div class="preset-editor-header">
                         <div>
                             <strong>${title}</strong>
                             <div class="preset-editor-meta">固定槽位 · ${meta}</div>
                         </div>
+                        <div class="btn-group" style="margin: 0;">
+                            <button class="secondary" onclick="movePresetPrompt(-1)">上移</button>
+                            <button class="secondary" onclick="movePresetPrompt(1)">下移</button>
+                        </div>
                     </div>
                     <div class="preset-editor-content">
                         <div class="preset-editor-grid">
                             <div class="form-group full">
-                                <label>数据来源</label>
-                                <div class="runtime-preview-meta" style="white-space:pre-wrap;line-height:1.8;">${escapeHtml(sourceDetails.details.join('\n'))}</div>
+                                <label>来源：${escapeHtml(sourceDetails.details[0] || '运行时填充')}</label>
+                                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">${escapeHtml(sourceDetails.details.slice(1).join(' · '))}</div>
+                            </div>
+                            <div class="form-group full">
+                                <label>内容</label>
+                                <textarea class="preset-textarea" rows="12" disabled placeholder="此内容由运行时从外部拉取，不可在此编辑">${escapeHtml(displayContent)}</textarea>
                             </div>
                         </div>
                     </div>
@@ -9994,6 +10524,37 @@
             const readonlyHintHtml = sourceDetails.isReadonly
                 ? `<div class="form-group full"><div class="runtime-preview-meta" style="color:var(--warning);line-height:1.7;">该条目来源于外部字段映射，这里只读展示，不能在预设编辑器里直接修改。</div></div>`
                 : '';
+
+            // 只读条目（外部字段映射）：显示 disabled textarea
+            if (sourceDetails.isReadonly) {
+                if (aiPanel) aiPanel.style.display = 'none';
+                const displayContent = sourceDetails.displayContent || item.content || '';
+                container.innerHTML = `
+                    <div class="preset-editor-header">
+                        <div>
+                            <strong>${title}</strong>
+                            <div class="preset-editor-meta">外部映射 · ${meta}</div>
+                        </div>
+                        <div class="btn-group" style="margin: 0;">
+                            <button class="secondary" onclick="movePresetPrompt(-1)">上移</button>
+                            <button class="secondary" onclick="movePresetPrompt(1)">下移</button>
+                        </div>
+                    </div>
+                    <div class="preset-editor-content">
+                        <div class="preset-editor-grid">
+                            ${sourceHintHtml}
+                            <div class="form-group full">
+                                <div style="font-size:0.8rem;color:var(--warning);margin-bottom:8px;">⚠️ 此内容来源于外部字段映射，请到对应面板编辑原始内容。</div>
+                            </div>
+                            <div class="form-group full">
+                                <label>内容</label>
+                                <textarea class="preset-textarea" rows="12" disabled>${escapeHtml(displayContent)}</textarea>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
 
             container.innerHTML = `
                 <div class="preset-editor-header">
@@ -10638,11 +11199,11 @@
             }
         }
 
-        async function deletePresetImportFile(recordId) {
+        async function deletePresetImportFile(recordId, skipConfirm = false) {
             if (!recordId) {
                 return;
             }
-            if (!confirm('确定要删除这个预设导入文件，并移除它导入的内容吗？')) {
+            if (!skipConfirm && !confirm('确定要删除这个预设导入文件，并移除它导入的内容吗？')) {
                 return;
             }
             try {
@@ -10736,19 +11297,19 @@
                 return;
             }
             if (!currentCharacterFilename) {
-                showToast('角色文件名未', true);
+                showToast('角色文件名未知', true);
                 return;
             }
             const worldBook = currentCharacterData.data?.character_book || currentCharacterData.character_book;
             if (!worldBook) {
-                showToast('此角色卡没有内嵌世界', true);
+                showToast('此角色卡没有内嵌世界书', true);
                 return;
             }
             try {
                 const res = await fetch('/api/worldbooks/extract-from-character', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ 
+                    body: JSON.stringify({
                         filename: currentCharacterFilename
                     })
                 });
@@ -10764,14 +11325,283 @@
             }
         }
 
+        async function bindWorldBookToCharacter(filename) {
+            const wbs = window.worldbookFilenames || [];
+            if (wbs.length === 0) {
+                showToast('没有可用的世界书，请先上传', true);
+                return;
+            }
+            const characterName = filename.replace(/\.png$/i, '');
+            const overlay = document.createElement('div');
+            overlay.className = 'modal-overlay';
+            overlay.innerHTML = `
+                <div class="modal" style="max-width:420px;">
+                    <h3>绑定世界书</h3>
+                    <p style="color: var(--text-muted); margin-bottom: 12px;">为 <strong>${escapeHtml(characterName)}</strong> 选择要绑定的世界书：</p>
+                    <select id="bind-wb-select" style="width:100%;margin-bottom:16px;">
+                        ${wbs.map(f => `<option value="${escapeHtml(f)}">${escapeHtml(f.replace('.json', ''))}</option>`).join('')}
+                    </select>
+                    <div class="btn-group" style="justify-content:flex-end;">
+                        <button class="secondary" id="bind-wb-cancel">取消</button>
+                        <button id="bind-wb-confirm">确认绑定</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+            overlay.querySelector('#bind-wb-cancel').addEventListener('click', () => overlay.remove());
+            overlay.querySelector('#bind-wb-confirm').addEventListener('click', async () => {
+                const selectedWb = overlay.querySelector('#bind-wb-select').value;
+                overlay.remove();
+                try {
+                    const res = await fetch(`/api/characters/${encodeURIComponent(filename)}/worldbook-binding`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ worldbook: selectedWb })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        showToast(`已绑定世界书: ${selectedWb.replace('.json', '')}`);
+                        selectCharacter(filename);
+                    } else {
+                        showToast('绑定失败: ' + data.error, true);
+                    }
+                } catch (e) {
+                    showToast('绑定失败', true);
+                }
+            });
+        }
+
+        async function unbindWorldBookFromCharacter(filename) {
+            if (!confirm('确定要解绑当前角色的世界书吗？解绑后将使用全局默认世界书。')) return;
+            try {
+                const res = await fetch(`/api/characters/${encodeURIComponent(filename)}/worldbook-binding`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ worldbook: null })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast('已解绑世界书');
+                    selectCharacter(filename);
+                } else {
+                    showToast('解绑失败: ' + data.error, true);
+                }
+            } catch (e) {
+                showToast('解绑失败', true);
+            }
+        }
+
         async function refreshCharacters() {
             try {
                 await fetch('/api/characters/refresh', { method: 'POST' });
                 loadCharacters();
-                showToast('角色列表已刷');
+                showToast('角色列表已刷新');
             } catch (e) {
                 showToast('刷新失败', true);
             }
+        }
+
+        // 角色管理弹窗
+        let selectedCharacterIds = new Set();
+
+        function openCharacterManager() {
+            const modal = document.getElementById('character-manager-modal');
+            modal.style.display = 'flex';
+            modal.onclick = (e) => { if (e.target === modal) closeCharacterManager(); };
+            selectedCharacterIds.clear();
+            renderCharacterManagerList();
+        }
+
+        function closeCharacterManager() {
+            document.getElementById('character-manager-modal').style.display = 'none';
+        }
+
+        function renderCharacterManagerList() {
+            const list = document.getElementById('character-manager-list');
+            const countEl = document.getElementById('character-manager-count');
+            if (allCharacters.length === 0) {
+                list.innerHTML = '<div class="empty-state" style="padding:12px">暂无角色</div>';
+                return;
+            }
+            list.innerHTML = allCharacters.map(c => {
+                const isActive = currentCharacterSelectedFile === c.filename;
+                const isChecked = selectedCharacterIds.has(c.filename);
+                return `<div class="preset-import-row${isActive ? ' active' : ''}" onclick="selectCharacterFromManager(this, '${escapeHtml(c.filename)}');">
+                    <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); toggleCharacterCheck('${escapeHtml(c.filename)}', this.checked);">
+                    <span class="preset-import-name" title="${escapeHtml(c.name)}">${escapeHtml(c.name)}</span>
+                    <span class="preset-import-date">${escapeHtml(c.filename.replace('.png', ''))}</span>
+                </div>`;
+            }).join('');
+            if (countEl) countEl.textContent = `已选 ${selectedCharacterIds.size} 项`;
+        }
+
+        function selectCharacterFromManager(el, filename) {
+            document.querySelectorAll('#character-manager-list .preset-import-row').forEach(r => r.classList.remove('active'));
+            el.classList.add('active');
+            selectCharacter(filename);
+        }
+
+        function toggleCharacterCheck(filename, checked) {
+            if (checked) selectedCharacterIds.add(filename);
+            else selectedCharacterIds.delete(filename);
+            document.getElementById('character-manager-count').textContent = `已选 ${selectedCharacterIds.size} 项`;
+        }
+
+        function toggleSelectAllCharacters() {
+            if (selectedCharacterIds.size === allCharacters.length) {
+                selectedCharacterIds.clear();
+            } else {
+                allCharacters.forEach(c => selectedCharacterIds.add(c.filename));
+            }
+            renderCharacterManagerList();
+        }
+
+        async function batchDeleteCharacters() {
+            if (selectedCharacterIds.size === 0) { showToast('请先勾选要删除的角色', true); return; }
+            if (!confirm(`确定要删除选中的 ${selectedCharacterIds.size} 个角色吗？（仅删除角色卡文件，保留数据库）`)) return;
+            let success = 0;
+            for (const filename of selectedCharacterIds) {
+                try {
+                    const res = await fetch(`/api/characters/${encodeURIComponent(filename)}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ memoryMode: 'keep' })
+                    });
+                    const data = await res.json();
+                    if (data.success) success++;
+                } catch (e) {}
+            }
+            showToast(`已删除 ${success} 个角色`);
+            selectedCharacterIds.clear();
+            await loadCharacters();
+            renderCharacterManagerList();
+        }
+
+        function batchExportCharacters() {
+            if (selectedCharacterIds.size === 0) { showToast('请先勾选要导出的角色', true); return; }
+            if (selectedCharacterIds.size === 1) {
+                const filename = [...selectedCharacterIds][0];
+                window.open(`/api/characters/${encodeURIComponent(filename)}/download`, '_blank');
+                showToast('正在导出角色');
+                return;
+            }
+            fetch('/api/characters/batch-download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filenames: [...selectedCharacterIds] })
+            }).then(res => {
+                if (!res.ok) throw new Error('导出失败');
+                return res.blob();
+            }).then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `characters-${new Date().toISOString().split('T')[0]}.tar.gz`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast(`已导出 ${selectedCharacterIds.size} 个角色（压缩包）`);
+            }).catch(e => showToast('导出失败: ' + e.message, true));
+        }
+
+        // 世界书管理弹窗
+        let selectedWorldBookIds = new Set();
+
+        function openWorldBookManager() {
+            const modal = document.getElementById('worldbook-manager-modal');
+            modal.style.display = 'flex';
+            modal.onclick = (e) => { if (e.target === modal) closeWorldBookManager(); };
+            selectedWorldBookIds.clear();
+            renderWorldBookManagerList();
+        }
+
+        function closeWorldBookManager() {
+            document.getElementById('worldbook-manager-modal').style.display = 'none';
+        }
+
+        function renderWorldBookManagerList() {
+            const list = document.getElementById('worldbook-manager-list');
+            const countEl = document.getElementById('worldbook-manager-count');
+            const wbs = window.worldbookFilenames || [];
+            if (wbs.length === 0) {
+                list.innerHTML = '<div class="empty-state" style="padding:12px">暂无世界书</div>';
+                return;
+            }
+            list.innerHTML = wbs.map(filename => {
+                const isActive = currentWorldBookFilename === filename;
+                const isChecked = selectedWorldBookIds.has(filename);
+                return `<div class="preset-import-row${isActive ? ' active' : ''}" onclick="selectWorldBookFromManager(this, '${escapeHtml(filename)}');">
+                    <input type="checkbox" ${isChecked ? 'checked' : ''} onclick="event.stopPropagation(); toggleWorldBookCheck('${escapeHtml(filename)}', this.checked);">
+                    <span class="preset-import-name" title="${escapeHtml(filename.replace('.json', ''))}">${escapeHtml(filename.replace('.json', ''))}</span>
+                    <span class="preset-import-date">${escapeHtml(filename)}</span>
+                </div>`;
+            }).join('');
+            if (countEl) countEl.textContent = `已选 ${selectedWorldBookIds.size} 项`;
+        }
+
+        function selectWorldBookFromManager(el, filename) {
+            document.querySelectorAll('#worldbook-manager-list .preset-import-row').forEach(r => r.classList.remove('active'));
+            el.classList.add('active');
+            selectWorldBook(filename);
+        }
+
+        function toggleWorldBookCheck(filename, checked) {
+            if (checked) selectedWorldBookIds.add(filename);
+            else selectedWorldBookIds.delete(filename);
+            document.getElementById('worldbook-manager-count').textContent = `已选 ${selectedWorldBookIds.size} 项`;
+        }
+
+        function toggleSelectAllWorldBooks() {
+            const wbs = window.worldbookFilenames || [];
+            if (selectedWorldBookIds.size === wbs.length) {
+                selectedWorldBookIds.clear();
+            } else {
+                wbs.forEach(f => selectedWorldBookIds.add(f));
+            }
+            renderWorldBookManagerList();
+        }
+
+        async function batchDeleteWorldBooks() {
+            if (selectedWorldBookIds.size === 0) { showToast('请先勾选要删除的世界书', true); return; }
+            if (!confirm(`确定要删除选中的 ${selectedWorldBookIds.size} 个世界书吗？`)) return;
+            let success = 0;
+            for (const filename of selectedWorldBookIds) {
+                try {
+                    const res = await fetch(`/api/worldbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (data.success) success++;
+                } catch (e) {}
+            }
+            showToast(`已删除 ${success} 个世界书`);
+            selectedWorldBookIds.clear();
+            await loadWorldBooks();
+            renderWorldBookManagerList();
+        }
+
+        function batchExportWorldBooks() {
+            if (selectedWorldBookIds.size === 0) { showToast('请先勾选要导出的世界书', true); return; }
+            if (selectedWorldBookIds.size === 1) {
+                const filename = [...selectedWorldBookIds][0];
+                window.open(`/api/worldbooks/${encodeURIComponent(filename)}/download`, '_blank');
+                showToast('正在导出世界书');
+                return;
+            }
+            fetch('/api/worldbooks/batch-download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filenames: [...selectedWorldBookIds] })
+            }).then(res => {
+                if (!res.ok) throw new Error('导出失败');
+                return res.blob();
+            }).then(blob => {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `worldbooks-${new Date().toISOString().split('T')[0]}.tar.gz`;
+                a.click();
+                URL.revokeObjectURL(url);
+                showToast(`已导出 ${selectedWorldBookIds.size} 个世界书（压缩包）`);
+            }).catch(e => showToast('导出失败: ' + e.message, true));
         }
 
         // 上传角色
@@ -10853,6 +11683,7 @@
             `;
 
             document.body.appendChild(overlay);
+            overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
             overlay.querySelector('#delete-char-cancel-btn').addEventListener('click', () => overlay.remove());
             overlay.querySelector('#delete-char-confirm-btn').addEventListener('click', async () => {
                 const mode = overlay.querySelector('input[name="delete-memory-mode"]:checked')?.value || 'keep';
@@ -10893,15 +11724,17 @@
                     return;
                 }
                     // API 返回的是文件名数组（字符串）
-                list.innerHTML = worldbooks.map((filename, index) => `
-                    <div class="list-item" onclick="selectWorldBook(worldbookFilenames[${index}])">
-                        <div>
-                            <div class="name">${escapeHtml(filename.replace('.json', ''))}</div>
-                            <div class="meta">${escapeHtml(filename)}</div>
+                list.innerHTML = worldbooks.map((filename, index) => {
+                    const isSelected = currentWorldBookFilename === filename;
+                    return `
+                    <div class="list-item ${isSelected ? 'selected' : ''}" onclick="selectWorldBook(worldbookFilenames[${index}])">
+                        <div style="min-width:0;flex:1;overflow:hidden;">
+                            <div class="name" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(filename.replace('.json', ''))}</div>
+                            <div class="meta" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(filename)}</div>
                         </div>
-                        <button class="danger" onclick="event.stopPropagation(); deleteWorldBook(worldbookFilenames[${index}])" style="padding: 5px 10px;">删除</button>
-                    </div>
-                `).join('');
+                        <button class="danger" onclick="event.stopPropagation(); deleteWorldBook(worldbookFilenames[${index}])" style="padding:4px 8px;flex-shrink:0;font-size:0.75rem;">删除</button>
+                    </div>`;
+                }).join('');
                     // 保存文件名列表供点击事件使用
                 window.worldbookFilenames = worldbooks;
             } catch (e) {
@@ -10931,6 +11764,8 @@
                              // 加载世界书内容用于编
                     currentWorldBookFilename = filename;
                     await loadWorldBookContent(filename);
+                    // 刷新列表高亮
+                    loadWorldBooks();
                 }
             } catch (e) {
                 console.error('选择世界书失', e);
@@ -11000,7 +11835,7 @@
                                             ${entry.enabled === false ? ' | 已禁用' : ''}
                                         </div>
                                         <div class="meta" style="font-size: 0.8rem;">
-                                            关键词: ${(entry.keys || entry.key || []).slice(0, 3).join(', ')}${(entry.keys || entry.key || []).length > 3 ? '...' : ''}
+                                            关键词: ${(Array.isArray(entry.keys || entry.key) ? (entry.keys || entry.key) : String(entry.keys || entry.key || '').split(',')).slice(0, 3).join(', ')}${(Array.isArray(entry.keys || entry.key) ? (entry.keys || entry.key) : String(entry.keys || entry.key || '').split(',')).length > 3 ? '...' : ''}
                                         </div>
                                     </div>
                                     <button class="danger" onclick="event.stopPropagation(); deleteEntry(${index})" style="padding: 3px 8px; font-size: 0.8rem;">删除</button>
@@ -11036,7 +11871,7 @@
         function renderEntryForm(entry, index) {
             const form = document.getElementById('entry-edit-form');
             const keys = entry.keys || entry.key || [];
-            const keysStr = Array.isArray(keys) ? keys.join(', ') : keys;
+            const keysStr = Array.isArray(keys) ? keys.join(', ') : String(keys);
             form.innerHTML = `
                 <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">
                     ${index !== null ? `编辑条目 #${index + 1}` : '新增条目'}
@@ -11297,6 +12132,8 @@
                 const res = await fetch('/api/sessions');
                 const sessions = await res.json();
                     const list = document.getElementById('session-list');
+                const countEl = document.getElementById('session-count');
+                if (countEl) countEl.textContent = sessions.length;
                 if (sessions.length === 0) {
                     list.innerHTML = '<div class="empty-state">暂无会话</div>';
                     return;
@@ -11347,11 +12184,23 @@
                 await fetch(`/api/sessions/${sessionId}/history`, { method: 'DELETE' });
                 loadSessions();
                 if (selectedSession === sessionId) {
-                    document.getElementById('session-history').innerHTML = '<div class="empty-state">会话已清</div>';
+                    document.getElementById('session-history').innerHTML = '<div class="empty-state">会话已清除</div>';
                 }
-                showToast('会话已清');
+                showToast('会话已清除');
             } catch (e) {
                 showToast('清除失败', true);
+            }
+        }
+
+        async function clearInactiveSessions() {
+            if (!confirm('确定要清理所有非活跃会话吗？这将删除没有消息的空会话。')) return;
+            try {
+                const res = await fetch('/api/sessions', { method: 'DELETE' });
+                const data = await res.json();
+                showToast(data.message || '已清理非活跃会话');
+                loadSessions();
+            } catch (e) {
+                showToast('清理失败', true);
             }
         }
 
@@ -11606,7 +12455,11 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             node.dataset.state = state;
             node.textContent = message;
             if (saveRow) {
-                saveRow.classList.toggle('is-visible', ['dirty', 'saving', 'error'].includes(state));
+                // 只在配置页面显示保存按钮
+                const configPanel = document.getElementById('config');
+                const isConfigVisible = configPanel && configPanel.style.display !== 'none';
+                const shouldShow = isConfigVisible && ['dirty', 'saving', 'error'].includes(state);
+                saveRow.classList.toggle('is-visible', shouldShow);
             }
         }
 
@@ -12749,6 +13602,11 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-users').value = (currentConfig.chat?.allowedUsers || []).join(',');
                 document.getElementById('config-chat-admin-users').value = (currentConfig.chat?.adminUsers || []).join(',');
                 document.getElementById('config-chat-blocked-users').value = (currentConfig.chat?.blockedUsers || []).join(',');
+                // 防注入过滤配置
+                const injFilter = currentConfig.chat?.injectionFilter || {};
+                document.getElementById('config-chat-injection-filter-enabled').value = injFilter.enabled !== false ? 'true' : 'false';
+                document.getElementById('config-chat-injection-prefix').value = injFilter.adminCommandPrefix ?? '&';
+                document.getElementById('config-chat-injection-replacement').value = injFilter.replacementChar ?? '＆';
                 document.getElementById('config-chat-buffer-window').value = currentConfig.chat?.bufferWindowMs ?? 1200;
                 document.getElementById('config-chat-reply-delay').value = currentConfig.chat?.replyDelayMs ?? 800;
                 document.getElementById('config-chat-segment-delay').value = currentConfig.chat?.segmentDelayMs ?? 300;
@@ -13086,6 +13944,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     allowedUsers: document.getElementById('config-chat-users').value.split(',').filter(g => g.trim()),
                     adminUsers: document.getElementById('config-chat-admin-users').value.split(',').filter(g => g.trim()),
                     blockedUsers: document.getElementById('config-chat-blocked-users').value.split(',').filter(g => g.trim()),
+                    injectionFilter: {
+                        enabled: document.getElementById('config-chat-injection-filter-enabled').value === 'true',
+                        adminCommandPrefix: document.getElementById('config-chat-injection-prefix').value || '&',
+                        replacementChar: document.getElementById('config-chat-injection-replacement').value || '＆',
+                    },
                     bufferWindowMs: parseInt(document.getElementById('config-chat-buffer-window').value) || 1200,
                     replyDelayMs: parseInt(document.getElementById('config-chat-reply-delay').value) || 800,
                     segmentDelayMs: parseInt(document.getElementById('config-chat-segment-delay').value) || 300,
@@ -13448,51 +14311,367 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             }
         }
 
-        // 日志
+        // 日志 - xterm.js 终端
         let logWs = null;
-        
+        let logLevelFilter = new Set(['info', 'warn', 'error']);
+        let historyLogLevelFilter = new Set(['info', 'warn', 'error']);
+        let logTerminal = null;
+        let logFitAddon = null;
+        let historyTerminal = null;
+        let historyFitAddon = null;
+        let logDataArr = [];
+        let historyLogContent = '';
+        let logTerminalInited = false;
+        let historyTerminalInited = false;
+
+        // ANSI 颜色码
+        const ANSI = {
+            reset: '\x1b[0m',
+            dim: '\x1b[2m',
+            bold: '\x1b[1m',
+            red: '\x1b[31m',
+            green: '\x1b[32m',
+            yellow: '\x1b[33m',
+            blue: '\x1b[34m',
+            cyan: '\x1b[36m',
+            white: '\x1b[37m',
+            gray: '\x1b[90m',
+            brightRed: '\x1b[91m',
+            brightGreen: '\x1b[92m',
+            brightYellow: '\x1b[93m',
+            brightBlue: '\x1b[94m',
+            brightCyan: '\x1b[96m',
+            brightWhite: '\x1b[97m',
+        };
+
+        function colorizeLog(log) {
+            const time = new Date(log.timestamp).toLocaleTimeString();
+            const levelColors = {
+                debug: ANSI.brightBlue,
+                info: ANSI.brightGreen,
+                warn: ANSI.brightYellow,
+                error: ANSI.brightRed,
+            };
+            const msgColors = {
+                debug: ANSI.brightBlue,
+                info: ANSI.brightWhite,
+                warn: ANSI.brightYellow,
+                error: ANSI.brightRed,
+            };
+            const color = levelColors[log.level] || ANSI.reset;
+            const levelTag = `${color}${ANSI.bold}[${log.level.toUpperCase()}]${ANSI.reset}`;
+            const msgColor = msgColors[log.level] || '';
+            return `${ANSI.cyan}${time}${ANSI.reset} ${levelTag} ${msgColor}${log.message}${ANSI.reset}`;
+        }
+
+        function getXtermTheme() {
+            const theme = document.documentElement.getAttribute('data-theme') || document.body.getAttribute('data-theme');
+            if (theme === 'dark') {
+                return {
+                    background: '#0d1117',
+                    foreground: '#f0f6fc',
+                    black: '#484f58',
+                    red: '#ff7b72',
+                    green: '#3fb950',
+                    yellow: '#d29922',
+                    blue: '#58a6ff',
+                    cyan: '#39c5cf',
+                    white: '#f0f6fc',
+                    brightBlack: '#6e7681',
+                    brightRed: '#ffa198',
+                    brightGreen: '#56d364',
+                    brightYellow: '#e3b341',
+                    brightBlue: '#79c0ff',
+                    brightCyan: '#56d4dd',
+                    brightWhite: '#ffffff',
+                    selectionBackground: '#264f78',
+                    cursor: '#58a6ff',
+                };
+            } else if (theme === 'rose' || theme === 'sakura') {
+                return {
+                    background: '#1a0a12',
+                    foreground: '#fce4ec',
+                    black: '#4a2030',
+                    red: '#ff5277',
+                    green: '#69f0ae',
+                    yellow: '#ffd54f',
+                    blue: '#82b1ff',
+                    cyan: '#64fcda',
+                    white: '#fce4ec',
+                    brightBlack: '#8c5070',
+                    brightRed: '#ff80ab',
+                    brightGreen: '#b9f6ca',
+                    brightYellow: '#ffe082',
+                    brightBlue: '#b3d4fc',
+                    brightCyan: '#a7fdeb',
+                    brightWhite: '#ffffff',
+                    selectionBackground: '#5c2040',
+                    cursor: '#ff5277',
+                };
+            }
+            // light 主题 - 纯黑底 + 鲜艳色彩
+            return {
+                background: '#0d1117',
+                foreground: '#f0f6fc',
+                black: '#484f58',
+                red: '#ff7b72',
+                green: '#3fb950',
+                yellow: '#d29922',
+                blue: '#58a6ff',
+                cyan: '#39c5cf',
+                white: '#f0f6fc',
+                brightBlack: '#6e7681',
+                brightRed: '#ffa198',
+                brightGreen: '#56d364',
+                brightYellow: '#e3b341',
+                brightBlue: '#79c0ff',
+                brightCyan: '#56d4dd',
+                brightWhite: '#ffffff',
+                selectionBackground: '#264f78',
+                cursor: '#58a6ff',
+            };
+        }
+
+        function initLogTerminal() {
+            if (logTerminalInited) return;
+            const container = document.getElementById('log-xterm-container');
+            if (!container || !window.Terminal) return;
+
+            const width = window.innerWidth;
+            let fontSize = 14;
+            if (width < 600) fontSize = 10;
+            else if (width < 900) fontSize = 11;
+            else if (width < 1280) fontSize = 12;
+
+            logTerminal = new window.Terminal({
+                allowTransparency: false,
+                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                fontSize,
+                lineHeight: 1.3,
+                cursorInactiveStyle: 'outline',
+                disableStdin: true,
+                convertEol: true,
+                theme: getXtermTheme(),
+            });
+            logFitAddon = new window.FitAddon.FitAddon();
+            logTerminal.loadAddon(logFitAddon);
+            logTerminal.loadAddon(new window.WebLinksAddon.WebLinksAddon((event, uri) => {
+                if (event.ctrlKey || event.metaKey) window.open(uri, '_blank');
+            }));
+            logTerminal.open(container);
+            document.fonts.ready.then(() => {
+                logFitAddon.fit();
+            });
+
+            const resizeObserver = new ResizeObserver(() => {
+                try { logFitAddon.fit(); } catch(e) {}
+            });
+            resizeObserver.observe(container);
+            logTerminalInited = true;
+        }
+
+        function initHistoryTerminal() {
+            if (historyTerminalInited) return;
+            const container = document.getElementById('log-history-xterm-container');
+            if (!container || !window.Terminal) return;
+
+            const width = window.innerWidth;
+            let fontSize = 14;
+            if (width < 600) fontSize = 10;
+            else if (width < 900) fontSize = 11;
+            else if (width < 1280) fontSize = 12;
+
+            historyTerminal = new window.Terminal({
+                allowTransparency: false,
+                fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+                fontSize,
+                lineHeight: 1.3,
+                cursorInactiveStyle: 'outline',
+                disableStdin: true,
+                convertEol: true,
+                theme: getXtermTheme(),
+            });
+            historyFitAddon = new window.FitAddon.FitAddon();
+            historyTerminal.loadAddon(historyFitAddon);
+            historyTerminal.loadAddon(new window.WebLinksAddon.WebLinksAddon((event, uri) => {
+                if (event.ctrlKey || event.metaKey) window.open(uri, '_blank');
+            }));
+            historyTerminal.open(container);
+            document.fonts.ready.then(() => {
+                historyFitAddon.fit();
+            });
+
+            const resizeObserver = new ResizeObserver(() => {
+                try { historyFitAddon.fit(); } catch(e) {}
+            });
+            resizeObserver.observe(container);
+            historyTerminalInited = true;
+        }
+
+        function writeLogsToTerminal() {
+            if (!logTerminal) return;
+            const filtered = logDataArr.filter(log => logLevelFilter.has(log.level));
+            const output = filtered.map(log => colorizeLog(log)).join('\r\n');
+            logTerminal.clear();
+            logTerminal.write(output);
+        }
+
         function connectLogWebSocket() {
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
             logWs = new WebSocket(`${protocol}//${location.host}/ws/logs`);
             logWs.onmessage = (event) => {
                 const log = JSON.parse(event.data);
-                addLogEntry(log);
+                logDataArr.push(log);
+                if (logDataArr.length > 1000) {
+                    logDataArr.splice(0, logDataArr.length - 1000);
+                }
+                if (logLevelFilter.has(log.level) && logTerminal) {
+                    logTerminal.writeln(colorizeLog(log));
+                }
             };
             logWs.onclose = () => {
                 setTimeout(connectLogWebSocket, 3000);
             };
         }
 
-        function addLogEntry(log) {
-            const container = document.getElementById('log-container');
-            if (container.querySelector('.empty-state')) {
-                container.innerHTML = '';
+        function toggleLogLevel(level) {
+            const chip = document.querySelector(`.log-level-chip[data-level="${level}"]:not([data-history])`);
+            if (logLevelFilter.has(level)) {
+                logLevelFilter.delete(level);
+                chip.classList.add('inactive');
+                chip.classList.remove('active');
+            } else {
+                logLevelFilter.add(level);
+                chip.classList.remove('inactive');
+                chip.classList.add('active');
             }
-            const entry = document.createElement('div');
-            entry.className = `log-entry ${log.level}`;
-            entry.innerHTML = `<span class="log-time">${new Date(log.timestamp).toLocaleTimeString()}</span>${log.message}`;
-            container.appendChild(entry);
-            container.scrollTop = container.scrollHeight;
-            // 限制日志数量
-            while (container.children.length > 200) {
-                container.removeChild(container.firstChild);
+            writeLogsToTerminal();
+        }
+
+        function toggleHistoryLogLevel(level) {
+            const chip = document.querySelector(`.log-level-chip[data-level="${level}"][data-history]`);
+            if (historyLogLevelFilter.has(level)) {
+                historyLogLevelFilter.delete(level);
+                chip.classList.add('inactive');
+                chip.classList.remove('active');
+            } else {
+                historyLogLevelFilter.add(level);
+                chip.classList.remove('inactive');
+                chip.classList.add('active');
+            }
+            renderHistoryLogContent();
+        }
+
+        function switchLogTab(tab) {
+            document.querySelectorAll('.log-tab-btn').forEach(btn => btn.classList.remove('active'));
+            document.querySelector(`.log-tab-btn[data-log-tab="${tab}"]`).classList.add('active');
+            document.getElementById('log-panel-realtime').style.display = tab === 'realtime' ? 'flex' : 'none';
+            document.getElementById('log-panel-history').style.display = tab === 'history' ? 'flex' : 'none';
+            if (tab === 'realtime') {
+                setTimeout(() => {
+                    initLogTerminal();
+                    writeLogsToTerminal();
+                    try { logFitAddon?.fit(); } catch(e) {}
+                }, 50);
+            } else {
+                setTimeout(() => {
+                    initHistoryTerminal();
+                    loadLogHistory();
+                    try { historyFitAddon?.fit(); } catch(e) {}
+                }, 50);
             }
         }
 
-        async function refreshLogs() {
+        async function loadLogHistory() {
             try {
-                const res = await fetch('/api/logs');
-                const logs = await res.json();
-                    const container = document.getElementById('log-container');
-                container.innerHTML = '';
-                logs.forEach(log => addLogEntry(log));
+                const res = await fetch('/api/logs/files');
+                const files = await res.json();
+                const select = document.getElementById('log-history-select');
+                const currentVal = select.value;
+                select.innerHTML = '<option value="">选择日志文件...</option>';
+                files.forEach(f => {
+                    const opt = document.createElement('option');
+                    opt.value = f.name;
+                    opt.textContent = `${f.name} (${formatFileSize(f.size)})`;
+                    select.appendChild(opt);
+                });
+                if (currentVal && files.some(f => f.name === currentVal)) {
+                    select.value = currentVal;
+                } else if (files.length > 0) {
+                    select.value = files[0].name;
+                    onHistoryLogSelect(files[0].name);
+                }
             } catch (e) {
-                console.error('刷新日志失败', e);
+                console.error('加载历史日志失败', e);
+            }
+        }
+
+        async function onHistoryLogSelect(filename) {
+            if (!filename) return;
+            try {
+                const res = await fetch(`/api/logs/content/${encodeURIComponent(filename)}`);
+                historyLogContent = await res.text();
+                renderHistoryLogContent();
+            } catch (e) {
+                console.error('加载日志内容失败', e);
+                if (historyTerminal) {
+                    historyTerminal.clear();
+                    historyTerminal.writeln(`${ANSI.red}加载日志失败: ${e.message}${ANSI.reset}`);
+                }
+            }
+        }
+
+        function renderHistoryLogContent() {
+            if (!historyTerminal || !historyLogContent) return;
+            historyTerminal.clear();
+            const lines = historyLogContent.split('\n');
+            const filtered = lines.filter(line => {
+                const lower = line.toLowerCase();
+                if (lower.includes('[debug]')) return historyLogLevelFilter.has('debug');
+                if (lower.includes('[info]')) return historyLogLevelFilter.has('info');
+                if (lower.includes('[warn]')) return historyLogLevelFilter.has('warn');
+                if (lower.includes('[error]')) return historyLogLevelFilter.has('error');
+                return true;
+            });
+            const colorized = filtered.map(line => {
+                const lower = line.toLowerCase();
+                if (lower.includes('[error]')) return `${ANSI.brightRed}${line}${ANSI.reset}`;
+                if (lower.includes('[warn]')) return `${ANSI.brightYellow}${line}${ANSI.reset}`;
+                if (lower.includes('[info]')) return `${ANSI.brightGreen}${line}${ANSI.reset}`;
+                if (lower.includes('[debug]')) return `${ANSI.gray}${line}${ANSI.reset}`;
+                return `${ANSI.dim}${line}${ANSI.reset}`;
+            });
+            historyTerminal.write(colorized.join('\r\n'));
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
+
+        async function downloadLogs() {
+            const filtered = logDataArr.filter(log => logLevelFilter.has(log.level));
+            const text = filtered.map(l => `[${new Date(l.timestamp).toLocaleString()}] [${l.level.toUpperCase()}] ${l.message}`).join('\n');
+            const blob = new Blob([text], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mimirlink-logs-${new Date().toISOString().split('T')[0]}.txt`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function downloadHistoryLog() {
+            const select = document.getElementById('log-history-select');
+            if (select.value) {
+                window.open(`/api/logs/download/${encodeURIComponent(select.value)}`, '_blank');
             }
         }
 
         function clearLogs() {
-            document.getElementById('log-container').innerHTML = '<div class="empty-state">日志已清</div>';
+            logDataArr = [];
+            if (logTerminal) logTerminal.clear();
         }
 
         // Toast 提示

@@ -118,6 +118,10 @@ export class OneBotClient extends EventEmitter {
         this.callId = 0;
         this.lastError = null;
         this.lastClose = null;
+        this.reconnectAttempts = 0;
+        this.maxReconnectDelay = 60000; // 最大 60 秒
+        this.pingInterval = null;
+        this.pongTimeout = null;
     }
 
     connect() {
@@ -147,7 +151,9 @@ export class OneBotClient extends EventEmitter {
 
         this.ws.on('open', () => {
             this.connected = true;
+            this.reconnectAttempts = 0; // 重置重连计数
             this.emit('connected');
+            this._startPing();
             this._call('get_login_info').then(info => {
                 this.selfId = info.user_id;
                 this.logger.info(`登录账号: ${info.nickname} (${info.user_id})`);
@@ -165,13 +171,28 @@ export class OneBotClient extends EventEmitter {
             }
         });
 
+        this.ws.on('pong', () => {
+            clearTimeout(this.pongTimeout);
+            this.pongTimeout = null;
+        });
+
         this.ws.on('close', (code, reason) => {
             this.connected = false;
+            this._stopPing();
             this.emit('disconnected');
             const reasonStr = reason?.toString() || '';
             this.lastClose = { code, reason: reasonStr, at: Date.now() };
             this.logger.warn(`OneBot 连接关闭 code=${code} reason=${reasonStr||'无'}`);
-            setTimeout(() => this.connect(), this.config.reconnectInterval || 5000);
+
+            // 指数退避重连
+            this.reconnectAttempts += 1;
+            const baseDelay = this.config.reconnectInterval || 5000;
+            const delay = Math.min(
+                baseDelay * Math.pow(2, this.reconnectAttempts - 1),
+                this.maxReconnectDelay
+            );
+            this.logger.info(`将在 ${delay}ms 后重连 (第 ${this.reconnectAttempts} 次尝试)`);
+            setTimeout(() => this.connect(), delay);
         });
 
         this.ws.on('error', (err) => {
@@ -497,9 +518,35 @@ export class OneBotClient extends EventEmitter {
      */
     reconnect() {
         this.logger.info('手动触发重新连接...');
+        this._stopPing();
         if (this.ws) {
             this.ws.close();
         }
+        this.reconnectAttempts = 0;
         this.connect();
+    }
+
+    _startPing() {
+        this._stopPing();
+        const interval = this.config.pingInterval || 30000;
+        this.pingInterval = setInterval(() => {
+            if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+            this.ws.ping();
+            this.pongTimeout = setTimeout(() => {
+                this.logger.warn('OneBot 心跳超时，主动断开重连');
+                if (this.ws) this.ws.terminate();
+            }, 10000);
+        }, interval);
+    }
+
+    _stopPing() {
+        if (this.pingInterval) {
+            clearInterval(this.pingInterval);
+            this.pingInterval = null;
+        }
+        if (this.pongTimeout) {
+            clearTimeout(this.pongTimeout);
+            this.pongTimeout = null;
+        }
     }
 }

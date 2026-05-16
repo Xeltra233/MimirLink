@@ -257,6 +257,8 @@ export class SessionManager {
 
         if (!this.db || this.dbPath !== nextDbPath) {
             if (this.db) {
+                // 清理 prepared statements 避免 "database is locked"
+                this.closeStatements();
                 this.db.close();
             }
             this.openDatabase(nextDbPath);
@@ -278,6 +280,29 @@ export class SessionManager {
             type: memoryConfig.storage?.type || 'sqlite',
             path: memoryConfig.storage?.path || './data/chats/memory-store.sqlite'
         };
+    }
+
+    closeStatements() {
+        // 关闭所有 prepared statements
+        const statements = [
+            'stmtGetSession', 'stmtCreateSession', 'stmtUpdateSession',
+            'stmtInsertMessage', 'stmtGetMessages', 'stmtDeleteOldMessages',
+            'stmtInsertSummary', 'stmtGetSummaries', 'stmtDeleteOldSummaries',
+            'stmtGetStickyEntry', 'stmtUpsertStickyEntry', 'stmtDecrementSticky',
+            'stmtDeleteSticky', 'stmtGetOrCreateNamespace', 'stmtInsertMemoryEntry',
+            'stmtGetMemoryEntries', 'stmtUpdateMemoryEntry', 'stmtDeleteMemoryEntry'
+        ];
+
+        for (const name of statements) {
+            if (this[name]) {
+                try {
+                    // SQLite prepared statements 没有显式 close，但清空引用即可
+                    this[name] = null;
+                } catch (e) {
+                    this.logger.warn?.(`[记忆] 清理 statement ${name} 失败: ${e.message}`);
+                }
+            }
+        }
     }
 
     prepareSchema() {

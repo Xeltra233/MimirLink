@@ -5,6 +5,7 @@
 
 import fs from 'fs';
 import path from 'path';
+import { safeJsonParse, safeJsonParseWithFallback } from './json-utils.js';
 
 export class CharacterManager {
     constructor(dataDir) {
@@ -64,11 +65,33 @@ export class CharacterManager {
                             dataStart++;
                         }
 
-                        const base64Data = chunkData.toString('utf8', dataStart);
-                        const jsonStr = Buffer.from(base64Data, 'base64').toString('utf8');
+                        const base64Data = chunkData.toString('ascii', dataStart);
+                        let jsonStr = Buffer.from(base64Data, 'base64').toString('utf8');
+
+                        // 尝试解析，如果截断则自动修复
+                        let parsed = null;
+                        try {
+                            parsed = JSON.parse(jsonStr);
+                        } catch (parseErr) {
+                            // JSON 被截断，尝试从末尾向前找到可修复的位置
+                            const closers = ['}', ']}', '"}}', ']}}}', '"}]}}}'];
+                            for (let pos = jsonStr.length - 1; pos > Math.max(0, jsonStr.length - 500); pos--) {
+                                for (const closer of closers) {
+                                    try {
+                                        parsed = JSON.parse(jsonStr.substring(0, pos) + closer);
+                                        break;
+                                    } catch {}
+                                }
+                                if (parsed) break;
+                            }
+                            if (!parsed) {
+                                throw new Error(`角色卡 JSON 数据损坏且无法修复: ${parseErr.message}`);
+                            }
+                        }
+
                         // ccv3 优先：已经有 ccv3 数据则跳过 chara；否则接受当前数据
                         if (keyword === 'ccv3' || !character) {
-                            character = JSON.parse(jsonStr);
+                            character = parsed;
                         }
                     }
                 }
@@ -85,7 +108,11 @@ export class CharacterManager {
         const overridePath = path.join(this.overridesDir, characterName + '.json');
         if (fs.existsSync(overridePath)) {
             try {
-                const overrideData = JSON.parse(fs.readFileSync(overridePath, 'utf-8'));
+                const overrideData = safeJsonParseWithFallback(
+                    fs.readFileSync(overridePath, 'utf-8'),
+                    {},
+                    1 * 1024 * 1024  // 覆盖层限制 1MB
+                );
                 // 合并覆盖层数据
                 character = { ...character, ...overrideData };
             } catch (e) {
