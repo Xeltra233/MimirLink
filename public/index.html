@@ -4682,6 +4682,9 @@
                     <span id="onebot-status-text">OneBot 检查中</span>
                 </div>
                 <div class="status-item">
+                    <button id="llm-toggle-btn" onclick="toggleLlm()" style="padding:4px 10px;border-radius:6px;font-size:0.8rem;cursor:pointer;border:1px solid var(--border);background:var(--success);color:white;">LLM 开启</button>
+                </div>
+                <div class="status-item">
                     <span id="current-character">未择角色</span>
                 </div>
                 <div class="theme-picker" id="theme-picker">
@@ -9371,6 +9374,7 @@
                 if (dashOnebotState) dashOnebotState.textContent = connected ? '已连接' : '未连接';
                 if (dashOnebotDetail) dashOnebotDetail.textContent = onebotDetailText;
                 document.getElementById('current-character').textContent = data.character || '未择角色';
+                updateLlmButton(data.llmEnabled !== false);
                 currentCharacterSelectedFile = data.characterFile || null;
                 document.getElementById('dash-character').textContent = data.character || '-';
                 document.getElementById('dash-worldbook').textContent = data.worldbook || '-';
@@ -14221,6 +14225,26 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             } catch (e) {
                 showToast('重连失败', true);
             }
+        }
+
+        async function toggleLlm() {
+            try {
+                const res = await fetch('/api/status/llm/toggle', { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    updateLlmButton(data.enabled);
+                    showToast(data.enabled ? 'LLM 已开启' : 'LLM 已关闭');
+                }
+            } catch (e) {
+                showToast('切换失败', true);
+            }
+        }
+
+        function updateLlmButton(enabled) {
+            const btn = document.getElementById('llm-toggle-btn');
+            if (!btn) return;
+            btn.textContent = enabled ? 'LLM 开启' : 'LLM 关闭';
+            btn.style.background = enabled ? 'var(--success)' : 'var(--error)';
         }
 
         // AI 测试

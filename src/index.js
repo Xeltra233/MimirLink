@@ -596,6 +596,9 @@ function buildGroupMentionPrefix(userId) {
     return `[CQ:at,qq=${String(userId)}] `;
 }
 
+// LLM 开关状态
+let llmEnabled = true;
+
 function sanitizeContent(text) {
     return (text || '').replace(/\r/g, '').trim();
 }
@@ -2863,7 +2866,9 @@ const managers = {
     getDashboardMetricsSnapshot: () => ({
         ...getDashboardMetricsSnapshot(),
         composition: sessionManager.getDashboardCompositionStats()
-    })
+    }),
+    getLlmEnabled: () => llmEnabled,
+    setLlmEnabled: (v) => { llmEnabled = v; }
 };
 setupRoutes(app, config, saveConfig, managers);
 
@@ -2943,6 +2948,25 @@ async function handleMessage(event) {
     }
 
     const { plainText, isAtMe, structuredText, replyToMessageId } = extractMessageInfo(config, event, bot);
+
+    // /llm 指令：管理员切换 LLM 开关
+    if (plainText.trim() === '/llm' && isAdminUser(config, event.user_id)) {
+        llmEnabled = !llmEnabled;
+        const statusText = llmEnabled ? '✅ LLM 已开启' : '⛔ LLM 已关闭';
+        logger.info(`[指令] 管理员 ${event.user_id} 切换 LLM 状态: ${llmEnabled}`);
+        if (event.message_type === 'group') {
+            await bot.sendGroupMessage(event.group_id, statusText);
+        } else {
+            await bot.sendPrivateMessage(event.user_id, statusText);
+        }
+        return;
+    }
+
+    // LLM 关闭时不处理任何消息
+    if (!llmEnabled) {
+        return;
+    }
+
     if (await handleParticipantProfileManualCommand(event, plainText)) {
         return;
     }

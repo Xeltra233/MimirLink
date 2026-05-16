@@ -141,7 +141,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
         return normalized || 'unnamed';
     };
 
-    const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES, runtime, getLastRoutingSnapshot, formatSessionLabel, getLastInjectionObservation, getRecentInjectionObservations, getLastRecallSnapshot, clearParticipantProfileTimers, analyzeParticipantProfile, updateKnowledgeImportProgress, getParticipantProfileProgress, getKnowledgeImportProgress, getDashboardMetricsSnapshot, recordDashboardMetric } = managers;
+    const { characterManager, worldBookManager, sessionManager, regexProcessor, aiClient, promptBuilder, logger, bot, ttsManager, VOICE_TYPES, runtime, getLastRoutingSnapshot, formatSessionLabel, getLastInjectionObservation, getRecentInjectionObservations, getLastRecallSnapshot, clearParticipantProfileTimers, analyzeParticipantProfile, updateKnowledgeImportProgress, getParticipantProfileProgress, getKnowledgeImportProgress, getDashboardMetricsSnapshot, recordDashboardMetric, getLlmEnabled, setLlmEnabled } = managers;
 
     const summarizePayload = (payload, maxLen = 400) => {
         try {
@@ -3846,6 +3846,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             version: '1.0.0',
             uptime: process.uptime(),
             memory: process.memoryUsage(),
+            llmEnabled: getLlmEnabled(),
             onebot: bot && typeof bot.getStatus === 'function'
                 ? bot.getStatus()
                 : { connected: bot ? bot.isConnected() : false },
@@ -5879,6 +5880,19 @@ ${lastResultText}
         } else {
             res.status(500).json({ success: false, error: 'OneBot 客户端未初始化' });
         }
+    });
+
+    // LLM 开关 API
+    app.post('/api/status/llm/toggle', requireAuth, (req, res) => {
+        const current = getLlmEnabled();
+        setLlmEnabled(!current);
+        const newState = getLlmEnabled();
+        logger.info(`[API] LLM 状态切换: ${current} -> ${newState}`);
+        res.json({ success: true, enabled: newState });
+    });
+
+    app.get('/api/status/llm', requireAuth, (req, res) => {
+        res.json({ success: true, enabled: getLlmEnabled() });
     });
 
     logger.info('API 路由已设置');
