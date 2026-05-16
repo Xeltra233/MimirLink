@@ -12183,16 +12183,17 @@
         }
 
         async function clearSession(sessionId) {
-            if (!confirm('确定要清除此会话的历史记录吗')) return;
+            if (!confirm('确定要删除此会话吗？（包括所有历史记录）')) return;
             try {
-                await fetch(`/api/sessions/${sessionId}/history`, { method: 'DELETE' });
+                await fetch(`/api/sessions/${sessionId}`, { method: 'DELETE' });
                 loadSessions();
                 if (selectedSession === sessionId) {
-                    document.getElementById('session-history').innerHTML = '<div class="empty-state">会话已清除</div>';
+                    selectedSession = null;
+                    document.getElementById('session-history').innerHTML = '<div class="empty-state">会话已删除</div>';
                 }
-                showToast('会话已清除');
+                showToast('会话已删除');
             } catch (e) {
-                showToast('清除失败', true);
+                showToast('删除失败', true);
             }
         }
 
