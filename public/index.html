@@ -5721,11 +5721,11 @@
                                     <input type="checkbox" id="config-chat-empty-retry-enabled" checked>
                                     启用空回复自动重试
                                 </label>
-                                <p class="hint-text">当模型返回空字符串、纯空白或只有省略号时，自动重试主回复请求</p>
+                                <p class="hint-text">当模型返回空字符串、纯空白或只有省略号时，自动重试主回复请求；最大重试次数支持 0 - 20 次</p>
                             </div>
                             <div class="form-group">
                                 <label>最大重试次数</label>
-                                <input type="number" id="config-chat-empty-retry-max" placeholder="2" min="0" max="5">
+                                <input type="number" id="config-chat-empty-retry-max" placeholder="2" min="0" max="20">
                             </div>
                             <div class="form-group">
                                 <label>重试间隔（毫秒）</label>

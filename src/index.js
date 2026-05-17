@@ -485,7 +485,7 @@ function normalizeConfig(config) {
     const emptyReplyRetry = config.chat.emptyReplyRetry || {};
     config.chat.emptyReplyRetry = {
         enabled: emptyReplyRetry.enabled !== false,
-        maxRetries: clampInteger(emptyReplyRetry.maxRetries, 0, 5, 2),
+        maxRetries: clampInteger(emptyReplyRetry.maxRetries, 0, 20, 2),
         delayMs: clampInteger(emptyReplyRetry.delayMs, 0, 10000, 800)
     };
 
@@ -1595,16 +1595,28 @@ function startHealthTicker() {
     }, intervalMs);
 }
 
-async function sendFailureMessage(event, message) {
-    try {
-        if (event.message_type === 'group') {
-            await bot.sendGroupMessage(event.group_id, message);
-        } else {
-            await bot.sendPrivateMessage(event.user_id, message);
-        }
-    } catch (error) {
-        logger.error(`发送失败提示失败: ${error.message}`);
+
+async function sendQuotedStatusMessage(event, message) {
+    const normalizedMessage = sanitizeContent(message);
+    if (!normalizedMessage) {
+        return;
     }
+
+    if (event.message_type === 'group') {
+        if (event.message_id) {
+            await bot.sendGroupReply(event.group_id, event.message_id, normalizedMessage);
+            return;
+        }
+        await bot.sendGroupMessage(event.group_id, normalizedMessage);
+        return;
+    }
+
+    if (event.message_id) {
+        await bot.sendPrivateReply(event.user_id, event.message_id, normalizedMessage);
+        return;
+    }
+
+    await bot.sendPrivateMessage(event.user_id, normalizedMessage);
 }
 
 async function dispatchReply(event, processedReply) {
@@ -2465,6 +2477,7 @@ async function processBatch(batch) {
         logger.debug(`完整消息内容: ${mergedStructuredText}`);
 
         let runtimeContext = null;
+        const userMessagePreview = buildThinkingPreview(primary.plainText || primary.event?.raw_message || '');
         try {
             const currentCharacterName = config.chat.defaultCharacter;
             const effectiveBinding = getEffectiveBinding(config, currentCharacterName);
@@ -2809,7 +2822,7 @@ async function processBatch(batch) {
             recordDashboardMetric('chat');
 
             const emptyReplyRetryConfig = config.chat?.emptyReplyRetry || {};
-            const thinkingPreview = buildThinkingPreview(processedInput);
+            const thinkingPreview = userMessagePreview;
 
             // 思考中提示：超过指定秒数还没回复就先发一条提示
             const thinkingNotifyConfig = config.chat?.thinkingNotify || {};
@@ -2821,13 +2834,9 @@ async function processBatch(batch) {
                 thinkingTimer = setTimeout(async () => {
                     thinkingNotified = true;
                     const msg = thinkingNotifyConfig.message
-                        || `还在回复你刚才这句：「${thinkingPreview}」`;
+                        || `已思考${thinkingDelaySec}s`;
                     try {
-                        if (event.message_type === 'group') {
-                            await bot.sendGroupMessage(event.group_id, msg);
-                        } else {
-                            await bot.sendPrivateMessage(event.user_id, msg);
-                        }
+                        await sendQuotedStatusMessage(event, msg);
                     } catch {}
                 }, thinkingDelaySec * 1000);
             }
@@ -2990,7 +2999,7 @@ ${varStatus || '(无)'}
                 failMessage = 'API 密钥无效，请联系管理员检查配置';
             } else if (error.message === 'EMPTY_REPLY_AFTER_RETRY') {
                 const retryAttempts = Number(error.retryAttempts) || ((config.chat?.emptyReplyRetry?.maxRetries || 0) + 1);
-                failMessage = `模型返回空回复，已自动重试 ${retryAttempts} 次仍失败，请稍后再试`;
+                failMessage = `空回复，已自动重试 ${retryAttempts} 次仍失败，请稍后再试`;
             } else if (error.message.includes('500') || error.message.includes('502')) {
                 failMessage = 'AI 服务暂时不可用，请稍后重试';
             }
@@ -3000,7 +3009,7 @@ ${varStatus || '(无)'}
             }
 
             logger.error(`处理会话 ${sessionId} 失败: ${error.message}`);
-            await sendFailureMessage(event, failMessage);
+            await sendQuotedStatusMessage(event, failMessage);
         }
     });
 }
