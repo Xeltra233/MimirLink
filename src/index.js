@@ -482,6 +482,20 @@ function normalizeConfig(config) {
         config.chat.mentionSenderOnReply = true;
     }
 
+    const emptyReplyRetry = config.chat.emptyReplyRetry || {};
+    config.chat.emptyReplyRetry = {
+        enabled: emptyReplyRetry.enabled !== false,
+        maxRetries: clampInteger(emptyReplyRetry.maxRetries, 0, 5, 2),
+        delayMs: clampInteger(emptyReplyRetry.delayMs, 0, 10000, 800)
+    };
+
+    const thinkingNotify = config.chat.thinkingNotify || {};
+    config.chat.thinkingNotify = {
+        enabled: thinkingNotify.enabled !== false,
+        delaySec: clampInteger(thinkingNotify.delaySec, 1, 3600, 60),
+        message: typeof thinkingNotify.message === 'string' ? thinkingNotify.message : ''
+    };
+
     normalizeAIConfig(config);
     normalizeParticipantProfileConfig(config);
     ensureCommandAndToolConfig(config);
@@ -651,6 +665,60 @@ function sanitizeForInjection(text, config, userId) {
 
     return result;
 }
+
+function buildThinkingPreview(text, maxLength = 24) {
+    const normalized = sanitizeContent(String(text || '').replace(/\s+/g, ' '));
+    if (!normalized) {
+        return '你刚才那条消息';
+    }
+
+    return normalized.length > maxLength
+        ? `${normalized.slice(0, maxLength)}...`
+        : normalized;
+}
+
+function isEmptyLikeReply(text) {
+    const normalized = sanitizeContent(text);
+    if (!normalized) {
+        return true;
+    }
+
+    return /^[.。…·\s]+$/.test(normalized);
+}
+
+async function generateReplyWithRetry({ aiClient, messages, toolContext, chatAIOverrides, timeoutMs, logger, sessionId, retryConfig }) {
+    const maxAttempts = (retryConfig?.enabled === false ? 0 : Number(retryConfig?.maxRetries) || 0) + 1;
+    const delayMs = Number(retryConfig?.delayMs) || 0;
+    let lastReplyResult = null;
+    let lastReply = '';
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const replyResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext, chatAIOverrides), timeoutMs);
+        const reply = aiClient.getVisibleResponseContent(replyResult);
+        lastReplyResult = replyResult;
+        lastReply = reply;
+
+        if (!isEmptyLikeReply(reply)) {
+            return { replyResult, reply, attempts: attempt };
+        }
+
+        logger.warn(`[执行] AI 返回空回复，准备重试 ${attempt}/${maxAttempts}`, {
+            sessionId,
+            replyPreview: String(reply || '').slice(0, 80)
+        });
+
+        if (attempt < maxAttempts && delayMs > 0) {
+            await sleep(delayMs);
+        }
+    }
+
+    const error = new Error('EMPTY_REPLY_AFTER_RETRY');
+    error.replyResult = lastReplyResult;
+    error.lastReply = lastReply;
+    error.retryAttempts = maxAttempts;
+    throw error;
+}
+
 
 function buildStructuredMessage(event, plainText) {
     const { message_type, user_id, group_id, sender } = event;
@@ -2740,6 +2808,9 @@ async function processBatch(batch) {
             });
             recordDashboardMetric('chat');
 
+            const emptyReplyRetryConfig = config.chat?.emptyReplyRetry || {};
+            const thinkingPreview = buildThinkingPreview(processedInput);
+
             // 思考中提示：超过指定秒数还没回复就先发一条提示
             const thinkingNotifyConfig = config.chat?.thinkingNotify || {};
             const thinkingEnabled = thinkingNotifyConfig.enabled !== false;
@@ -2749,7 +2820,8 @@ async function processBatch(batch) {
             if (thinkingEnabled && thinkingDelaySec > 0) {
                 thinkingTimer = setTimeout(async () => {
                     thinkingNotified = true;
-                    const msg = thinkingNotifyConfig.message || `已思考${thinkingDelaySec}s，还在想...`;
+                    const msg = thinkingNotifyConfig.message
+                        || `还在回复你刚才这句：「${thinkingPreview}」`;
                     try {
                         if (event.message_type === 'group') {
                             await bot.sendGroupMessage(event.group_id, msg);
@@ -2760,9 +2832,17 @@ async function processBatch(batch) {
                 }, thinkingDelaySec * 1000);
             }
 
-            const replyResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext, chatAIOverrides), timeoutMs);
+            const { replyResult, reply } = await generateReplyWithRetry({
+                aiClient,
+                messages,
+                toolContext,
+                chatAIOverrides,
+                timeoutMs,
+                logger,
+                sessionId,
+                retryConfig: emptyReplyRetryConfig
+            });
             if (thinkingTimer) clearTimeout(thinkingTimer);
-            const reply = aiClient.getVisibleResponseContent(replyResult);
             logger.info('[执行] AI 调用完成', {
                 sessionId,
                 replyLength: reply.length,
@@ -2908,6 +2988,9 @@ ${varStatus || '(无)'}
                 failMessage = '连接 AI 服务失败，请检查网络或 API 配置';
             } else if (error.message.includes('401') || error.message.includes('403')) {
                 failMessage = 'API 密钥无效，请联系管理员检查配置';
+            } else if (error.message === 'EMPTY_REPLY_AFTER_RETRY') {
+                const retryAttempts = Number(error.retryAttempts) || ((config.chat?.emptyReplyRetry?.maxRetries || 0) + 1);
+                failMessage = `模型返回空回复，已自动重试 ${retryAttempts} 次仍失败，请稍后再试`;
             } else if (error.message.includes('500') || error.message.includes('502')) {
                 failMessage = 'AI 服务暂时不可用，请稍后重试';
             }
