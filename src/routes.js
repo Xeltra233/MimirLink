@@ -1786,12 +1786,23 @@ export function setupRoutes(app, config, saveConfig, managers) {
                                 config.imports = config.imports || {};
                                 config.imports.regexFiles = restoredRecords;
                                 saveConfig(config);
+                                logger.info(`[恢复] 正则导入记录已恢复: ${restoredRecords.length} 条`);
                                 changes.replaced.push(`正则导入记录 (${restoredRecords.length} 条)`);
+                            } else {
+                                logger.warn('[恢复] 正则备份清单为空');
+                                changes.skipped.push('正则导入记录 (备份为空)');
                             }
+                        } else {
+                            logger.warn('[恢复] 正则备份清单文件不存在');
+                            changes.skipped.push('正则导入记录 (无清单文件)');
                         }
+                    } else {
+                        logger.warn('[恢复] 正则备份目录不存在');
+                        changes.skipped.push('正则导入记录 (无备份目录)');
                     }
                 } catch (regexRestoreErr) {
-                    logger.warn('[恢复] 正则导入文件恢复失败:', regexRestoreErr.message);
+                    logger.error('[恢复] 正则导入文件恢复失败:', regexRestoreErr.message);
+                    changes.skipped.push(`正则导入记录 (恢复失败: ${regexRestoreErr.message})`);
                 }
             }
 
