@@ -668,7 +668,66 @@ function buildStructuredMessage(event, plainText) {
     return `[${chatType}|QQ:${user_id}|昵称:${userName}|群号:${actualGroupId}|群名:${groupName}|时间:${timestamp}] ${plainText}`;
 }
 
-function extractMessageInfo(config, event, bot) {
+function extractDisplayTextFromSegments(segments = []) {
+    if (!Array.isArray(segments)) {
+        return '';
+    }
+
+    let text = '';
+    for (const segment of segments) {
+        if (!segment || typeof segment !== 'object') {
+            continue;
+        }
+
+        if (segment.type === 'text') {
+            text += segment.data?.text || '';
+            continue;
+        }
+
+        if (segment.type === 'at') {
+            const qq = String(segment.data?.qq || '').trim();
+            if (!qq || qq === 'all') {
+                continue;
+            }
+            text += `@${qq} `;
+        }
+    }
+
+    return sanitizeContent(text);
+}
+
+async function buildReplySnippet(event, bot, replyToMessageId) {
+    if (!replyToMessageId || !bot?.getMessage) {
+        return '';
+    }
+
+    try {
+        const replyMessage = await bot.getMessage(replyToMessageId);
+        const senderName = sanitizeContent(
+            replyMessage?.sender?.card
+            || replyMessage?.sender?.nickname
+            || replyMessage?.nickname
+            || ''
+        );
+        const replyText = sanitizeContent(
+            extractDisplayTextFromSegments(replyMessage?.message)
+            || replyMessage?.raw_message
+            || replyMessage?.message
+            || ''
+        );
+
+        if (!senderName && !replyText) {
+            return '';
+        }
+
+        return sanitizeContent(`[回复上文${senderName ? `|发送者:${senderName}` : ''}${replyText ? `|内容:${replyText}` : ''}]`);
+    } catch (error) {
+        bot.logger?.debug?.(`[回复] 获取被回复消息失败: ${replyToMessageId} ${error.message}`);
+        return '';
+    }
+}
+
+async function extractMessageInfo(config, event, bot) {
     const segments = Array.isArray(event.message) ? event.message : [];
     let plainText = '';
     let isAtMe = false;
@@ -686,8 +745,11 @@ function extractMessageInfo(config, event, bot) {
 
     plainText = sanitizeContent(plainText || event.raw_message || '');
     plainText = sanitizeForInjection(plainText, config, event.user_id);
-    const structuredText = plainText
-        ? (config.chat?.attachMetadata === false ? plainText : buildStructuredMessage(event, plainText))
+    const replySnippet = sanitizeForInjection(await buildReplySnippet(event, bot, replyToMessageId), config, event.user_id);
+    const promptText = sanitizeContent(replySnippet ? `${replySnippet}
+${plainText}` : plainText);
+    const structuredText = promptText
+        ? (config.chat?.attachMetadata === false ? promptText : buildStructuredMessage(event, promptText))
         : '';
     return {
         plainText,
@@ -696,6 +758,7 @@ function extractMessageInfo(config, event, bot) {
         structuredText
     };
 }
+
 
 function getTriggerReason(config, event, plainText, isAtMe) {
     const triggerPrefix = config.chat.triggerPrefix || '';
@@ -2968,7 +3031,7 @@ async function handleMessage(event) {
         return;
     }
 
-    const { plainText, isAtMe, structuredText, replyToMessageId } = extractMessageInfo(config, event, bot);
+    const { plainText, isAtMe, structuredText, replyToMessageId } = await extractMessageInfo(config, event, bot);
 
     // /llm 指令：管理员切换 LLM 开关
     if (plainText.trim() === '/llm' && isAdminUser(config, event.user_id)) {

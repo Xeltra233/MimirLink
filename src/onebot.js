@@ -407,6 +407,12 @@ export class OneBotClient extends EventEmitter {
         return this._call('get_friend_list');
     }
 
+    async getMessage(messageId) {
+        return this._call('get_msg', {
+            message_id: Number(messageId)
+        });
+    }
+
     /**
      * 发送群语音消息（使用 base64 编码，兼容 Docker 环境）
      * @param {number} groupId - 群号
