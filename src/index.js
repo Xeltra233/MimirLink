@@ -629,12 +629,11 @@ function sanitizeForInjection(text, config, userId) {
 
     let result = text;
 
-    // 1. 管理员指令前缀过滤
+    // 1. 管理员指令前缀过滤：直接删除整行
     const prefix = filterConfig.adminCommandPrefix ?? '&';
-    const replacement = filterConfig.replacementChar ?? '＆';
     if (prefix) {
         const escapedPrefix = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        result = result.replace(new RegExp(`^${escapedPrefix}`, 'gm'), replacement);
+        result = result.replace(new RegExp(`^${escapedPrefix}.*$`, 'gm'), '[无效内容]');
     }
 
     // 2. 消息头格式伪造过滤
@@ -2677,7 +2676,29 @@ async function processBatch(batch) {
                 toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean)
             });
             recordDashboardMetric('chat');
+
+            // 思考中提示：超过指定秒数还没回复就先发一条提示
+            const thinkingNotifyConfig = config.chat?.thinkingNotify || {};
+            const thinkingEnabled = thinkingNotifyConfig.enabled !== false;
+            const thinkingDelaySec = thinkingNotifyConfig.delaySec ?? 60;
+            let thinkingNotified = false;
+            let thinkingTimer = null;
+            if (thinkingEnabled && thinkingDelaySec > 0) {
+                thinkingTimer = setTimeout(async () => {
+                    thinkingNotified = true;
+                    const msg = thinkingNotifyConfig.message || `已思考${thinkingDelaySec}s，还在想...`;
+                    try {
+                        if (event.message_type === 'group') {
+                            await bot.sendGroupMessage(event.group_id, msg);
+                        } else {
+                            await bot.sendPrivateMessage(event.user_id, msg);
+                        }
+                    } catch {}
+                }, thinkingDelaySec * 1000);
+            }
+
             const replyResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext, chatAIOverrides), timeoutMs);
+            if (thinkingTimer) clearTimeout(thinkingTimer);
             const reply = aiClient.getVisibleResponseContent(replyResult);
             logger.info('[执行] AI 调用完成', {
                 sessionId,

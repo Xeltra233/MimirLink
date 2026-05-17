@@ -85,6 +85,23 @@ export function createMCPHandler(managers, config, saveConfig) {
                 const resolvedChar = characterName || config.chat?.defaultCharacter || '';
                 if (!resolvedChar) return { content: [{ type: 'text', text: '请指定 characterName' }] };
 
+                // 防注入过滤：模拟非管理员消息清洗
+                let cleanMessage = message;
+                const cmdPrefix = config.chat?.injectionFilter?.adminCommandPrefix ?? '&';
+                if (cmdPrefix) {
+                    const escaped = cmdPrefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    cleanMessage = cleanMessage.replace(new RegExp(`^${escaped}.*$`, 'gm'), '[无效内容]');
+                }
+                cleanMessage = cleanMessage.replace(/\[群聊\|/g, '【群聊|');
+                cleanMessage = cleanMessage.replace(/\[私聊\|/g, '【私聊|');
+                cleanMessage = cleanMessage.replace(/QQ:/gi, '扣扣:');
+                const admins = Array.isArray(config.chat?.adminUsers) ? config.chat.adminUsers.map(String) : [];
+                for (const adminQQ of admins) {
+                    if (adminQQ && cleanMessage.includes(adminQQ)) {
+                        cleanMessage = cleanMessage.replaceAll(adminQQ, '[已屏蔽]');
+                    }
+                }
+
                 const charName = resolvedChar.replace(/\.png$/i, '');
                 let character = null;
                 try { character = characterManager.readFromPng(charName); } catch {}
@@ -107,7 +124,7 @@ export function createMCPHandler(managers, config, saveConfig) {
 
                 try {
                     const built = await promptBuilder.build(
-                        resolvedChar, message,
+                        resolvedChar, cleanMessage,
                         { recentMessages, summaries: [] },
                         new Set(),
                         { sessionId: `mcp_${Date.now()}`, messageType: 'group', messageCount: 1 + recentMessages.length, recalledEntries: [], participants: [], injectionRisk: null, replyReference: null },
@@ -160,7 +177,13 @@ export function createMCPHandler(managers, config, saveConfig) {
                     } catch {}
 
                     const aiResult = await aiClient.chat(built.messages, {});
-                    const reply = aiClient.getVisibleResponseContent(aiResult);
+                    const rawReply = aiClient.getVisibleResponseContent(aiResult);
+                    // 清洗 thinking/cot 等内部标签
+                    let reply = rawReply;
+                    try {
+                        const { stripInternalTags } = await import('./variable-bridge.js');
+                        reply = stripInternalTags(reply);
+                    } catch {}
                     const usage = aiResult?.usage || null;
 
                     // 变量提取：UpdateVariable JSONPatch

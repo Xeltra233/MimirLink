@@ -57,14 +57,15 @@ export function stripInternalTags(text) {
     result = result.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
     result = result.replace(/<!--[\s\S]*?-->/g, '');
 
-    // 3. 只去标签保正文（wrapper类标签：draft_notes/thinking/details/div等）
-    //    先处理标签内的内容块
-    const wrapperTags = [
-        'draft_notes', 'draft', 'thinking', 'analysis', 'reflection', 'cot',
-        'bginfor', 'maintext', 'contenttext', 'details', 'summary',
-        'WMM', 'StatusBlock', 'option', '内部分析'
-    ];
-    for (const tag of wrapperTags) {
+    // 3. 完全删除的标签（连内容一起删）
+    const deleteWithContent = ['thinking', 'cot', 'analysis', 'reflection', 'draft_notes', 'draft', '内部分析'];
+    for (const tag of deleteWithContent) {
+        result = result.replace(new RegExp(`<${tag}[^>]*>[\\s\\S]*?</${tag}>`, 'gi'), '');
+        result = result.replace(new RegExp(`<${tag}[^>]*>[\\s\\S]*$`, 'gi'), '');
+    }
+    // 只去标签保内容的标签
+    const stripTagOnly = ['bginfor', 'maintext', 'contenttext', 'details', 'summary', 'WMM', 'StatusBlock', 'option'];
+    for (const tag of stripTagOnly) {
         result = result.replace(new RegExp(`<${tag}[^>]*>`, 'gi'), '');
         result = result.replace(new RegExp(`</${tag}>`, 'gi'), '');
     }

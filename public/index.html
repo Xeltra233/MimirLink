@@ -5713,6 +5713,26 @@
                             </label>
                         </div>
                     </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">思考中提示</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-thinking-notify-enabled" checked>
+                                    启用思考超时提示
+                                </label>
+                                <p class="hint-text">AI 响应超过指定秒数时，先发一条提示消息</p>
+                            </div>
+                            <div class="form-group">
+                                <label>提示延迟（秒）</label>
+                                <input type="number" id="config-chat-thinking-notify-delay" placeholder="60" min="5" max="300" step="5">
+                            </div>
+                            <div class="form-group">
+                                <label>提示文案</label>
+                                <input type="text" id="config-chat-thinking-notify-message" placeholder="已思考60s，还在想...">
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <div class="card">
                     <div class="config-card-header">
@@ -13623,6 +13643,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-quote-reply').checked = currentConfig.chat?.quoteReplyEnabled !== false;
                 document.getElementById('config-chat-mention-sender').checked = currentConfig.chat?.mentionSenderOnReply !== false;
                 document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
+                document.getElementById('config-chat-thinking-notify-enabled').checked = currentConfig.chat?.thinkingNotify?.enabled !== false;
+                document.getElementById('config-chat-thinking-notify-delay').value = currentConfig.chat?.thinkingNotify?.delaySec ?? 60;
+                document.getElementById('config-chat-thinking-notify-message').value = currentConfig.chat?.thinkingNotify?.message || '';
                 document.getElementById('config-chat-command-admin-mention-enabled').checked = currentConfig.chat?.commands?.adminMention?.enabled !== false;
                 document.getElementById('config-chat-command-admin-mention-command').value = currentConfig.chat?.commands?.adminMention?.command || '/at';
                 document.getElementById('config-chat-command-participant-profile-enabled').checked = currentConfig.chat?.commands?.participantProfileManual?.enabled !== false;
@@ -13965,6 +13988,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     quoteReplyEnabled: document.getElementById('config-chat-quote-reply').checked,
                     mentionSenderOnReply: document.getElementById('config-chat-mention-sender').checked,
                     attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
+                    thinkingNotify: {
+                        enabled: document.getElementById('config-chat-thinking-notify-enabled').checked,
+                        delaySec: parseInt(document.getElementById('config-chat-thinking-notify-delay').value) || 60,
+                        message: document.getElementById('config-chat-thinking-notify-message').value.trim() || undefined
+                    },
                     defaultCharacter: currentConfig.chat?.defaultCharacter || '',
                     commands: {
                         adminMention: {

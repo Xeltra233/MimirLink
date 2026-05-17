@@ -18,6 +18,10 @@ data/range-prefs.json
 data/range-embeddings.json
 data/range-snapshots/
 data/presets/
+data/kb_*.json
+data/range_*.json
+data/test_*.txt
+data/*_result.txt
 
 # Keep data directory structure
 !data/.gitkeep
