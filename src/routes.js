@@ -1593,7 +1593,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 fsSync.mkdirSync(regexBackupDir, { recursive: true });
                 const manifest = [];
                 for (const record of config.imports.regexFiles) {
-                    if (record.id && record.rules) {
+                    if (record.id && (record.rules || record.importedRules)) {
                         const filename = `${record.id}.json`;
                         fsSync.writeFileSync(path.join(regexBackupDir, filename), JSON.stringify(record, null, 2), 'utf8');
                         manifest.push({ id: record.id, filename, importedAt: record.importedAt });
