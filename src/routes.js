@@ -1587,6 +1587,20 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     }
                 }
             }
+            // regex 导入文件备份（从 config.imports.regexFiles 提取）
+            if (categories.has('regex') && config.imports?.regexFiles?.length > 0) {
+                const regexBackupDir = path.join(tmpDataDir, '_regex_imports');
+                fsSync.mkdirSync(regexBackupDir, { recursive: true });
+                const manifest = [];
+                for (const record of config.imports.regexFiles) {
+                    if (record.id && record.rules) {
+                        const filename = `${record.id}.json`;
+                        fsSync.writeFileSync(path.join(regexBackupDir, filename), JSON.stringify(record, null, 2), 'utf8');
+                        manifest.push({ id: record.id, filename, importedAt: record.importedAt });
+                    }
+                }
+                fsSync.writeFileSync(path.join(regexBackupDir, '_manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
+            }
 
             res.setHeader('Content-Type', 'application/gzip');
             res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
@@ -1628,12 +1642,16 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 for (const [cat, sub] of Object.entries(BACKUP_DATA_SUBDIRS)) {
                     if (sub && fsSync.existsSync(path.join(dataDir, sub))) found.push(cat);
                     if (!sub && cat === 'corpus' && fsSync.existsSync(path.join(dataDir, 'range-corpus.json'))) found.push(cat);
+                    if (!sub && cat === 'regex' && fsSync.existsSync(path.join(dataDir, '_regex_imports'))) found.push(cat);
                 }
             }
-            // 如果 config.json 存在, presets/regex 也包含在内
+            // 如果 config.json 存在, presets 也包含在内
             if (found.includes('config')) {
                 if (!found.includes('presets')) found.push('presets');
-                if (!found.includes('regex')) found.push('regex');
+            }
+            // regex 独立检测（不依赖 config.json）
+            if (!found.includes('regex') && fsSync.existsSync(path.join(dataDir, '_regex_imports'))) {
+                found.push('regex');
             }
             // memory 永远单独显示
             if (fsSync.existsSync(path.join(dataDir, 'chats'))) found.push('memory');
@@ -1748,6 +1766,35 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             }
 
+            // 清理前先处理正则导入文件恢复
+            if (categories.has('regex')) {
+                try {
+                    const regexBackupDir = path.join(tmpDir, 'data', '_regex_imports');
+                    if (fsSync.existsSync(regexBackupDir)) {
+                        const manifestPath = path.join(regexBackupDir, '_manifest.json');
+                        if (fsSync.existsSync(manifestPath)) {
+                            const manifest = JSON.parse(fsSync.readFileSync(manifestPath, 'utf8'));
+                            const restoredRecords = [];
+                            for (const item of manifest) {
+                                const recordPath = path.join(regexBackupDir, item.filename);
+                                if (fsSync.existsSync(recordPath)) {
+                                    const record = JSON.parse(fsSync.readFileSync(recordPath, 'utf8'));
+                                    restoredRecords.push(record);
+                                }
+                            }
+                            if (restoredRecords.length > 0) {
+                                config.imports = config.imports || {};
+                                config.imports.regexFiles = restoredRecords;
+                                saveConfig(config);
+                                changes.replaced.push(`正则导入记录 (${restoredRecords.length} 条)`);
+                            }
+                        }
+                    }
+                } catch (regexRestoreErr) {
+                    logger.warn('[恢复] 正则导入文件恢复失败:', regexRestoreErr.message);
+                }
+            }
+
             // 清理
             await new Promise(r => autoStream.on('finish', r));
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
@@ -1760,6 +1807,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     syncPresetFiles(config);
                     applyRuntimeConfig();
                 } catch {}
+            }
+            // 正则恢复后重新应用配置
+            if (categories.has('regex')) {
+                applyRuntimeConfig();
             }
 
             logger.info('[恢复] 完成:', JSON.stringify(changes));
