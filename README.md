@@ -201,9 +201,13 @@ Claude Code 挂载（`.claude/settings.json`）：
 
 ---
 
-## 已知问题
+## 友情链接
 
-- **`node:sqlite` 需要 Node.js >= 22.5.0**：Zeabur 等平台默认 Node 20 会崩溃 `No such built-in module: node:sqlite`，需在 Dockerfile 或平台设置中指定 Node 22+
+- [Linux.do](https://linux.do)
+
+---
+
+## 已知问题
 - **HTML 前端卡**：ST 的 `<details>` `<maintext>` `<div class="...">` 等复杂标签未完全覆盖，纯文字卡正常
 - **变量初始化**：仅扫描 `setvar` 宏，不含脚本执行
 - **预设需手动调**：导入的 ST 预设默认大量 prompt 启用，需在 MCP 或配置页关闭不需要的
