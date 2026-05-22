@@ -171,6 +171,9 @@
     "includeReplyReference": true,
     "includeRecentUserIntent": true
   },
+  "security": {
+    "inputGuardrailEnabled": false
+  },
   "regex": {
     "enabled": true,
     "usePresetRules": true,

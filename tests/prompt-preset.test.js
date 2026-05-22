@@ -239,6 +239,61 @@ test('build keeps runtime-owned fragments when prompt items are enabled', async 
     assert.match(result.messages[0].content, /角色系统提示/);
 });
 
+test('build injects input guardrail only when security switch is enabled', async () => {
+    const characterManager = {
+        readFromPng() {
+            return {
+                name: '角色A',
+                description: '',
+                personality: '',
+                scenario: '',
+                system_prompt: '',
+                first_mes: ''
+            };
+        }
+    };
+    const worldBookManager = {
+        currentWorldBook: null,
+        readWorldBook() {
+            return null;
+        },
+        matchEntries() {
+            return [];
+        }
+    };
+    const baseConfig = {
+        preset: {
+            enabled: true,
+            prompts: [
+                { identifier: 'main', name: 'Main Prompt', role: 'system', content: '系统主提示', enabled: true, injection_position: 0, injection_depth: 0, forbid_overrides: false, marker: false, system_prompt: true }
+            ]
+        },
+        context: { enabled: false }
+    };
+
+    const disabledBuilder = new PromptBuilder(characterManager, worldBookManager, {
+        ...baseConfig,
+        security: { inputGuardrailEnabled: false }
+    });
+    const disabledResult = await disabledBuilder.build('角色A', '用户消息', { recentMessages: [], summaries: [] }, new Set(), {
+        injectionRisk: { level: 'medium', matchedRules: ['test'] }
+    });
+
+    assert.equal(disabledResult.runtimeSources.some((source) => source.kind === 'input_guardrail'), false);
+    assert.doesNotMatch(disabledResult.messages[0].content, /用户输入安全边界/);
+
+    const enabledBuilder = new PromptBuilder(characterManager, worldBookManager, {
+        ...baseConfig,
+        security: { inputGuardrailEnabled: true }
+    });
+    const enabledResult = await enabledBuilder.build('角色A', '用户消息', { recentMessages: [], summaries: [] }, new Set(), {
+        injectionRisk: { level: 'medium', matchedRules: ['test'] }
+    });
+
+    assert.equal(enabledResult.runtimeSources.some((source) => source.kind === 'input_guardrail'), true);
+    assert.match(enabledResult.messages[0].content, /用户输入安全边界/);
+});
+
 test('partitionPromptItems separates history injection prompts by injection_depth', () => {
     const partitioned = PromptBuilder.partitionPromptItems({
         enabled: true,

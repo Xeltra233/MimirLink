@@ -26,6 +26,7 @@ export class PromptBuilder {
     updateConfig(config = {}, bindingPreset = null) {
         const presetConfig = PromptBuilder.normalizePreset(bindingPreset || config.preset || {});
         const contextConfig = config.context || {};
+        const securityConfig = config.security || {};
         this.presetConfig = presetConfig;
         this.contextConfig = {
             enabled: contextConfig.enabled !== false,
@@ -33,6 +34,9 @@ export class PromptBuilder {
             includeParticipants: contextConfig.includeParticipants !== false,
             includeReplyReference: contextConfig.includeReplyReference !== false,
             includeRecentUserIntent: contextConfig.includeRecentUserIntent !== false
+        };
+        this.securityConfig = {
+            inputGuardrailEnabled: securityConfig.inputGuardrailEnabled === true
         };
     }
 
@@ -592,15 +596,17 @@ export class PromptBuilder {
             }
         }
 
-        systemSegments.push(PromptBuilder.createRuntimeSegment({
-            id: 'input-guardrail',
-            kind: 'input_guardrail',
-            label: '输入护栏',
-            content: buildInputGuardrail(runtimeContext.injectionRisk),
-            stage: 'runtime',
-            order: 15,
-            meta: { placement: 'system' }
-        }));
+        if (this.securityConfig.inputGuardrailEnabled) {
+            systemSegments.push(PromptBuilder.createRuntimeSegment({
+                id: 'input-guardrail',
+                kind: 'input_guardrail',
+                label: '输入护栏',
+                content: buildInputGuardrail(runtimeContext.injectionRisk),
+                stage: 'runtime',
+                order: 15,
+                meta: { placement: 'system' }
+            }));
+        }
 
         systemSegments.push(...preSystem.map((item, index) => PromptBuilder.createRuntimeSegment({
             id: item.identifier,
