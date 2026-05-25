@@ -450,15 +450,35 @@
 - 下一步：
   - CHECK 3 执行软件链路大型检查-debug 循环，重点检查事件数据完整性、prompt 注入顺序、sourceSlot/messageTrace 兼容性、安全性和日志可追踪性。
 
-### [ ] CHECK 3 - 软件链路大型检查-debug 循环
+### [x] CHECK 3 - 软件链路大型检查-debug 循环
 
 检查范围：事件数据完整性、prompt 注入顺序、安全性、日志可追踪性、兼容性。
 
 记录：
 - 检查内容：
+  - 检查 OneBot message/poke → standardEvent → routingDecision → runtimeContext → current-message-focus → prompt messageTrace 的数据链路。
+  - 检查 `current_message_focus` 是否独立于普通 system/post-history sourceSlot，避免 trace 误归类。
+  - 检查 prompt 注入顺序是否保持为：system composition、history、history injection、post-history、current-message-focus、user input、assistant prefill。
+  - 检查安全链路：高风险 prompt injection 仍在 prompt build 前拦截；input guardrail 仍由配置开关控制。
+  - 检查兼容性：prompt preview 受影响用例、事件/focus/messageTrace/preset 路由测试。
 - 发现问题：
+  - 发现 `standardEvent` 初始构造时会生成 `inputHeader/inputText`，但真实路由决策在 `handleMessage()` 后续才产生；此前只是直接写入 `standardEvent.routing`，没有刷新 header，导致后续观察面板若展示 `standardEvent.inputHeader`，可能看不到 `triggerReason/skipReason`。
+  - 发现 `participant-profile-viewer.test.js` 中一个源码字符串断言仍在检查旧的 `buildStructuredMessage(event, plainText)`，与现有带 reply/emoji/messageSegments 元数据的结构化输入构造不一致。
+  - 宽测试还暴露出若干既有非本链路问题：`participant-profile-config.test.js` 的默认值断言落后于当前实现，`participant-profile-viewer.test.js` 若干 UI/路由源码字符串断言落后，`chat-runtime-preview.test.js` 全量运行会在 AI client 相关用例失败/长耗时。这些不属于 CHECK 3 当前修复范围，留待对应模块任务处理。
 - 修正动作：
+  - 在 `src/standard-event.js` 增加 `updateStandardEventRouting()`，后置写入路由时同步刷新 `inputHeader/inputText`。
+  - 在 `src/index.js` 的 `handleMessage()` 中改用 `updateStandardEventRouting(standardEvent, routingDecision)`，保证回复和跳过路径的标准事件观察数据一致。
+  - 在 `tests/standard-event.test.js` 增加“路由后置决策会刷新输入头”的回归测试。
+  - 更新 `tests/participant-profile-viewer.test.js` 中与结构化输入元数据相关的过期源码断言。
 - 验证结果：
+  - `node --check src\index.js` 通过。
+  - `node --check src\standard-event.js` 通过。
+  - `node --check src\prompt.js` 通过。
+  - `node --test tests\standard-event.test.js tests\current-message-focus.test.js tests\message-trace.test.js tests\prompt-current-message-focus.test.js tests\message-chain-source.test.js tests\onebot-events.test.js tests\prompt-preset.test.js tests\preset-routes.test.js` 通过：74/74。
+  - `node --test --test-name-pattern "buildChatRuntimePreview returns structured sources|build exposes runtime sources" tests\chat-runtime-preview.test.js` 通过：2/2。
+  - `node --test --test-name-pattern "message metadata attachment respects" tests\participant-profile-viewer.test.js` 通过：1/1。
+  - `git diff --check` 通过；仅有 CRLF 转换 warning。
+  - 全量测试尝试：`node --test tests` 在 Node v24 中不会自动展开目录，失败为 `MODULE_NOT_FOUND`；改用 `rg --files tests | node --test @files` 后 180 秒超时，且输出显示多项既有 participant-profile / AI client / UI 源码断言失败，已记录为剩余风险，不在本轮扩散修复。
 
 ### [ ] Task 11 - 增强靶场后端返回字段
 

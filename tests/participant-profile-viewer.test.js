@@ -1516,7 +1516,8 @@ test('admin UI aligns config checkboxes with dedicated styles', () => {
 
 test('message metadata attachment respects chat.attachMetadata toggle', () => {
     const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
-    assert.ok(source.includes("config.chat?.attachMetadata === false ? plainText : buildStructuredMessage(event, plainText)"));
+    assert.ok(source.includes('config.chat?.attachMetadata === false ? promptText : buildStructuredMessage(event, promptText'));
+    assert.ok(source.includes('messageSegments'));
     assert.ok(source.includes('structuredText'));
 });
 

@@ -43,6 +43,7 @@ import { Logger } from './logger.js';
 import { TTSManager, VOICE_TYPES, parseVoiceTags } from './tts.js';
 import { MessageRuntime } from './runtime.js';
 import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.js';
+import { buildStandardEvent, updateStandardEventRouting } from './standard-event.js';
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 import {
     getParticipantProfileTimerKey,
@@ -719,8 +720,33 @@ async function generateReplyWithRetry({ aiClient, messages, toolContext, chatAIO
     throw error;
 }
 
+function buildAIServiceFailureMessage(error, config = {}) {
+    const message = String(error?.message || '');
+    if (message === 'AI_TIMEOUT') {
+        const timeoutSeconds = Math.floor((config.ai?.timeout || 60000) / 1000);
+        return `AI 响应超时（等待超过${timeoutSeconds}秒），请稍后再试或增大超时设置`;
+    }
+    if (message.includes('fetch failed') || message.includes('ECONNREFUSED') || message.includes('EACCES')) {
+        return '连接 AI 服务失败，请检查网络、代理或 API Base URL';
+    }
+    if (message.includes('401') || message.includes('403')) {
+        const selection = getChatAISelectionSnapshot(config);
+        const providerText = selection.providerId ? `供应商 ${selection.providerId}` : '当前供应商';
+        const modelText = selection.model ? `，模型 ${selection.model}` : '';
+        return `AI 服务拒绝请求（${providerText}${modelText}），请检查 Base URL、模型名和 Key 是否属于同一供应商`;
+    }
+    if (message === 'EMPTY_REPLY_AFTER_RETRY') {
+        const retryAttempts = Number(error.retryAttempts) || ((config.chat?.emptyReplyRetry?.maxRetries || 0) + 1);
+        return `空回复，已自动重试 ${retryAttempts} 次仍失败，请稍后再试`;
+    }
+    if (message.includes('500') || message.includes('502')) {
+        return 'AI 服务暂时不可用，请稍后重试';
+    }
+    return '处理消息时出现错误，请稍后重试';
+}
 
-function buildStructuredMessage(event, plainText) {
+
+function buildStructuredMessage(event, plainText, meta = {}) {
     const { message_type, user_id, group_id, sender } = event;
     const chatType = message_type === 'private' ? '私聊' : '群聊';
     const userName = sender?.card || sender?.nickname || '未知用户';
@@ -733,7 +759,103 @@ function buildStructuredMessage(event, plainText) {
         hour12: false
     });
 
-    return `[${chatType}|QQ:${user_id}|昵称:${userName}|群号:${actualGroupId}|群名:${groupName}|时间:${timestamp}] ${plainText}`;
+    const metaParts = [
+        chatType,
+        `QQ:${user_id}`,
+        `昵称:${userName}`,
+        `群号:${actualGroupId}`,
+        `群名:${groupName}`,
+        `时间:${timestamp}`
+    ];
+
+    if (meta.eventType) metaParts.push(`eventType:${meta.eventType}`);
+    if (meta.isAtBot !== undefined) metaParts.push(`isAtBot:${meta.isAtBot ? 'true' : 'false'}`);
+    if (meta.replyToBot !== undefined && meta.replyToBot !== null) metaParts.push(`replyToBot:${meta.replyToBot ? 'true' : 'false'}`);
+    if (meta.replyQuotedText) metaParts.push(`replyQuotedText:${String(meta.replyQuotedText).slice(0, 180)}`);
+    if (Array.isArray(meta.messageSegments) && meta.messageSegments.length > 0) {
+        metaParts.push(`messageSegments:${JSON.stringify(meta.messageSegments).slice(0, 500)}`);
+    }
+
+    return `[${metaParts.join('|')}] ${plainText}`;
+}
+
+function summarizeOneBotSegment(segment, botSelfId = '') {
+    if (!segment || typeof segment !== 'object') {
+        return { type: 'unknown', text: '[消息段:unknown]' };
+    }
+
+    const type = String(segment.type || 'unknown');
+    const data = segment.data || {};
+    const getAny = (...keys) => keys.map((key) => data[key]).find((value) => value !== undefined && value !== null && String(value).trim() !== '');
+
+    if (type === 'text') {
+        const text = String(data.text || '');
+        return { type, text, promptText: text };
+    }
+
+    if (type === 'at') {
+        const qq = String(data.qq || '').trim();
+        if (!qq || qq === 'all') {
+            return { type, qq, promptText: '' };
+        }
+        return { type, qq, isBot: botSelfId ? qq === String(botSelfId) : false, promptText: qq === String(botSelfId) ? '@bot ' : `@${qq} ` };
+    }
+
+    if (type === 'reply') {
+        return { type, id: data.id ? String(data.id) : '', promptText: '' };
+    }
+
+    if (type === 'face') {
+        const id = getAny('id', 'face_id');
+        const name = getAny('name', 'text', 'summary');
+        const promptText = `[QQ表情${name ? `:${name}` : ''}${id ? `|id=${id}` : ''}]`;
+        return { type, id: id ? String(id) : '', name: name ? String(name) : '', promptText };
+    }
+
+    if (type === 'mface' || type === 'marketface') {
+        const id = getAny('id', 'emoji_id', 'face_id', 'key');
+        const summary = getAny('summary', 'name', 'text', 'display_name');
+        const label = type === 'mface' ? 'QQ动态表情' : 'QQ大表情';
+        const promptText = `[${label}${summary ? `:${summary}` : ''}${id ? `|id=${id}` : ''}]`;
+        return { type, id: id ? String(id) : '', summary: summary ? String(summary) : '', promptText };
+    }
+
+    if (type === 'image') {
+        const summary = getAny('summary', 'sub_type', 'file');
+        return { type, summary: summary ? String(summary) : '', promptText: `[图片${summary ? `:${summary}` : ''}]` };
+    }
+
+    if (type === 'record') {
+        return { type, promptText: '[语音]' };
+    }
+
+    if (type === 'video') {
+        return { type, promptText: '[视频]' };
+    }
+
+    if (type === 'file') {
+        const name = getAny('name', 'file');
+        return { type, name: name ? String(name) : '', promptText: `[文件${name ? `:${name}` : ''}]` };
+    }
+
+    if (type === 'json' || type === 'xml') {
+        return { type, promptText: `[${type.toUpperCase()}消息]` };
+    }
+
+    return { type, promptText: `[消息段:${type}]` };
+}
+
+function sanitizeSegmentSummaryForPrompt(summary, config, userId) {
+    return Object.fromEntries(
+        Object.entries(summary || {})
+            .filter(([key]) => key !== 'promptText')
+            .map(([key, value]) => {
+                if (typeof value !== 'string') {
+                    return [key, value];
+                }
+                return [key, sanitizeForInjection(sanitizeContent(value), config, userId)];
+            })
+    );
 }
 
 function extractDisplayTextFromSegments(segments = []) {
@@ -747,30 +869,39 @@ function extractDisplayTextFromSegments(segments = []) {
             continue;
         }
 
-        if (segment.type === 'text') {
-            text += segment.data?.text || '';
-            continue;
-        }
-
-        if (segment.type === 'at') {
-            const qq = String(segment.data?.qq || '').trim();
-            if (!qq || qq === 'all') {
-                continue;
-            }
-            text += `@${qq} `;
-        }
+        const summary = summarizeOneBotSegment(segment);
+        if (summary.type !== 'reply') text += summary.promptText || '';
     }
 
     return sanitizeContent(text);
 }
 
-async function buildReplySnippet(event, bot, replyToMessageId) {
+async function buildReplyInfo(event, bot, replyToMessageId) {
+    const empty = {
+        snippet: '',
+        toBot: null,
+        senderId: '',
+        senderName: '',
+        quotedText: '',
+        fetchStatus: replyToMessageId ? 'pending' : 'none',
+        fetchReason: replyToMessageId ? '' : 'no_reply_segment'
+    };
     if (!replyToMessageId || !bot?.getMessage) {
-        return '';
+        return {
+            ...empty,
+            fetchStatus: replyToMessageId ? 'unavailable' : 'none',
+            fetchReason: replyToMessageId ? 'get_message_unavailable' : 'no_reply_segment'
+        };
     }
 
     try {
         const replyMessage = await bot.getMessage(replyToMessageId);
+        const senderId = sanitizeContent(String(
+            replyMessage?.sender?.user_id
+            || replyMessage?.user_id
+            || replyMessage?.sender_id
+            || ''
+        ));
         const senderName = sanitizeContent(
             replyMessage?.sender?.card
             || replyMessage?.sender?.nickname
@@ -785,13 +916,33 @@ async function buildReplySnippet(event, bot, replyToMessageId) {
         );
 
         if (!senderName && !replyText) {
-            return '';
+            return {
+                ...empty,
+                senderId,
+                senderName,
+                quotedText: replyText,
+                toBot: senderId ? senderId === String(bot.selfId || '') : null,
+                fetchStatus: 'resolved_empty',
+                fetchReason: 'reply_message_empty'
+            };
         }
 
-        return sanitizeContent(`[回复上文${senderName ? `|发送者:${senderName}` : ''}${replyText ? `|内容:${replyText}` : ''}]`);
+        return {
+            snippet: sanitizeContent(`[回复上文${senderName ? `|发送者:${senderName}` : ''}${senderId ? `|QQ:${senderId}` : ''}${replyText ? `|内容:${replyText}` : ''}]`),
+            toBot: senderId ? senderId === String(bot.selfId || '') : null,
+            senderId,
+            senderName,
+            quotedText: replyText,
+            fetchStatus: 'resolved',
+            fetchReason: ''
+        };
     } catch (error) {
         bot.logger?.debug?.(`[回复] 获取被回复消息失败: ${replyToMessageId} ${error.message}`);
-        return '';
+        return {
+            ...empty,
+            fetchStatus: 'failed',
+            fetchReason: error?.message || 'get_message_failed'
+        };
     }
 }
 
@@ -800,11 +951,15 @@ async function extractMessageInfo(config, event, bot) {
     let plainText = '';
     let isAtMe = false;
     let replyToMessageId = null;
+    const messageSegments = [];
 
     for (const segment of segments) {
-        if (segment.type === 'text') {
-            plainText += segment.data?.text || '';
-        } else if (segment.type === 'at' && String(segment.data?.qq) === String(bot.selfId)) {
+        const segmentSummary = summarizeOneBotSegment(segment, bot.selfId);
+        messageSegments.push(sanitizeSegmentSummaryForPrompt(segmentSummary, config, event.user_id));
+        if (segmentSummary.promptText && segmentSummary.type !== 'reply') {
+            plainText += segmentSummary.promptText;
+        }
+        if (segment.type === 'at' && String(segment.data?.qq) === String(bot.selfId)) {
             isAtMe = true;
         } else if (segment.type === 'reply') {
             replyToMessageId = segment.data?.id || null;
@@ -813,34 +968,46 @@ async function extractMessageInfo(config, event, bot) {
 
     plainText = sanitizeContent(plainText || event.raw_message || '');
     plainText = sanitizeForInjection(plainText, config, event.user_id);
-    const replySnippet = sanitizeForInjection(await buildReplySnippet(event, bot, replyToMessageId), config, event.user_id);
+    const replyInfo = await buildReplyInfo(event, bot, replyToMessageId);
+    const replySnippet = sanitizeForInjection(replyInfo.snippet, config, event.user_id);
     const promptText = sanitizeContent(replySnippet ? `${replySnippet}
 ${plainText}` : plainText);
+    const standardEvent = buildStandardEvent({
+        event,
+        contentText: promptText,
+        rawText: event.raw_message || plainText,
+        eventType: event.post_type || 'message',
+        isAtBot: isAtMe,
+        replyToMessageId,
+        replyInfo,
+        messageSegments,
+        botSelfId: bot.selfId
+    });
     const structuredText = promptText
-        ? (config.chat?.attachMetadata === false ? promptText : buildStructuredMessage(event, promptText))
+        ? (config.chat?.attachMetadata === false ? promptText : buildStructuredMessage(event, promptText, {
+            eventType: event.post_type || 'message',
+            isAtBot: isAtMe,
+            replyToBot: replyInfo.toBot,
+            replyQuotedText: replyInfo.quotedText,
+            messageSegments
+        }))
         : '';
     return {
         plainText,
         isAtMe,
         replyToMessageId,
+        replyToBot: replyInfo.toBot === true,
+        replyInfo,
+        messageSegments,
+        standardEvent,
         structuredText
     };
 }
 
 
-function getTriggerReason(config, event, plainText, isAtMe) {
-    const triggerPrefix = config.chat.triggerPrefix || '';
-    const hasPrefix = triggerPrefix ? plainText.startsWith(triggerPrefix) : false;
-    const hasKeyword = matchesKeywords(plainText, config.chat.triggerKeywords || []);
-    if (event.message_type === 'group' && isAtMe) {
-        return 'at';
-    }
-    if (hasPrefix) {
-        return 'prefix';
-    }
-    if (hasKeyword) {
-        return 'keyword';
-    }
+function getTriggerReason(config, event, plainText, isAtMe, messageInfo = {}) {
+    const decision = buildRoutingDecision(config, event, plainText, isAtMe, messageInfo);
+    if (decision.triggerReason) return decision.triggerReason;
     return event.message_type === 'private' ? 'private' : 'default';
 }
 
@@ -1058,6 +1225,15 @@ async function generateAdminMentionReply(event, mentionedParticipant, promptText
 }
 
 function buildReplyReference(items) {
+    const replyToBotItems = (items || []).filter((item) => item.replyToBot);
+    if (replyToBotItems.length > 0) {
+        const latest = replyToBotItems[replyToBotItems.length - 1];
+        const quoted = latest.replyInfo?.quotedText
+            ? `；被引用内容摘要：${latest.replyInfo.quotedText.slice(0, 160)}`
+            : '';
+        return `用户当前是在回复 bot 先前消息${latest.replyToMessageId ? `（消息 ID ${latest.replyToMessageId}）` : ''}，即使没有 @ 也应视为对 bot 发言；优先回应用户新输入，不要复读被引用长文${quoted}。`;
+    }
+
     const replyIds = Array.from(new Set(
         (items || [])
             .map((item) => item.replyToMessageId)
@@ -1123,38 +1299,88 @@ function isAllowed(config, event) {
     return true;
 }
 
-function shouldRespond(config, event, plainText, isAtMe) {
-    if (!plainText || !isAllowed(config, event)) {
-        return false;
-    }
-
+function buildRoutingDecision(config, event, plainText, isAtMe, messageInfo = {}) {
     const triggerMode = config.chat.triggerMode || 'auto';
     const requireAtInGroup = config.chat.requireAtInGroup !== false;
     const triggerPrefix = config.chat.triggerPrefix || '';
     const triggerKeywords = config.chat.triggerKeywords || [];
     const hasPrefix = triggerPrefix ? plainText.startsWith(triggerPrefix) : false;
     const hasKeyword = matchesKeywords(plainText, triggerKeywords);
+    const allowed = isAllowed(config, event);
+    const checks = {
+        hasText: Boolean(plainText),
+        allowed,
+        triggerMode,
+        requireAtInGroup,
+        isAtBot: Boolean(isAtMe),
+        replyToBot: Boolean(messageInfo.replyToBot),
+        replyFetchStatus: messageInfo.replyInfo?.fetchStatus || '',
+        replyFetchReason: messageInfo.replyInfo?.fetchReason || '',
+        hasPrefix,
+        hasKeyword,
+        messageType: event.message_type || ''
+    };
+
+    const accept = (triggerReason) => ({
+        shouldRespond: true,
+        triggerReason,
+        skipReason: '',
+        checks
+    });
+    const skip = (skipReason) => ({
+        shouldRespond: false,
+        triggerReason: '',
+        skipReason,
+        checks
+    });
+
+    if (!plainText) {
+        return skip('empty_text');
+    }
+    if (!allowed) {
+        return skip('access_denied');
+    }
 
     if (event.message_type === 'group') {
+        if (messageInfo.replyToBot) {
+            return accept('reply_to_bot');
+        }
         if (triggerMode === 'always') {
-            return true;
+            return accept('always');
         }
         if (triggerMode === 'prefix') {
-            return hasPrefix || (!requireAtInGroup && isAtMe);
+            if (hasPrefix) return accept('prefix');
+            if (!requireAtInGroup && isAtMe) return accept('at');
+            return skip(requireAtInGroup ? 'prefix_required' : 'prefix_or_at_required');
         }
         if (triggerMode === 'keyword') {
-            return hasKeyword || isAtMe;
+            if (hasKeyword) return accept('keyword');
+            if (isAtMe) return accept('at');
+            return skip('keyword_or_at_required');
         }
-        return requireAtInGroup ? isAtMe || hasPrefix || hasKeyword : hasPrefix || hasKeyword || isAtMe;
+        if (requireAtInGroup) {
+            if (isAtMe) return accept('at');
+            if (hasPrefix) return accept('prefix');
+            if (hasKeyword) return accept('keyword');
+            return skip('group_requires_at_prefix_keyword_or_reply_to_bot');
+        }
+        if (hasPrefix) return accept('prefix');
+        if (hasKeyword) return accept('keyword');
+        if (isAtMe) return accept('at');
+        return skip('group_no_trigger_matched');
     }
 
     if (triggerMode === 'keyword') {
-        return hasKeyword;
+        return hasKeyword ? accept('keyword') : skip('private_keyword_required');
     }
     if (triggerMode === 'prefix') {
-        return hasPrefix;
+        return hasPrefix ? accept('prefix') : skip('private_prefix_required');
     }
-    return true;
+    return accept('private');
+}
+
+function shouldRespond(config, event, plainText, isAtMe, messageInfo = {}) {
+    return buildRoutingDecision(config, event, plainText, isAtMe, messageInfo).shouldRespond;
 }
 
 async function callWithTimeout(promiseFactory, timeoutMs) {
@@ -2477,6 +2703,7 @@ async function processBatch(batch) {
         logger.debug(`完整消息内容: ${mergedStructuredText}`);
 
         let runtimeContext = null;
+        let thinkingTimer = null;
         const userMessagePreview = buildThinkingPreview(primary.plainText || primary.event?.raw_message || '');
         try {
             const currentCharacterName = config.chat.defaultCharacter;
@@ -2523,7 +2750,10 @@ async function processBatch(batch) {
                 messageType: event.message_type,
                 messageCount: batch.items.length,
                 participants: buildParticipants(batch.items),
+                standardEvents: batch.items.map((item) => item.standardEvent).filter(Boolean),
+                primaryStandardEvent: primary.standardEvent || null,
                 triggerReason: primary.triggerReason,
+                routingDecisions: batch.items.map((item) => item.routingDecision).filter(Boolean),
                 replyReference: buildReplyReference(batch.items),
                 injectionRisk
             };
@@ -2598,6 +2828,7 @@ async function processBatch(batch) {
                 triggerReason: primary.triggerReason,
                 replyToMessageId: primary.replyToMessageId || null,
                 participants: runtimeContext.participants,
+                standardEvents: runtimeContext.standardEvents,
                 inboundMessageIds: batch.items
                     .map((item) => item.event?.message_id)
                     .filter(Boolean)
@@ -2829,7 +3060,6 @@ async function processBatch(batch) {
             const thinkingEnabled = thinkingNotifyConfig.enabled !== false;
             const thinkingDelaySec = thinkingNotifyConfig.delaySec ?? 60;
             let thinkingNotified = false;
-            let thinkingTimer = null;
             if (thinkingEnabled && thinkingDelaySec > 0) {
                 thinkingTimer = setTimeout(async () => {
                     thinkingNotified = true;
@@ -2980,6 +3210,10 @@ ${varStatus || '(无)'}
                 );
             }
         } catch (error) {
+            if (thinkingTimer) {
+                clearTimeout(thinkingTimer);
+                thinkingTimer = null;
+            }
             if (runtimeContext?.currentSpeaker) {
                 scheduleParticipantProfileUpdate(
                     sessionManager,
@@ -2989,20 +3223,7 @@ ${varStatus || '(无)'}
                     logger
                 );
             }
-            let failMessage = '处理消息时出现错误，请稍后重试';
-            if (error.message === 'AI_TIMEOUT') {
-                const timeoutSeconds = Math.floor((config.ai.timeout || 60000) / 1000);
-                failMessage = `AI 响应超时（等待超过${timeoutSeconds}秒），请稍后再试或增大超时设置`;
-            } else if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
-                failMessage = '连接 AI 服务失败，请检查网络或 API 配置';
-            } else if (error.message.includes('401') || error.message.includes('403')) {
-                failMessage = 'API 密钥无效，请联系管理员检查配置';
-            } else if (error.message === 'EMPTY_REPLY_AFTER_RETRY') {
-                const retryAttempts = Number(error.retryAttempts) || ((config.chat?.emptyReplyRetry?.maxRetries || 0) + 1);
-                failMessage = `空回复，已自动重试 ${retryAttempts} 次仍失败，请稍后再试`;
-            } else if (error.message.includes('500') || error.message.includes('502')) {
-                failMessage = 'AI 服务暂时不可用，请稍后重试';
-            }
+            const failMessage = buildAIServiceFailureMessage(error, config);
 
             if (error.message === 'AI API 返回了空消息内容' && error.diagnostic) {
                 logger.error(`[AI诊断] 会话 ${sessionId} 收到空回复`, error.diagnostic);
@@ -3077,41 +3298,132 @@ wss.on('connection', (ws) => {
 });
 
 async function handlePokeEvent(event) {
-    if (config.chat?.pokeReaction === false) return;
     const selfId = String(bot.selfId || '');
     const targetId = String(event.target_id || '');
     const userId = String(event.user_id || '');
     const groupId = event.group_id;
+    const recordPokeRouting = (patch = {}) => {
+        lastRoutingSnapshot = {
+            at: Date.now(),
+            sessionKey: groupId ? `group:${groupId}` : '',
+            sessionLabel: groupId ? `群 ${groupId}` : '戳一戳事件',
+            scopeType: null,
+            scopeLabel: '',
+            messageType: 'group',
+            userId,
+            groupId: groupId || null,
+            targetId,
+            eventType: 'poke',
+            triggerReason: patch.triggerReason || '',
+            skipReason: patch.skipReason || '',
+            shouldRespond: patch.shouldRespond === true,
+            routingDecision: patch.routingDecision || null,
+            dbPath: sessionManager.getDbPath()
+        };
+        if (patch.skipReason) {
+            logger.debug('[路由] 戳一戳未触发回复', lastRoutingSnapshot);
+        }
+    };
+
+    if (config.chat?.pokeReaction === false) {
+        recordPokeRouting({ skipReason: 'poke_reaction_disabled' });
+        return;
+    }
 
     // 只响应戳机器人的事件
-    if (targetId !== selfId) return;
+    if (targetId !== selfId) {
+        recordPokeRouting({ skipReason: 'poke_target_not_bot' });
+        return;
+    }
 
     // 冷却：15秒内不重复响应
     const now = Date.now();
-    if (_lastPokeResponse && (now - _lastPokeResponse) < 15000) return;
+    if (_lastPokeResponse && (now - _lastPokeResponse) < 15000) {
+        recordPokeRouting({ skipReason: 'poke_cooldown' });
+        return;
+    }
     _lastPokeResponse = now;
 
     try {
         // 将戳一戳注入为对话消息，让角色自然感知
         const defaultCharacter = config.chat?.defaultCharacter || '';
-        if (!defaultCharacter || !groupId) return;
-        const timestamp = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false });
+        if (!defaultCharacter) {
+            recordPokeRouting({ skipReason: 'poke_missing_default_character' });
+            return;
+        }
+        if (!groupId) {
+            recordPokeRouting({ skipReason: 'poke_missing_group_id' });
+            return;
+        }
         const senderName = event.sender?.nickname || event.sender?.card || '群友';
         const groupName = event.group_name || groupId;
-        const pokeText = `[群聊|QQ:${userId}|昵称:${senderName}|群号:${groupId}|群名:${groupName}|时间:${timestamp}] （戳了戳你）`;
-        const memoryScope = buildMemoryScope(config, { message_type: 'group', group_id: groupId, user_id: userId });
-        runtime.enqueue({
+        const pokeEvent = {
+            ...event,
+            post_type: 'notice',
+            message_type: 'group',
+            group_id: groupId,
+            group_name: groupName,
+            user_id: userId,
+            sender: event.sender || { nickname: senderName }
+        };
+        const pokeSegments = [{ type: 'poke', targetId, userId }];
+        const routingDecision = {
+            shouldRespond: true,
+            triggerReason: 'poke',
+            skipReason: '',
+            checks: {
+                targetIsBot: targetId === selfId,
+                pokeReactionEnabled: config.chat?.pokeReaction !== false,
+                cooldownPassed: true,
+                hasDefaultCharacter: Boolean(defaultCharacter),
+                hasGroupId: Boolean(groupId)
+            }
+        };
+        const standardEvent = buildStandardEvent({
+            event: pokeEvent,
+            contentText: '（戳了戳你）',
+            rawText: '（戳了戳你）',
+            eventType: 'poke',
+            isAtBot: false,
+            replyToMessageId: null,
+            replyInfo: { toBot: false },
+            messageSegments: pokeSegments,
+            botSelfId: bot.selfId,
+            routingDecision
+        });
+        const pokeText = buildStructuredMessage(pokeEvent, '（戳了戳你）', {
+            eventType: 'poke',
+            isAtBot: false,
+            replyToBot: false,
+            messageSegments: pokeSegments
+        });
+        const memoryScope = buildMemoryScope(config, pokeEvent);
+        const enqueued = runtime.enqueue({
             sessionKey: memoryScope.sessionKey,
             memoryScope,
             dedupeKey: `poke:${groupId}:${userId}:${now}`,
-            event: { message_type: 'group', group_id: groupId, user_id: userId },
+            event: pokeEvent,
             plainText: '（戳了戳你）',
             structuredText: pokeText,
             isAtMe: true,
             replyToMessageId: null,
-            triggerReason: 'poke'
+            replyToBot: false,
+            replyInfo: null,
+            messageSegments: pokeSegments,
+            standardEvent,
+            triggerReason: 'poke',
+            routingDecision
         });
-    } catch {}
+        recordPokeRouting({
+            shouldRespond: enqueued,
+            triggerReason: enqueued ? 'poke' : '',
+            skipReason: enqueued ? '' : 'poke_duplicate',
+            routingDecision
+        });
+    } catch (error) {
+        recordPokeRouting({ skipReason: 'poke_error' });
+        logger.warn(`[路由] 戳一戳处理失败: ${error.message}`);
+    }
 }
 let _lastPokeResponse = null;
 
@@ -3123,7 +3435,8 @@ async function handleMessage(event) {
         return;
     }
 
-    const { plainText, isAtMe, structuredText, replyToMessageId } = await extractMessageInfo(config, event, bot);
+    const messageInfo = await extractMessageInfo(config, event, bot);
+    const { plainText, isAtMe, structuredText, replyToMessageId, replyToBot, replyInfo, messageSegments, standardEvent } = messageInfo;
 
     // /llm 指令：管理员切换 LLM 开关
     if (plainText.trim() === '/llm' && isAdminUser(config, event.user_id)) {
@@ -3149,7 +3462,31 @@ async function handleMessage(event) {
     if (await handleAdminMentionCommand(event, plainText)) {
         return;
     }
-    if (!shouldRespond(config, event, plainText, isAtMe)) {
+    const routingDecision = buildRoutingDecision(config, event, plainText, isAtMe, messageInfo);
+    if (standardEvent) {
+        updateStandardEventRouting(standardEvent, routingDecision);
+    }
+    if (!routingDecision.shouldRespond) {
+        lastRoutingSnapshot = {
+            at: Date.now(),
+            sessionKey: event.message_type === 'group' ? `group:${event.group_id || ''}` : `private:${event.user_id || ''}`,
+            sessionLabel: event.message_type === 'group' ? `群 ${event.group_id || ''}` : `私聊 ${event.user_id || ''}`,
+            scopeType: null,
+            scopeLabel: '',
+            messageType: event.message_type,
+            userId: event.user_id,
+            groupId: event.group_id || null,
+            triggerReason: '',
+            skipReason: routingDecision.skipReason,
+            shouldRespond: false,
+            routingDecision,
+            replyToBot,
+            replyToMessageId,
+            replyFetchStatus: replyInfo?.fetchStatus || '',
+            replyFetchReason: replyInfo?.fetchReason || '',
+            dbPath: sessionManager.getDbPath()
+        };
+        logger.debug('[路由] 消息未触发回复', lastRoutingSnapshot);
         return;
     }
 
@@ -3162,7 +3499,7 @@ async function handleMessage(event) {
 
     const memoryScope = buildMemoryScope(config, event);
     const sessionKey = memoryScope.sessionKey;
-    const triggerReason = getTriggerReason(config, event, plainText, isAtMe);
+    const triggerReason = routingDecision.triggerReason || getTriggerReason(config, event, plainText, isAtMe, messageInfo);
     lastRoutingSnapshot = {
         at: Date.now(),
         sessionKey,
@@ -3173,6 +3510,9 @@ async function handleMessage(event) {
         userId: event.user_id,
         groupId: event.group_id || null,
         triggerReason,
+        skipReason: '',
+        shouldRespond: true,
+        routingDecision,
         dbPath: sessionManager.getDbPath()
     };
     runtime.enqueue({
@@ -3184,7 +3524,12 @@ async function handleMessage(event) {
         structuredText,
         isAtMe,
         replyToMessageId,
-        triggerReason
+        replyToBot,
+        replyInfo,
+        messageSegments,
+        standardEvent,
+        triggerReason,
+        routingDecision
     });
 }
 
