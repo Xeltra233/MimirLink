@@ -870,7 +870,7 @@ test('buildChatRuntimePreview returns structured sources, messages, and effectiv
     assert.equal(preview.effectiveBinding.preset.name, 'Character Preset');
     assert.equal(preview.bindingTrace.worldbook.source, 'imported_from_card');
     assert.equal(preview.bindingTrace.preset.source, 'character_binding');
-    assert.deepEqual(preview.bindingTrace.preset.layers, ['legacy', 'character_binding']);
+    assert.deepEqual(preview.bindingTrace.preset.layers, ['character_binding']);
     assert.equal(preview.bindingTrace.preset.itemSources['identifier:main'], 'character_binding');
     assert.equal(preview.bindingTrace.preset.itemSources['identifier:post-history'], 'character_binding');
     assert.equal(preview.bindingTrace.preset.itemSources['identifier:assistant-prefill'], 'character_binding');
@@ -878,7 +878,7 @@ test('buildChatRuntimePreview returns structured sources, messages, and effectiv
     assert.equal(preview.bindingTrace.regexRules.source, 'imported_from_card');
     assert.equal(preview.bindingTrace.regexRules.count, 1);
     assert.equal(preview.bindingTrace.presetRegexRules.source, 'character_binding');
-    assert.deepEqual(preview.bindingTrace.presetRegexRules.layers, ['legacy', 'character_binding']);
+    assert.deepEqual(preview.bindingTrace.presetRegexRules.layers, ['character_binding']);
     assert.equal(preview.bindingTrace.presetRegexRules.count, 1);
     assert.equal(preview.bindingTrace.globalRegexRules.source, 'global');
     assert.equal(preview.bindingTrace.globalRegexRules.count, 1);

@@ -266,12 +266,56 @@ export class PromptBuilder {
     static getPresetResolution(config = {}, characterName) {
         PromptBuilder.ensureBindingConfig(config);
         const binding = PromptBuilder.getCharacterBinding(config, characterName);
-        return PromptBuilder.mergePresetLayers([
-            { source: 'legacy', preset: config.preset },
-            { source: 'global', preset: config.bindings.global.preset },
+        const candidates = [
+            { source: 'character_binding', preset: binding.preset },
             { source: 'imported_from_card', preset: binding.importedFromCard?.preset },
-            { source: 'character_binding', preset: binding.preset }
-        ]);
+            { source: 'global', preset: config.bindings.global.preset },
+            { source: 'legacy', preset: config.preset }
+        ];
+        const selected = candidates.find((candidate) => PromptBuilder.hasPresetContent(candidate.preset));
+
+        if (!selected) {
+            return {
+                preset: null,
+                source: 'none',
+                layers: [],
+                itemSources: {},
+                lockedIdentifiers: []
+            };
+        }
+
+        const normalizedPreset = PromptBuilder.normalizePreset(selected.preset);
+        const itemSources = {};
+        const lockedIdentifiers = [];
+        const prompts = normalizedPreset.prompts
+            .map((item, index) => {
+                const normalizedItem = PromptBuilder.createPromptItem(item);
+                if (!normalizedItem.content.trim()) {
+                    return null;
+                }
+
+                const key = PromptBuilder.createPresetItemKey(normalizedItem, index);
+                itemSources[key] = selected.source;
+                if (normalizedItem.forbid_overrides === true && normalizedItem.identifier) {
+                    lockedIdentifiers.push(normalizedItem.identifier);
+                }
+                return {
+                    ...normalizedItem,
+                    preset_source: selected.source
+                };
+            })
+            .filter(Boolean);
+
+        return {
+            preset: {
+                ...normalizedPreset,
+                prompts
+            },
+            source: selected.source,
+            layers: [selected.source],
+            itemSources,
+            lockedIdentifiers
+        };
     }
 
     static getRegexResolution(config = {}, characterName) {
