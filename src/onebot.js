@@ -271,7 +271,7 @@ export class OneBotClient extends EventEmitter {
         }
 
         // 处理事件
-        if (msg.post_type === 'message') {
+        if (msg.post_type === 'message' || msg.post_type === 'notice' || msg.post_type === 'request') {
             this.emit('message', msg);
         } else if (msg.post_type === 'meta_event') {
             if (msg.meta_event_type === 'heartbeat') {

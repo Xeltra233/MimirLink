@@ -27,6 +27,9 @@ function createBuilder() {
             }
         },
         {
+            chat: {
+                humanChatControlPrompt: '<human_chat_control>配置里的群聊控制</human_chat_control>'
+            },
             preset: {
                 enabled: true,
                 name: '测试预设',
@@ -125,4 +128,18 @@ test('prompt build uses current user message as focus fallback when standard eve
 
     assert.match(focusMessage?.content || '', /最新输入: 换话题，别聊灵石了/);
     assert.match(focusMessage?.content || '', /释放旧话题: yes/);
+});
+
+test('human chat control is loaded from migratable config instead of hardcoded prompt text', async () => {
+    const builder = createBuilder();
+    const built = await builder.build(
+        '徐缺',
+        '你好',
+        { recentMessages: [], summaries: [] },
+        new Set(),
+        {}
+    );
+    const control = built.runtimeSources.find((source) => source.kind === 'human_chat_control')?.content || '';
+
+    assert.equal(control, '<human_chat_control>配置里的群聊控制</human_chat_control>');
 });

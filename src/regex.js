@@ -256,25 +256,44 @@ export class RegexProcessor {
     }
 
     process(text, stage = 'output') {
+        return this.processWithTrace(text, stage).text;
+    }
+
+    processWithTrace(text, stage = 'output') {
+        const originalText = text;
+        const trace = {
+            stage: RegexProcessor.normalizeRuleStage(stage),
+            enabled: this.enabled !== false,
+            before: typeof originalText === 'string' ? originalText : String(originalText || ''),
+            after: typeof originalText === 'string' ? originalText : String(originalText || ''),
+            appliedRules: [],
+            skippedRules: [],
+            errors: []
+        };
+
         if (!this.enabled || !text || this.rules.length === 0) {
-            return text;
+            return { text, trace };
         }
 
         let result = text;
-        const appliedRules = [];
         const normalizedStage = RegexProcessor.normalizeRuleStage(stage);
 
         for (const rule of this.rules) {
+            const ruleName = rule.name || rule.pattern?.source || 'unnamed';
             if (rule.enabled === false) {
+                trace.skippedRules.push({ name: ruleName, reason: 'disabled' });
                 continue;
             }
             if (rule.markdownOnly === true && normalizedStage === 'input') {
+                trace.skippedRules.push({ name: ruleName, reason: 'markdown_only_input' });
                 continue;
             }
             if (!RegexProcessor.ruleMatchesStage(rule, normalizedStage)) {
+                trace.skippedRules.push({ name: ruleName, reason: 'stage_mismatch' });
                 continue;
             }
             if (!RegexProcessor.ruleMatchesDepth(rule, 0)) {
+                trace.skippedRules.push({ name: ruleName, reason: 'depth_mismatch' });
                 continue;
             }
 
@@ -283,18 +302,26 @@ export class RegexProcessor {
                 const before = result;
                 result = result.replace(rule.pattern, rule.replacement || '');
                 if (before !== result) {
-                    appliedRules.push(rule.name || rule.pattern.source);
+                    trace.appliedRules.push({
+                        name: ruleName,
+                        pattern: rule.pattern.source,
+                        replacement: rule.replacement || '',
+                        beforeLength: before.length,
+                        afterLength: result.length
+                    });
                 }
             } catch (error) {
-                this.logger.error?.(`[正则] 规则执行失败: ${rule.name || rule.pattern.source}`, error);
+                trace.errors.push({ name: ruleName, error: error?.message || String(error) });
+                this.logger.error?.(`[正则] 规则执行失败: ${ruleName}`, error);
             }
         }
 
-        if (appliedRules.length > 0) {
-            this.logger.debug?.(`[正则] 已应用规则: ${appliedRules.join(', ')}`);
+        if (trace.appliedRules.length > 0) {
+            this.logger.debug?.(`[正则] 已应用规则: ${trace.appliedRules.map((rule) => rule.name).join(', ')}`);
         }
 
-        return result;
+        trace.after = result;
+        return { text: result, trace };
     }
 
     processInput(text) {
@@ -303,6 +330,10 @@ export class RegexProcessor {
 
     processOutput(text) {
         return this.process(text, 'output');
+    }
+
+    processOutputWithTrace(text) {
+        return this.processWithTrace(text, 'output');
     }
 
     static ruleMatchesStage(rule = {}, stage = 'output') {

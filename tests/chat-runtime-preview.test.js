@@ -309,6 +309,39 @@ test('buildAIToolContext send_group_mention still rejects @all and empty prompt'
     assert.match(rejectEmptyPrompt.error, /不能为空/);
 });
 
+test('buildAIToolContext exposes mode-gated search and text tool instructions', () => {
+    const toolContext = buildAIToolContext({
+        config: {
+            ai: {
+                tools: {
+                    webSearch: {
+                        enabled: true,
+                        provider: 'bing',
+                        maxResults: 5,
+                        timeoutMs: 10000,
+                        maxSnippetLength: 800
+                    },
+                    textToolFallback: {
+                        enabled: true,
+                        maxRounds: 3
+                    }
+                }
+            }
+        }
+    });
+
+    const hint = toolContext.toolHints.join('\n');
+    assert.match(hint, /chat=普通群聊\/角色扮演\/情绪接话，不搜/);
+    assert.match(hint, /browse=最新信息\/外部事实\/资料核验/);
+    assert.match(hint, /水群、玩梗、低信息、QQ表情、戳一戳/);
+    assert.match(hint, /不要泄露工具 JSON、参数、工具名/);
+
+    assert.equal(toolContext.textToolFallback.enabled, true);
+    assert.match(toolContext.textToolFallback.instruction, /chat=普通群聊闲聊，不调用工具/);
+    assert.match(toolContext.textToolFallback.instruction, /browse=最新\/外部事实\/资料核验，调用 web_search/);
+    assert.match(toolContext.textToolFallback.instruction, /final 只写给用户看的正文/);
+});
+
 test('AI client applies per-call participant profile overrides to payload and headers', async () => {
     const requests = [];
     globalThis.fetch = async (url, options) => {

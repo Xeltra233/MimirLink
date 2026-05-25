@@ -94,6 +94,7 @@
     "quoteReplyEnabled": true,
     "mentionSenderOnReply": true,
     "attachMetadata": true,
+    "humanChatControlEnabled": true,
     "splitMessage": true,
     "defaultCharacter": "你的角色名",
     "commands": {

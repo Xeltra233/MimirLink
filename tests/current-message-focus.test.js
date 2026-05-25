@@ -108,6 +108,19 @@ test('focus releases old topic on explicit topic shift', () => {
     assert.ok(focus.strategies.includes('do_not_repeat_stopped_keyword'));
 });
 
+test('focus releases invented old gag when user asks where it came from', () => {
+    const focus = buildCurrentMessageFocus({
+        primaryStandardEvent: baseEvent({
+            contentText: '哈，我们哪里谈到了灵石',
+            routing: { shouldRespond: true, triggerReason: 'at', skipReason: '' }
+        })
+    });
+
+    assert.equal(focus.shouldReleaseOldTopic, true);
+    assert.ok(focus.strategies.includes('release_old_topic'));
+    assert.ok(focus.warnings.some((item) => item.includes('释放旧话题')));
+});
+
 test('focus preserves skip reasons for non-triggered group messages', () => {
     const focus = buildCurrentMessageFocus({
         primaryStandardEvent: baseEvent({

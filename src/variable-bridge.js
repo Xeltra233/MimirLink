@@ -14,6 +14,18 @@ const GETVAR_REGEX = /\{\{getvar::([^}]+)\}\}/gi;
 const SETVAR_REGEX = /\{\{setvar::([^}:]+?)::([\s\S]*?)\}\}/gi;
 const UPDATE_VARIABLE_TAG_REGEX = /<UpdateVariable>\s*([\s\S]*?)\s*<\/UpdateVariable>/gi;
 
+export function extractTaggedContent(text, tagName) {
+    if (!text || !tagName) return '';
+    const escapedTag = String(tagName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = String(text).match(new RegExp(`<${escapedTag}[^>]*>([\\s\\S]*?)<\\/${escapedTag}>`, 'i'));
+    return match ? match[1].trim() : '';
+}
+
+export function extractVisibleContent(text) {
+    const content = extractTaggedContent(text, 'content');
+    return content || String(text || '');
+}
+
 // ST 卡常见内部标签（支持带属性的情况如 <details class="...">）
 const INTERNAL_TAGS = [
     // 思维/草稿类

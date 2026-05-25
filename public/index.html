@@ -123,6 +123,12 @@
             z-index: 100;
         }
 
+        header > h1 {
+            flex: 0 1 auto;
+            min-width: 260px;
+            margin: 0;
+        }
+
         header h1 {
             font-size: 1.4rem;
             font-weight: 700;
@@ -135,6 +141,9 @@
             gap: 20px;
             align-items: center;
             flex-wrap: wrap;
+            justify-content: flex-end;
+            flex: 1 1 520px;
+            min-width: 320px;
         }
 
         .theme-picker {
@@ -226,6 +235,9 @@
             display: flex;
             gap: 0;
             min-height: 0;
+            min-width: 0;
+            overflow: hidden;
+            background: linear-gradient(180deg, #faf7f2 0%, #f5f1ea 100%);
         }
 
         .tabs {
@@ -241,13 +253,24 @@
             scrollbar-width: thin;
         }
 
-        .content-shell {
+        .shell-layout > .panel {
             flex: 1;
             min-width: 0;
             max-width: 100%;
             overflow-y: auto;
             overflow-x: hidden;
-            padding: 20px 20px 48px;
+            padding: 14px 14px 36px;
+        }
+        .shell-layout > .panel:not(#prompt-range) {
+            max-width: 1480px;
+            margin: 0 auto;
+        }
+        #prompt-range.panel.active {
+            height: 100%;
+            overflow: hidden;
+            max-width: none;
+            margin: 0;
+            padding: 0;
         }
 
         .tab {
@@ -302,6 +325,7 @@
         #prompt-range.panel.active {
             height: 100%;
             overflow: hidden;
+            padding: 0;
         }
 
         @keyframes panel-enter {
@@ -1185,44 +1209,87 @@
             min-width: 0;
         }
 
+        #config.panel.active {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        #config .config-page-head {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        #config .config-page-head h2 {
+            margin-bottom: 0;
+        }
+
+        #config .config-page-intro {
+            color: var(--text-muted);
+            font-size: 0.84rem;
+            line-height: 1.5;
+        }
+
         #config .grid {
             grid-template-columns: repeat(2, minmax(320px, 1fr));
-            align-items: stretch;
+            gap: 16px;
+            align-items: start;
         }
 
         #config .card {
             display: flex;
             flex-direction: column;
-            gap: 2px;
-            padding: 16px 18px;
+            gap: 0;
+            padding: 20px 22px;
+            border-radius: 16px;
+            border: 1px solid color-mix(in srgb, var(--border) 90%, transparent 10%);
+            background: color-mix(in srgb, var(--bg-elevated) 96%, var(--bg) 4%);
+            box-shadow: 0 10px 28px rgba(45, 35, 25, 0.06);
+        }
+
+        #config .card:hover {
+            transform: none;
+            border-color: color-mix(in srgb, var(--accent) 14%, var(--border) 86%);
+            box-shadow: 0 14px 34px rgba(45, 35, 25, 0.08);
         }
 
         .config-subtabs {
             display: flex;
-            gap: 6px;
+            gap: 8px;
             flex-wrap: wrap;
-            margin-bottom: 14px;
-            padding: 6px 8px;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            background: color-mix(in srgb, var(--bg-elevated) 86%, transparent 14%);
+            margin-bottom: 16px;
+            padding: 8px;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent 12%);
+            border-radius: 16px;
+            background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg) 8%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
         }
 
         .config-subtab {
-            padding: 6px 11px;
-            border: 1px solid var(--border);
+            min-height: 36px;
+            padding: 7px 14px;
+            border: 1px solid transparent;
             border-radius: 999px;
-            background: var(--bg-inset);
+            background: transparent;
             color: var(--text-muted);
             cursor: pointer;
             font-weight: 600;
             font-size: 0.82rem;
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        .config-subtab:hover {
+            color: var(--text);
+            background: color-mix(in srgb, var(--bg-inset) 86%, transparent 14%);
+            border-color: color-mix(in srgb, var(--border) 82%, transparent 18%);
         }
 
         .config-subtab.active {
             background: var(--accent);
             border-color: var(--accent);
             color: #fff;
+            box-shadow: 0 10px 22px rgba(230, 95, 43, 0.16);
         }
 
         .config-subpanel {
@@ -1233,7 +1300,7 @@
 
         .config-subpanel.active {
             display: grid;
-            gap: 12px;
+            gap: 14px;
         }
 
         /* ====== 提示词优化靶场 ====== */
@@ -1557,6 +1624,7 @@
         .range-segment-card.kind-current_time       { border-left-color: #94a3b8; }
         .range-segment-card.kind-situational_context { border-left-color: #60a5fa; }
         .range-segment-card.kind-input_guardrail     { border-left-color: #f87171; }
+        .range-segment-card.kind-human_chat_control  { border-left-color: #14b8a6; }
         .range-segment-card.kind-preset_pre_system,
         .range-segment-card.kind-preset_marker       { border-left-color: #a78bfa; }
         .range-segment-card.kind-summary             { border-left-color: #34d399; }
@@ -1627,6 +1695,446 @@
             max-height: 260px; overflow-y: auto; font-size: 0.76rem; line-height: 1.5;
             border: 1px solid var(--border); border-radius: 6px; padding: 4px 0;
         }
+        .range-trace-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+        }
+        .range-trace-node {
+            border: 1px solid var(--border);
+            background: linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.66));
+            border-radius: 12px;
+            padding: 10px 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+        }
+        .range-trace-node:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--accent) 35%, var(--border) 65%); }
+        .range-trace-node.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent 82%); }
+        .range-trace-node.is-completed { border-color: color-mix(in srgb, var(--success) 36%, var(--border) 64%); }
+        .range-trace-node.is-running { border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%); }
+        .range-trace-node.is-failed { border-color: color-mix(in srgb, var(--error) 42%, var(--border) 58%); }
+        .range-trace-node.is-skipped { border-style: dashed; opacity: 0.86; }
+        .range-trace-node-head { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:6px; }
+        .range-trace-node-title { font-size: 0.8rem; font-weight: 700; color: var(--text); }
+        .range-trace-node-meta { font-size: 0.72rem; color: var(--text-muted); }
+        .range-trace-node-summary { font-size: 0.75rem; line-height: 1.45; color: var(--text-muted); white-space: pre-wrap; }
+        .range-trace-status-pill {
+            display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px;
+            font-size:0.68rem; font-weight:600; background: var(--bg); border:1px solid var(--border); color: var(--text-muted);
+        }
+        .range-trace-status-pill.is-completed { color: var(--success); border-color: color-mix(in srgb, var(--success) 36%, var(--border) 64%); }
+        .range-trace-status-pill.is-running { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%); }
+        .range-trace-status-pill.is-failed { color: var(--error); border-color: color-mix(in srgb, var(--error) 42%, var(--border) 58%); }
+        .range-trace-detail-shell {
+            margin-top:8px; border:1px solid var(--border); border-radius:12px; background: var(--bg);
+            min-height: 112px; padding: 12px 14px; white-space: pre-wrap; line-height: 1.55; color: var(--text-muted);
+        }
+        .range-trace-detail-title { font-size:0.82rem; font-weight:700; color: var(--text); margin-bottom:6px; }
+        .range-trace-detail-meta { font-size:0.74rem; color: var(--text-muted); margin-bottom:8px; }
+        .range-trace-detail-block { margin-top:8px; padding-top:8px; border-top:1px dashed color-mix(in srgb, var(--border) 72%, transparent 28%); }
+        .range-env-card {
+            border:1px solid var(--border); border-radius:12px; background: linear-gradient(180deg, rgba(255,255,255,0.85), rgba(255,255,255,0.68));
+            padding:10px 12px; margin-bottom:8px;
+        }
+        .range-env-card-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:8px; }
+        .range-env-card-title { font-size:0.82rem; font-weight:700; color:var(--text); }
+        .range-env-card-meta { font-size:0.73rem; color:var(--text-muted); line-height:1.45; }
+        .range-env-kv { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:6px; }
+        .range-env-kv-item { border:1px solid var(--border); border-radius:8px; padding:6px 8px; background: var(--bg); }
+        .range-env-kv-key { font-size:0.66rem; color:var(--text-muted); margin-bottom:2px; }
+        .range-env-kv-value { font-size:0.74rem; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+        .range-batch-board { display:grid; gap:10px; }
+        .range-batch-lane { border:1px solid var(--border); border-radius:12px; background: linear-gradient(180deg, rgba(255,255,255,0.84), rgba(255,255,255,0.66)); padding:10px 12px; }
+        .range-batch-lane-head { display:flex; justify-content:space-between; gap:10px; align-items:flex-start; margin-bottom:8px; }
+        .range-batch-lane-title { font-size:0.82rem; font-weight:700; color:var(--text); }
+        .range-batch-lane-meta { font-size:0.72rem; color:var(--text-muted); }
+        .range-batch-job-grid { display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:8px; }
+        .range-batch-job {
+            border:1px solid var(--border); border-radius:10px; background: var(--bg); padding:8px 10px;
+        }
+        .range-batch-job.is-running { border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%); }
+        .range-batch-job.is-completed { border-color: color-mix(in srgb, var(--success) 36%, var(--border) 64%); }
+        .range-batch-job.is-failed { border-color: color-mix(in srgb, var(--error) 40%, var(--border) 60%); }
+        .range-batch-job-title { font-size:0.76rem; font-weight:700; color:var(--text); margin-bottom:4px; }
+        .range-batch-job-meta { font-size:0.7rem; color:var(--text-muted); margin-bottom:4px; }
+        .range-batch-job-preview { font-size:0.72rem; color:var(--text-muted); line-height:1.45; white-space:pre-wrap; }
+        .range-batch-topline { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+        .range-batch-pill { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; border-radius:999px; background:var(--bg); border:1px solid var(--border); font-size:0.68rem; color:var(--text-muted); }
+        @media (max-width: 1300px) {
+            .range-trace-grid, .range-batch-job-grid, .range-env-kv { grid-template-columns: 1fr; }
+        }
+
+        .range-layout-with-sidebar {
+            display: grid;
+            grid-template-columns: 64px 228px minmax(980px, 1fr) 420px;
+            gap: 16px;
+            align-items: stretch;
+            min-height: calc(100vh - 10rem);
+        }
+        .range-workbench-config,
+        .range-workbench-board,
+        .range-workbench-detail {
+            min-width: 0;
+            border: 1px solid color-mix(in srgb, var(--border) 65%, transparent 35%);
+            border-radius: 30px;
+            background: linear-gradient(180deg, color-mix(in srgb, var(--bg-elevated) 94%, white 6%), color-mix(in srgb, var(--bg) 94%, white 6%));
+            box-shadow: 0 30px 64px rgba(33, 25, 18, 0.12);
+            overflow: hidden;
+        }
+        .range-workbench-config {
+            position: relative;
+            transition: width .2s ease, opacity .2s ease, transform .2s ease;
+            background: linear-gradient(180deg, rgba(255,252,247,0.94), rgba(244,237,228,0.96));
+            box-shadow: 0 18px 44px rgba(44, 31, 19, 0.07);
+            opacity: 0.94;
+        }
+        .range-layout-with-sidebar.config-collapsed {
+            grid-template-columns: 64px 64px minmax(980px, 1fr) 420px;
+        }
+        .range-layout-with-sidebar.config-collapsed .range-workbench-config .range-workbench-scroll,
+        .range-layout-with-sidebar.config-collapsed .range-workbench-config .range-chat-header select,
+        .range-layout-with-sidebar.config-collapsed .range-workbench-config .range-chat-header-label {
+            display: none;
+        }
+        .range-layout-with-sidebar.config-collapsed .range-workbench-config {
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding-top: 14px;
+        }
+        .range-workbench-scroll {
+            height: calc(100vh - 13rem);
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            background:
+                radial-gradient(circle at top left, rgba(116, 90, 60, 0.05), transparent 24%),
+                linear-gradient(180deg, rgba(255,255,255,0.06), rgba(0,0,0,0.02));
+        }
+        .range-workbench-config .range-chat-header,
+        .range-workbench-board .range-chat-header,
+        .range-workbench-detail .range-mobile-tools-header {
+            padding: 18px 20px;
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent 28%);
+            background: linear-gradient(180deg, rgba(255,255,255,0.88), rgba(255,255,255,0.28));
+            backdrop-filter: blur(10px);
+        }
+        .range-config-toggle {
+            width: 44px;
+            height: 44px;
+            min-height: 44px;
+            border-radius: 15px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            background: color-mix(in srgb, var(--bg) 84%, white 16%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 10px 24px rgba(49,35,22,0.08);
+        }
+        .range-board-canvas {
+            position: relative;
+            height: calc(100vh - 13rem);
+            overflow: auto;
+            padding: 34px 36px 40px;
+            background:
+                linear-gradient(rgba(120, 98, 72, 0.07) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(120, 98, 72, 0.07) 1px, transparent 1px),
+                radial-gradient(circle at top, rgba(177, 149, 119, 0.20), transparent 40%),
+                linear-gradient(180deg, #f4ebdc 0%, #e9dece 100%);
+            background-size: 32px 32px, 32px 32px, auto, auto;
+        }
+        .range-board-canvas::before {
+            content: '';
+            position: absolute;
+            inset: 18px;
+            border-radius: 34px;
+            border: 1px solid rgba(157, 128, 96, 0.12);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.42);
+            pointer-events: none;
+        }
+        .range-workbench-board {
+            position: relative;
+            background: linear-gradient(180deg, rgba(255,250,244,0.99), rgba(244,236,225,0.97));
+        }
+        .range-workbench-board .range-chat-header {
+            position: relative;
+            z-index: 2;
+        }
+        .range-board-mode-pills {
+            display: inline-flex;
+            gap: 8px;
+            margin-left: 8px;
+        }
+        .range-board-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 11px;
+            border-radius: 999px;
+            background: rgba(255,255,255,0.82);
+            border: 1px solid rgba(150,123,93,0.16);
+            color: #7b6857;
+            font-size: 0.68rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            box-shadow: 0 8px 18px rgba(47,35,23,0.06);
+        }
+        .range-workbench-config .card.range-card-padded {
+            border-radius: 20px;
+            box-shadow: 0 10px 24px rgba(44,31,19,0.05);
+            background: linear-gradient(180deg, rgba(255,255,255,0.86), rgba(248,242,235,0.88));
+            border: 1px solid rgba(145,115,82,0.10);
+        }
+        .range-workbench-config .card.range-card-padded:nth-child(n+4) {
+            opacity: 0.86;
+        }
+        .range-workbench-config .hint-text {
+            font-size: 0.72rem;
+            line-height: 1.45;
+        }
+        .range-workbench-config textarea,
+        .range-workbench-config input,
+        .range-workbench-config select {
+            border-radius: 14px;
+        }
+        .range-board-floating-title {
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #2f251c;
+            margin-bottom: 4px;
+        }
+        .range-board-floating-meta {
+            font-size: 0.74rem;
+            line-height: 1.6;
+            color: #7c6958;
+        }
+        .range-workbench-board {
+            position: relative;
+            background: linear-gradient(180deg, rgba(255,250,244,0.98), rgba(244,236,225,0.96));
+        }
+        .range-workbench-board .range-chat-header {
+            position: relative;
+            z-index: 2;
+        }
+        .range-observer-lane {
+            display: grid;
+            gap: 18px;
+            padding: 18px;
+            border-radius: 30px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(246,239,230,0.95));
+            border: 1px solid rgba(152, 122, 88, 0.15);
+            box-shadow: 0 24px 54px rgba(51, 36, 22, 0.08);
+            backdrop-filter: blur(7px);
+            position: relative;
+        }
+        .range-observer-lane::before {
+            content: '';
+            position: absolute;
+            inset: 14px;
+            border-radius: 24px;
+            border: 1px solid rgba(255,255,255,0.42);
+            pointer-events: none;
+        }
+        .range-observer-lane-head {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding: 4px 8px 16px;
+            border-bottom: 1px dashed rgba(152, 122, 88, 0.24);
+            position: relative;
+            z-index: 1;
+        }
+        .range-observer-lane-title {
+            font-size: 1.02rem;
+            font-weight: 800;
+            color: #2f251c;
+            letter-spacing: 0.01em;
+        }
+        .range-observer-lane-meta {
+            font-size: 0.72rem;
+            color: #7a6957;
+            line-height: 1.5;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 10px;
+        }
+        .range-observer-card {
+            position: relative;
+            display: grid;
+            gap: 14px;
+            padding: 0;
+            border-radius: 26px;
+            background: linear-gradient(180deg, #fffdf9 0%, #f6ede1 100%);
+            border: 1px solid rgba(151, 122, 91, 0.18);
+            box-shadow: 0 26px 46px rgba(48, 35, 22, 0.14), inset 0 1px 0 rgba(255,255,255,0.58);
+            transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
+            overflow: hidden;
+            min-height: 340px;
+        }
+        .range-observer-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 30px 50px rgba(48, 35, 22, 0.16), inset 0 1px 0 rgba(255,255,255,0.62);
+        }
+        .range-observer-card.is-selected {
+            border-color: rgba(144, 102, 56, 0.72);
+            box-shadow: 0 0 0 2px rgba(144, 102, 56, 0.16), 0 32px 58px rgba(48, 35, 22, 0.20);
+        }
+        .range-observer-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.38), rgba(255,255,255,0) 34%);
+            pointer-events: none;
+        }
+        .range-observer-card::after {
+            content: '';
+            position: absolute;
+            left: 18px;
+            right: 18px;
+            top: 12px;
+            height: 6px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(170,140,107,0.0), rgba(170,140,107,0.32), rgba(170,140,107,0.0));
+        }
+        .range-observer-card.is-running { border-color: rgba(78, 124, 191, 0.42); }
+        .range-observer-card.is-completed { border-color: rgba(67, 149, 104, 0.34); }
+        .range-observer-card.is-failed { border-color: rgba(196, 89, 89, 0.40); }
+        .range-observer-card-head {
+            display:flex;
+            justify-content:space-between;
+            gap:12px;
+            align-items:flex-start;
+            position:relative;
+            z-index:1;
+            padding: 18px 18px 0;
+            background: linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0) 92%);
+        }
+        .range-observer-card-title {
+            font-size:1rem;
+            font-weight:800;
+            color:#2d241c;
+            margin-bottom: 4px;
+        }
+        .range-observer-card-meta {
+            font-size:0.72rem;
+            color:#786858;
+            line-height:1.52;
+            display:flex;
+            flex-wrap:wrap;
+            gap:6px 10px;
+        }
+        .range-observer-preview {
+            min-height: 92px;
+            margin: 0 18px;
+            padding: 16px 18px;
+            border-radius: 20px;
+            background: linear-gradient(180deg, rgba(251,246,240,0.98), rgba(244,236,226,0.94));
+            border: 1px solid rgba(150, 123, 93, 0.12);
+            font-size: 0.78rem;
+            line-height: 1.62;
+            color: #5f5245;
+            white-space: pre-wrap;
+            position: relative;
+            z-index: 1;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+        }
+        .range-observer-preview::before {
+            content: 'Preview';
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.66rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #9a846f;
+        }
+        .range-observer-steps {
+            display: grid;
+            gap: 12px;
+            position: relative;
+            z-index: 1;
+            padding: 0 18px 18px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .range-observer-step {
+            width: 100%;
+            text-align: left;
+            border: 1px solid rgba(155, 128, 94, 0.14);
+            background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(252,248,243,0.88));
+            border-radius: 18px;
+            padding: 12px 13px;
+            transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.56);
+            min-height: 104px;
+        }
+        .range-observer-step-head {
+            display:flex;
+            justify-content:space-between;
+            gap:8px;
+            align-items:flex-start;
+            margin-bottom:8px;
+        }
+        .range-observer-step-title {
+            font-size:0.74rem;
+            font-weight:800;
+            color:#2e241c;
+            letter-spacing: 0.01em;
+        }
+        .range-observer-step-meta {
+            font-size:0.66rem;
+            color:#8a7560;
+            white-space:nowrap;
+        }
+        .range-observer-step-summary {
+            font-size:0.7rem;
+            color:#6e5f51;
+            line-height:1.55;
+            white-space:pre-wrap;
+            display:-webkit-box;
+            -webkit-line-clamp:4;
+            -webkit-box-orient:vertical;
+            overflow:hidden;
+        }
+        .range-workbench-detail {
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            gap: 10px;
+            background: linear-gradient(180deg, #f6edde 0%, #ecdfcf 100%);
+            position: relative;
+            border-left: 1px solid rgba(145, 115, 82, 0.12);
+        }
+        .range-workbench-detail::before {
+            content: '';
+            position: absolute;
+            inset: 0 0 auto 0;
+            height: 132px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.62), rgba(255,255,255,0));
+            pointer-events: none;
+        }
+        #range-info-panel > .card {
+            border-radius: 28px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(247,239,230,0.98));
+            border: 1px solid rgba(150, 123, 93, 0.13);
+            box-shadow: 0 24px 42px rgba(47, 35, 23, 0.11), inset 0 1px 0 rgba(255,255,255,0.62);
+        }
+        .range-detail-chat {
+            min-height: 190px;
+            max-height: 300px;
+            border: 1px solid rgba(150,123,93,0.10);
+            border-radius: 18px;
+            background: rgba(247,240,232,0.92);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55);
+        }
+        @media (max-width: 1500px) {
+            .range-layout-with-sidebar { grid-template-columns: 120px 220px minmax(520px, 1fr) 320px; }
+            .range-layout-with-sidebar.config-collapsed { grid-template-columns: 120px 64px minmax(520px, 1fr) 320px; }
+            .range-observer-lanes { grid-template-columns: 1fr; }
+        }
         .range-corpus-line-item {
             display: flex; align-items: flex-start; gap: 4px;
             padding: 2px 6px; border-bottom: 1px solid var(--border);
@@ -1671,34 +2179,160 @@
         .reasoning-fold[open] summary { margin-bottom: 6px; }
         .range-stats-bar { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
         .range-snapshot-list { margin-top: 6px; }
-        #range-info-panel > .card { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; overflow: hidden; margin-bottom: 0; }
+        #range-info-panel {
+            overflow-y: auto;
+            padding-right: 2px;
+            display: grid;
+            gap: 12px;
+            align-content: start;
+        }
+        #range-info-panel > .card {
+            display: flex;
+            flex-direction: column;
+            flex: 0 0 auto;
+            min-height: auto;
+            overflow: visible;
+            margin-bottom: 0;
+            padding: 16px 18px;
+        }
+        #range-info-panel .range-panel-h3 {
+            font-size: 0.92rem;
+            font-weight: 800;
+            color: #2e241c;
+            margin-bottom: 10px;
+        }
+        #range-info-panel .range-section-label {
+            font-size: 0.76rem;
+            letter-spacing: 0.01em;
+            color: #8a7560;
+            margin-bottom: 6px;
+        }
         #range-info-panel > .card > .range-corpus-lines { flex: 1; min-height: 0; }
-        .range-iteration-log { flex: 1; min-height: 0; overflow-y: auto; }
+        .range-iteration-log { flex: 0 0 auto; min-height: 0; overflow-y: auto; }
         .range-diff-container { max-height: 200px; }
+        .range-observer-lanes {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(500px, 1fr));
+            gap: 26px;
+            align-items: start;
+            padding-bottom: 30px;
+        }
+        .range-observer-lane {
+            min-height: 460px;
+            align-content: start;
+            border-radius: 32px;
+            box-shadow: 0 26px 58px rgba(51, 36, 22, 0.10);
+        }
+        .range-observer-card {
+            min-height: 320px;
+            border-radius: 26px;
+            box-shadow: 0 26px 46px rgba(48, 35, 22, 0.14), inset 0 1px 0 rgba(255,255,255,0.58);
+        }
+        .range-observer-steps {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+        .range-observer-step {
+            min-height: 102px;
+            border-radius: 18px;
+        }
+        .range-workbench-detail {
+            display: flex;
+            flex-direction: column;
+            padding: 12px;
+            gap: 10px;
+            background: linear-gradient(180deg, #f6edde 0%, #ecdfcf 100%);
+            position: relative;
+            border-left: 1px solid rgba(145, 115, 82, 0.12);
+        }
+        #range-info-panel > .card {
+            border-radius: 28px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(247,239,230,0.98));
+            box-shadow: 0 24px 42px rgba(47, 35, 23, 0.11), inset 0 1px 0 rgba(255,255,255,0.62);
+        }
+        .range-board-floating-panel {
+            width: min(520px, 100%);
+            padding: 18px 20px;
+            border-radius: 24px;
+            margin-bottom: 26px;
+            display: grid;
+            gap: 8px;
+            background:
+                linear-gradient(180deg, rgba(20, 24, 30, 0.86), rgba(31, 34, 39, 0.78)),
+                linear-gradient(90deg, rgba(122, 160, 255, 0.18), rgba(255,255,255,0.03));
+            border: 1px solid rgba(255,255,255,0.12);
+            box-shadow: 0 18px 44px rgba(11, 14, 20, 0.24), inset 0 1px 0 rgba(255,255,255,0.13);
+            color: rgba(246, 248, 251, 0.94);
+            backdrop-filter: blur(14px);
+        }
+        .range-board-floating-panel .range-board-floating-title {
+            color: rgba(255,255,255,0.96);
+        }
+        .range-board-floating-panel .range-board-floating-meta {
+            color: rgba(225, 231, 240, 0.72);
+        }
+        #config .config-page-head h2 {
+            margin: 0;
+            font-size: 1.55rem;
+            line-height: 1.2;
+            color: var(--text);
+            font-weight: 800;
+        }
+        #config .config-page-intro {
+            margin: 0;
+            font-size: 0.86rem;
+            line-height: 1.6;
+            color: var(--text-muted);
+            max-width: 880px;
+        }
+        #config .config-subtabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 18px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 74%, transparent 26%);
+        }
+        #config .config-subtab {
+            border-radius: 999px;
+            padding: 8px 14px;
+            min-height: 38px;
+            font-size: 0.82rem;
+            background: color-mix(in srgb, var(--bg-elevated) 82%, white 18%);
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+        }
+        #config .config-subtab.active {
+            background: color-mix(in srgb, var(--accent) 12%, var(--bg-elevated) 88%);
+            border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%);
+            color: var(--accent);
+            font-weight: 700;
+        }
 
 
         #config .config-card-header {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            margin-bottom: 10px;
+            gap: 6px;
+            margin-bottom: 14px;
         }
 
         #config .config-card-header h3 {
             margin-bottom: 0;
-            font-size: 0.95rem;
+            font-size: 1rem;
+            line-height: 1.35;
         }
 
         #config .config-card-intro {
             color: var(--text-muted);
-            font-size: 0.8rem;
-            line-height: 1.45;
+            font-size: 0.81rem;
+            line-height: 1.55;
         }
 
         #config .config-subsection {
-            margin-top: 6px;
-            padding-top: 10px;
-            border-top: 1px dashed color-mix(in srgb, var(--border) 78%, transparent 22%);
+            margin-top: 10px;
+            padding-top: 14px;
+            border-top: 1px dashed color-mix(in srgb, var(--border) 72%, transparent 28%);
         }
 
         #config .config-subsection:first-of-type {
@@ -1708,36 +2342,96 @@
         }
 
         #config .config-subsection-title {
-            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
             font-size: 0.88rem;
-            font-weight: 600;
+            font-weight: 700;
             color: var(--accent);
+            line-height: 1.4;
+        }
+
+        #config .config-subsection-title::before {
+            content: '';
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: currentColor;
+            box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 14%, transparent 86%);
+            flex: 0 0 auto;
         }
 
         #config .config-subgrid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
-            gap: 10px;
+            gap: 12px;
         }
 
         #config .config-subgrid .form-group {
             margin-bottom: 0;
+            min-width: 0;
+        }
+
+        #config .config-subgrid .form-group.full {
+            grid-column: 1 / -1;
         }
 
         #config .config-subgrid--compact {
-            grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+            gap: 10px;
         }
 
         #config .config-subgrid--timing {
-            grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
-            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 190px), 1fr));
+            gap: 10px;
+        }
+
+        #config .config-checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+            gap: 10px 16px;
+            margin-top: 2px;
+        }
+
+        #config .config-checkbox-grid .form-group {
+            margin-bottom: 0;
+            min-width: 0;
+        }
+
+        #config .config-checkbox-grid .form-group.full {
+            grid-column: 1 / -1;
         }
 
         #config .config-subgrid .hint-text,
         #config .config-subsection .hint-text {
-            margin-top: 3px;
-            font-size: 0.75rem;
+            margin-top: 4px;
+            font-size: 0.76rem;
+            line-height: 1.55;
+        }
+
+        #config .form-group > label:not(.checkbox-label) {
+            margin-bottom: 6px;
+            color: color-mix(in srgb, var(--text-muted) 92%, var(--text) 8%);
+            font-size: 0.8rem;
+            font-weight: 500;
+            line-height: 1.45;
+        }
+
+        #config .form-group.is-disabled > label:not(.checkbox-label),
+        #config .form-group.is-disabled .checkbox-label,
+        #config .form-group.is-disabled .hint-text {
+            color: var(--text-faint);
+        }
+
+        #config input:disabled,
+        #config select:disabled,
+        #config textarea:disabled {
+            color: var(--text-faint);
+            background: color-mix(in srgb, var(--bg-inset) 82%, var(--bg) 18%);
+            border-color: color-mix(in srgb, var(--border) 84%, transparent 16%);
+            cursor: not-allowed;
+            box-shadow: none;
         }
 
         .checkbox-label {
@@ -1746,6 +2440,7 @@
             gap: 8px;
             margin-bottom: 0;
             color: var(--text);
+            line-height: 1.5;
         }
 
         .checkbox-label input[type='checkbox'] {
@@ -1780,11 +2475,11 @@
             box-sizing: border-box;
             min-height: 68px;
             padding: 12px 14px;
-            border: 1px solid color-mix(in srgb, var(--border) 76%, transparent 24%);
+            border: 1px solid color-mix(in srgb, var(--border) 74%, transparent 26%);
             border-radius: 18px;
-            background: color-mix(in srgb, var(--bg-elevated) 90%, rgba(255,255,255,0.94) 10%);
-            backdrop-filter: blur(18px);
-            box-shadow: 0 18px 42px rgba(45, 35, 25, 0.18);
+            background: color-mix(in srgb, var(--bg-elevated) 92%, rgba(255,255,255,0.94) 8%);
+            backdrop-filter: blur(14px);
+            box-shadow: 0 14px 36px rgba(45, 35, 25, 0.12);
             z-index: 120;
             opacity: 0;
             visibility: hidden;
@@ -1808,7 +2503,7 @@
         }
 
         .save-row button {
-            box-shadow: 0 12px 24px rgba(45, 35, 25, 0.18);
+            box-shadow: 0 10px 22px rgba(45, 35, 25, 0.14);
         }
 
         .save-status {
@@ -1818,10 +2513,10 @@
             padding: 10px 14px;
             border-radius: 999px;
             border: 1px solid var(--border);
-            background: rgba(255,255,255,0.78);
+            background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg) 12%);
             color: var(--text-muted);
-            font-size: 0.9rem;
-            box-shadow: 0 8px 20px rgba(45, 35, 25, 0.08);
+            font-size: 0.88rem;
+            box-shadow: 0 6px 16px rgba(45, 35, 25, 0.06);
         }
 
         .save-status[data-state='dirty'] {
@@ -1868,6 +2563,16 @@
             line-height: 1.55;
             color: var(--text-muted);
             margin-top: 10px;
+        }
+
+        #config .meta-box {
+            margin-top: 0;
+            min-height: auto;
+            border-radius: 12px;
+            background: color-mix(in srgb, var(--accent) 6%, var(--bg) 94%);
+            border-color: color-mix(in srgb, var(--accent) 18%, var(--border) 82%);
+            color: color-mix(in srgb, var(--text-muted) 88%, var(--text) 12%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
         }
 
         .progress-box {
@@ -2482,7 +3187,7 @@
                 padding: 6px 10px;
             }
 
-            .content-shell {
+            .shell-layout > .panel {
                 padding: 12px 12px 48px;
             }
 
@@ -2519,7 +3224,7 @@
                 align-items: center;
             }
 
-            .content-shell {
+            .shell-layout > .panel {
                 padding: 10px 10px 60px;
             }
 
@@ -3850,12 +4555,747 @@
         }
 
         .range-layout-with-sidebar {
+            --range-config-width: 252px;
             display: grid;
-            grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr) minmax(280px, 0.9fr);
+            grid-template-columns: auto var(--range-config-width) minmax(0, 1.45fr) minmax(320px, 380px);
             gap: 12px;
             align-items: stretch;
             height: 100%;
             min-height: 0;
+        }
+        .range-layout-with-sidebar.config-collapsed {
+            --range-config-width: 52px;
+        }
+        .range-workbench-config,
+        .range-workbench-detail {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--bg-elevated);
+            overflow: hidden;
+            min-height: 0;
+        }
+        .range-workbench-config {
+            border-color: rgba(255,255,255,0.08);
+            border-radius: 16px;
+            background:
+                linear-gradient(180deg, rgba(27, 31, 39, 0.86), rgba(18, 22, 29, 0.82)),
+                linear-gradient(135deg, rgba(112, 137, 178, 0.10), transparent 42%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 18px 42px rgba(0,0,0,0.18);
+            opacity: 0.90;
+        }
+        .range-workbench-config:hover,
+        .range-workbench-config:focus-within {
+            opacity: 0.98;
+        }
+        .range-workbench-config.collapsed .range-workbench-scroll {
+            display: none;
+        }
+        .range-workbench-config.collapsed .range-chat-header {
+            justify-content: center;
+            padding: 10px 8px;
+            border-bottom: none;
+            background: transparent;
+        }
+        .range-workbench-config.collapsed .range-chat-header-label {
+            display: none;
+        }
+        .range-workbench-config.collapsed .range-chat-header select {
+            display: none;
+        }
+        .range-config-toggle {
+            margin-left: auto;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 32px;
+            height: 32px;
+            padding: 0 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.12);
+            background: rgba(255,255,255,0.06);
+            color: rgba(235, 241, 250, 0.78);
+            cursor: pointer;
+            font-size: 0.76rem;
+            white-space: nowrap;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+        }
+        .range-workbench-config.collapsed .range-config-toggle {
+            min-width: 32px;
+            padding: 0;
+            margin-left: 0;
+        }
+        .range-workbench-board {
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background: var(--bg-elevated);
+            overflow: hidden;
+            min-height: 0;
+        }
+        .range-workbench-scroll {
+            flex: 1;
+            min-height: 0;
+            overflow-y: auto;
+            padding: 10px;
+            display: grid;
+            gap: 10px;
+        }
+        .range-workbench-config .range-chat-header {
+            padding: 10px 12px;
+            gap: 6px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            background: linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.03));
+        }
+        .range-workbench-config .range-chat-header-label {
+            color: rgba(239, 244, 252, 0.82);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+        .range-workbench-config .range-chat-header select {
+            min-width: 0;
+            max-width: 100%;
+            height: 30px;
+            padding: 4px 8px;
+            border-radius: 9px;
+            border: 1px solid rgba(255,255,255,0.09);
+            background: rgba(9, 12, 18, 0.36);
+            color: rgba(233, 239, 248, 0.76);
+            font-size: 0.68rem;
+            box-shadow: none;
+        }
+        .range-workbench-config .range-chat-header select.range-model-all {
+            flex: 1 1 100%;
+        }
+        .range-workbench-config .card.range-card-padded {
+            padding: 11px 12px;
+            border-radius: 13px;
+            border: 1px solid rgba(255,255,255,0.075);
+            background: linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.032));
+            box-shadow: none;
+        }
+        .range-workbench-config .card.range-card-padded:nth-child(n+3) {
+            opacity: 0.66;
+        }
+        .range-workbench-config .card.range-card-padded:nth-child(n+3):hover,
+        .range-workbench-config .card.range-card-padded:nth-child(n+3):focus-within {
+            opacity: 0.92;
+        }
+        .range-workbench-config .range-section-head {
+            margin-bottom: 7px;
+            gap: 8px;
+        }
+        .range-workbench-config .range-panel-h3 {
+            color: rgba(241, 246, 253, 0.86);
+            font-size: 0.78rem;
+            letter-spacing: 0.01em;
+        }
+        .range-workbench-config .hint-text,
+        .range-workbench-config .range-section-label,
+        .range-workbench-config .meta-inline,
+        .range-workbench-config .range-corpus-status-text {
+            color: rgba(218, 226, 238, 0.52);
+            font-size: 0.68rem;
+            line-height: 1.42;
+        }
+        .range-workbench-config textarea,
+        .range-workbench-config input,
+        .range-workbench-config select {
+            min-height: 30px;
+            border-radius: 9px;
+            border-color: rgba(255,255,255,0.08);
+            background: rgba(8, 11, 17, 0.42);
+            color: rgba(237, 242, 249, 0.82);
+            box-shadow: none;
+        }
+        .range-workbench-config textarea {
+            max-height: 116px;
+            font-size: 0.74rem !important;
+            line-height: 1.45;
+        }
+        .range-workbench-config .range-checkbox-label {
+            color: rgba(226, 233, 244, 0.66);
+            font-size: 0.68rem;
+        }
+        .range-workbench-config .range-ctx-checkboxes {
+            gap: 6px;
+        }
+        .range-workbench-config .range-btn-sm,
+        .range-workbench-config .range-btn-xs,
+        .range-workbench-config button.secondary {
+            min-height: 28px;
+            padding: 4px 8px;
+            border-radius: 8px;
+            border-color: rgba(255,255,255,0.10);
+            background: rgba(255,255,255,0.055);
+            color: rgba(237, 242, 249, 0.74);
+            box-shadow: none;
+        }
+        .range-workbench-config #range-btn-send {
+            min-height: 30px;
+            padding: 5px 10px;
+            border-radius: 9px;
+        }
+        .range-workbench-config .range-iteration-log,
+        .range-workbench-config .range-corpus-lines {
+            max-height: 160px;
+            border-color: rgba(255,255,255,0.075);
+            background: rgba(7, 10, 16, 0.28);
+        }
+        .range-board-canvas {
+            flex: 1;
+            min-height: 0;
+            overflow: auto;
+            padding: 26px 28px 34px;
+            background:
+                radial-gradient(circle at 18% 12%, rgba(89, 128, 212, 0.28), transparent 24%),
+                radial-gradient(circle at 78% 0%, rgba(219, 168, 93, 0.13), transparent 22%),
+                linear-gradient(to right, rgba(255,255,255,0.065) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.055) 1px, transparent 1px),
+                linear-gradient(135deg, #171b21 0%, #20252d 48%, #15181d 100%);
+            background-size: auto, auto, 34px 34px, 34px 34px, auto;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            box-shadow: inset 0 26px 70px rgba(0,0,0,0.22);
+            color: #eef2f7;
+        }
+        .range-board-canvas::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background:
+                linear-gradient(90deg, rgba(255,255,255,0.035), transparent 18%, transparent 82%, rgba(0,0,0,0.18)),
+                linear-gradient(180deg, rgba(255,255,255,0.05), transparent 28%, rgba(0,0,0,0.24));
+            pointer-events: none;
+        }
+        .range-board-canvas::after {
+            content: '';
+            position: absolute;
+            inset: 16px;
+            border-radius: 22px;
+            border: 1px solid rgba(255,255,255,0.08);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+            pointer-events: none;
+        }
+        .range-board-canvas > * {
+            position: relative;
+            z-index: 1;
+        }
+        .range-board-canvas .empty-state {
+            width: min(460px, calc(100vw - 64px));
+            margin: clamp(44px, 10vh, 110px) auto 0;
+            padding: 26px 28px;
+            border-radius: 18px;
+            border: 1px solid rgba(255,255,255,0.14);
+            background:
+                linear-gradient(180deg, rgba(29, 33, 40, 0.94), rgba(22, 25, 31, 0.88)),
+                repeating-linear-gradient(90deg, rgba(255,255,255,0.035) 0 1px, transparent 1px 18px);
+            color: rgba(236, 241, 248, 0.78);
+            box-shadow: 0 24px 60px rgba(0,0,0,0.30), inset 0 1px 0 rgba(255,255,255,0.09);
+            text-align: left;
+            line-height: 1.7;
+            opacity: 1;
+        }
+        .range-board-canvas .empty-state::before {
+            content: 'Awaiting test windows';
+            display: block;
+            margin-bottom: 8px;
+            color: rgba(255,255,255,0.95);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .range-observer-lanes {
+            display: grid;
+            grid-auto-flow: column;
+            grid-auto-columns: minmax(340px, 430px);
+            gap: 24px;
+            align-items: start;
+            min-width: min-content;
+            padding: 4px 4px 18px;
+        }
+        .range-observer-lane {
+            display: grid;
+            gap: 14px;
+            align-content: start;
+            position: relative;
+            padding: 14px;
+            border-radius: 20px;
+            background:
+                linear-gradient(180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.035)),
+                linear-gradient(135deg, rgba(14,18,24,0.86), rgba(24,29,37,0.76));
+            border: 1px solid rgba(255,255,255,0.10);
+            box-shadow: 0 22px 54px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.08);
+            backdrop-filter: blur(10px);
+        }
+        .range-observer-lane.is-sync-chain {
+            grid-auto-rows: auto;
+        }
+        .range-observer-lane.is-sync-chain .range-observer-card {
+            min-height: 0;
+        }
+        .range-observer-lane.is-sync-chain .range-observer-card-head {
+            min-height: 72px;
+        }
+        .range-observer-lane.is-sync-chain .range-io-block {
+            min-height: 64px;
+            max-height: 150px;
+        }
+        .range-observer-lane-head {
+            border: 1px solid rgba(255,255,255,0.10);
+            border-radius: 14px;
+            padding: 12px 14px;
+            background: linear-gradient(180deg, rgba(32,38,48,0.92), rgba(22,26,34,0.86));
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+        }
+        .range-observer-lane-title { font-size: 0.92rem; font-weight: 800; color: rgba(248,250,252,0.96); }
+        .range-observer-lane-meta { font-size: 0.72rem; color: rgba(214,222,234,0.66); margin-top: 5px; line-height: 1.45; }
+        .range-observer-card {
+            position: relative;
+            display: grid;
+            gap: 0;
+            min-height: 360px;
+            padding: 0;
+            overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(250,252,255,0.98), rgba(232,236,243,0.96)),
+                linear-gradient(135deg, rgba(98,125,171,0.16), transparent);
+            box-shadow: 0 24px 52px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.82);
+            cursor: pointer;
+            transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease;
+        }
+        .range-observer-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(159, 190, 255, 0.46);
+            box-shadow: 0 30px 64px rgba(0,0,0,0.40), 0 0 0 1px rgba(159,190,255,0.18), inset 0 1px 0 rgba(255,255,255,0.88);
+        }
+        .range-observer-card.is-selected {
+            border-color: rgba(113, 158, 255, 0.86);
+            box-shadow: 0 0 0 2px rgba(113,158,255,0.26), 0 34px 72px rgba(0,0,0,0.46), 0 0 42px rgba(113,158,255,0.22);
+        }
+        .range-observer-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 0;
+            height: 44px;
+            background: linear-gradient(180deg, rgba(28,34,43,0.96), rgba(19,23,31,0.94));
+            pointer-events: none;
+        }
+        .range-observer-card::after {
+            content: '';
+            position: absolute;
+            top: 17px;
+            left: 16px;
+            width: 38px;
+            height: 9px;
+            border-radius: 999px;
+            background:
+                radial-gradient(circle at 5px 50%, #ff6a5d 0 4px, transparent 4.5px),
+                radial-gradient(circle at 19px 50%, #f4bf4f 0 4px, transparent 4.5px),
+                radial-gradient(circle at 33px 50%, #61c554 0 4px, transparent 4.5px);
+            pointer-events: none;
+        }
+        .range-observer-card.is-running { border-color: rgba(113, 158, 255, 0.54); }
+        .range-observer-card.is-completed { border-color: rgba(101, 190, 135, 0.42); }
+        .range-observer-card.is-failed { border-color: rgba(235, 102, 102, 0.52); }
+        .range-observer-card-head {
+            display:flex;
+            justify-content:space-between;
+            gap:12px;
+            align-items:flex-start;
+            min-height: 86px;
+            padding: 54px 18px 14px;
+            border-bottom: 1px solid rgba(36, 45, 58, 0.12);
+            background: linear-gradient(180deg, rgba(255,255,255,0.60), rgba(255,255,255,0));
+            position: relative;
+            z-index: 1;
+        }
+        .range-observer-card-title { font-size:0.94rem; font-weight:800; color:#17202c; line-height:1.35; }
+        .range-observer-card-meta { font-size:0.7rem; color:#687386; margin-top:6px; line-height:1.45; }
+        .range-observer-status {
+            display:inline-flex; align-items:center; gap:4px; padding:5px 9px; border-radius:999px;
+            font-size:0.68rem; font-weight:800; border:1px solid rgba(36,45,58,0.12); background:rgba(255,255,255,0.78);
+            color:#596579; white-space:nowrap;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+        }
+        .range-observer-status.is-completed { color: var(--success); border-color: color-mix(in srgb, var(--success) 36%, var(--border) 64%); }
+        .range-observer-status.is-running { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%); }
+        .range-observer-status.is-failed { color: var(--error); border-color: color-mix(in srgb, var(--error) 40%, var(--border) 60%); }
+        .range-observer-preview {
+            min-height: 120px;
+            margin: 16px 18px;
+            padding: 16px 17px;
+            font-size: 0.76rem;
+            color: rgba(225,232,244,0.78);
+            line-height: 1.6;
+            white-space: pre-wrap;
+            background:
+                linear-gradient(180deg, rgba(18,23,31,0.96), rgba(14,18,24,0.94)),
+                repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0 1px, transparent 1px 22px);
+            border: 1px solid rgba(14,18,24,0.76);
+            border-radius: 14px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 12px 28px rgba(10,13,18,0.16);
+        }
+        .range-observer-preview::before {
+            content: 'Output preview';
+            display: block;
+            margin-bottom: 8px;
+            color: rgba(159,190,255,0.84);
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .range-io-grid {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 10px;
+            margin: 16px 18px;
+        }
+        .range-io-block {
+            min-height: 86px;
+            max-height: 190px;
+            overflow: auto;
+            padding: 13px 15px;
+            font-size: 0.74rem;
+            color: rgba(225,232,244,0.82);
+            line-height: 1.58;
+            white-space: pre-wrap;
+            word-break: break-word;
+            background:
+                linear-gradient(180deg, rgba(18,23,31,0.96), rgba(14,18,24,0.94)),
+                repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0 1px, transparent 1px 22px);
+            border: 1px solid rgba(14,18,24,0.76);
+            border-radius: 14px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.07), 0 12px 28px rgba(10,13,18,0.14);
+        }
+        .range-io-block::before {
+            content: attr(data-label);
+            display: block;
+            margin-bottom: 8px;
+            color: rgba(159,190,255,0.84);
+            font-size: 0.64rem;
+            font-weight: 800;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+        .range-io-block.is-input {
+            color: rgba(236, 229, 218, 0.86);
+            border-color: rgba(150,123,93,0.28);
+        }
+        .range-io-block.is-input::before {
+            color: rgba(237,190,128,0.88);
+        }
+        .range-trace-detail-io {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+        .range-trace-detail-io .range-io-block {
+            margin: 0;
+            max-height: 260px;
+        }
+        .range-observer-steps {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            padding: 0 18px 18px;
+        }
+        .range-observer-step {
+            width: 100%;
+            min-height: 104px;
+            text-align: left;
+            border: 1px solid rgba(36,45,58,0.12);
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(244,247,251,0.92));
+            padding: 11px 12px;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.80);
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+        }
+        .range-observer-step:hover {
+            transform: translateY(-1px);
+            border-color: rgba(113,158,255,0.34);
+            box-shadow: 0 10px 22px rgba(20,27,39,0.10), inset 0 1px 0 rgba(255,255,255,0.86);
+        }
+        .range-observer-step-head { display:flex; justify-content:space-between; gap:8px; align-items:flex-start; margin-bottom:7px; }
+        .range-observer-step-title { font-size:0.74rem; font-weight:800; color:#1a2433; line-height:1.35; }
+        .range-observer-step-meta { font-size:0.66rem; color:#7a8495; white-space:nowrap; }
+        .range-observer-step-summary {
+            font-size:0.7rem;
+            color:#657184;
+            line-height:1.45;
+            white-space:pre-wrap;
+            display:-webkit-box;
+            -webkit-line-clamp:3;
+            -webkit-box-orient:vertical;
+            overflow:hidden;
+        }
+        .range-observer-step.is-completed { border-color: color-mix(in srgb, var(--success) 34%, var(--border) 66%); }
+        .range-observer-step.is-running { border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%); }
+        .range-observer-step.is-failed { border-color: color-mix(in srgb, var(--error) 40%, var(--border) 60%); }
+        .range-observer-step.is-skipped { border-style: dashed; opacity: 0.8; }
+        .range-detail-chat { min-height: 220px; max-height: 320px; }
+        .range-workbench-detail {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 16px;
+            background:
+                linear-gradient(180deg, rgba(24, 28, 36, 0.94), rgba(14, 18, 24, 0.92)),
+                linear-gradient(135deg, rgba(113, 158, 255, 0.11), transparent 42%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), -14px 0 44px rgba(0,0,0,0.16);
+            overflow-y: auto;
+        }
+        .range-workbench-detail::before {
+            content: '';
+            position: sticky;
+            top: 0;
+            z-index: 1;
+            height: 0;
+            pointer-events: none;
+            box-shadow: 0 18px 34px rgba(14,18,24,0.86);
+        }
+        #range-info-panel > .card {
+            position: relative;
+            border-radius: 13px;
+            border: 1px solid rgba(255,255,255,0.075);
+            background: linear-gradient(180deg, rgba(255,255,255,0.072), rgba(255,255,255,0.034));
+            box-shadow: none;
+            padding: 12px;
+        }
+        #range-info-panel > .card:first-of-type {
+            border-color: rgba(113,158,255,0.22);
+            background:
+                linear-gradient(180deg, rgba(38, 45, 58, 0.88), rgba(24, 29, 38, 0.84)),
+                linear-gradient(135deg, rgba(113,158,255,0.15), transparent 48%);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 18px 34px rgba(0,0,0,0.18);
+        }
+        #range-info-panel > .card:nth-of-type(n+2) {
+            opacity: 0.72;
+        }
+        #range-info-panel > .card:nth-of-type(n+2):hover,
+        #range-info-panel > .card:nth-of-type(n+2):focus-within {
+            opacity: 0.94;
+        }
+        #range-info-panel .range-section-head {
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 9px;
+            padding-bottom: 9px;
+            border-bottom: 1px solid rgba(255,255,255,0.07);
+        }
+        #range-info-panel .range-panel-h3 {
+            color: rgba(246, 249, 254, 0.92);
+            font-size: 0.78rem;
+            font-weight: 800;
+            letter-spacing: 0.055em;
+            text-transform: uppercase;
+        }
+        #range-info-panel .hint-text,
+        #range-info-panel .meta-inline,
+        #range-info-panel .empty-state {
+            color: rgba(218, 226, 238, 0.58);
+            font-size: 0.68rem;
+            line-height: 1.45;
+        }
+        #range-trace-summary {
+            max-width: 170px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(113,158,255,0.20);
+            background: rgba(9, 12, 18, 0.30);
+            color: rgba(192, 211, 255, 0.80);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        #range-trace-steps {
+            max-height: 220px;
+            overflow-y: auto;
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 12px;
+            background: rgba(8, 11, 17, 0.30);
+            padding: 8px;
+        }
+        .range-trace-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 7px;
+        }
+        .range-trace-node {
+            width: 100%;
+            text-align: left;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.025));
+            padding: 9px 10px;
+            transition: border-color .18s ease, background .18s ease, transform .18s ease;
+        }
+        .range-trace-node:hover {
+            transform: translateY(-1px);
+            border-color: rgba(113,158,255,0.28);
+            background: linear-gradient(180deg, rgba(113,158,255,0.12), rgba(255,255,255,0.035));
+        }
+        .range-trace-node.is-selected {
+            border-color: rgba(113,158,255,0.58);
+            box-shadow: 0 0 0 1px rgba(113,158,255,0.15);
+        }
+        .range-trace-node-title {
+            color: rgba(241,246,253,0.88);
+            font-size: 0.72rem;
+            font-weight: 800;
+        }
+        .range-trace-node-meta,
+        .range-trace-node-summary {
+            color: rgba(218,226,238,0.56);
+            font-size: 0.66rem;
+        }
+        .range-trace-status-pill {
+            border-color: rgba(255,255,255,0.10);
+            background: rgba(8, 11, 17, 0.40);
+            color: rgba(218,226,238,0.66);
+        }
+        .range-trace-detail-shell {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+            min-height: 128px;
+            margin-top: 10px;
+            padding: 12px 13px;
+            border-radius: 12px;
+            border: 1px solid rgba(113,158,255,0.16);
+            background:
+                linear-gradient(180deg, rgba(8, 11, 17, 0.74), rgba(8, 11, 17, 0.56)),
+                repeating-linear-gradient(0deg, rgba(255,255,255,0.026) 0 1px, transparent 1px 22px);
+            color: rgba(225, 232, 244, 0.74);
+            line-height: 1.55;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.045);
+        }
+        .range-trace-detail-title {
+            color: rgba(247,250,255,0.94);
+            font-size: 0.78rem;
+            font-weight: 800;
+            margin-bottom: 6px;
+        }
+        .range-trace-detail-meta {
+            color: rgba(159,190,255,0.76);
+            font-size: 0.68rem;
+            margin-bottom: 8px;
+        }
+        .range-trace-detail-block {
+            margin-top: 9px;
+            padding-top: 9px;
+            border-top: 1px dashed rgba(255,255,255,0.12);
+        }
+        .range-trace-diagnostic-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 7px;
+            margin: 8px 0 10px;
+        }
+        .range-trace-diagnostic-item {
+            min-width: 0;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 9px;
+            padding: 7px 8px;
+            background: rgba(255,255,255,0.035);
+        }
+        .range-trace-diagnostic-key {
+            margin-bottom: 3px;
+            color: rgba(159,190,255,0.72);
+            font-size: 0.62rem;
+            font-weight: 800;
+        }
+        .range-trace-diagnostic-value {
+            color: rgba(241,246,253,0.82);
+            font-size: 0.69rem;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+        .range-trace-detail-summary {
+            color: rgba(225,232,244,0.84);
+            line-height: 1.55;
+            word-break: break-word;
+        }
+        .range-observation-detail {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 8px;
+            margin-top: 10px;
+            min-width: 0;
+            max-width: 100%;
+        }
+        .range-observation-section {
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.035);
+            overflow: hidden;
+        }
+        .range-observation-section summary {
+            cursor: pointer;
+            padding: 8px 10px;
+            color: rgba(192,211,255,0.86);
+            font-size: 0.68rem;
+            font-weight: 800;
+            user-select: none;
+        }
+        .range-observation-section pre {
+            display: block;
+            min-width: 0;
+            max-width: 100%;
+            box-sizing: border-box;
+            margin: 0;
+            max-height: 340px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 10px;
+            border-top: 1px solid rgba(255,255,255,0.07);
+            color: rgba(235,241,250,0.82);
+            background: rgba(8,11,17,0.42);
+            font-size: 0.68rem;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        .range-detail-chat {
+            min-height: 170px;
+            max-height: 260px;
+            border: 1px solid rgba(255,255,255,0.07);
+            border-radius: 12px;
+            background: rgba(8, 11, 17, 0.30);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+        #range-info-panel .range-chat-foot input {
+            border-color: rgba(255,255,255,0.09);
+            background: rgba(8, 11, 17, 0.42);
+            color: rgba(237, 242, 249, 0.82);
+        }
+        #range-info-panel .range-chat-foot button,
+        #range-info-panel button.secondary {
+            border-color: rgba(255,255,255,0.10);
+            background: rgba(255,255,255,0.055);
+            color: rgba(237, 242, 249, 0.74);
+            box-shadow: none;
+        }
+        @media (max-width: 1500px) {
+            .range-layout-with-sidebar { grid-template-columns: auto minmax(250px, 300px) minmax(0, 1fr) minmax(300px, 340px); }
         }
         /* ====== 移动端新组件基础样式（必须位于 @media 之前） ====== */
         .range-mobile-tabs {
@@ -4013,9 +5453,53 @@
         .range-session-badge.error { background: rgba(217,64,64,0.12); color: #d94040; }
         .range-session-badge.ok { background: rgba(45,138,94,0.12); color: #2d8a5e; }
 
-        @media (max-width: 1300px) {
-            .range-layout-with-sidebar { grid-template-columns: auto minmax(0, 1fr) minmax(0, 1fr); }
-            /* 1300px以下信息面板在桌面端隐藏，移动端通过底部Tab抽屉访问 */
+        @media (min-width: 901px) and (max-width: 1300px) {
+            .range-layout-with-sidebar,
+            .range-layout-with-sidebar.config-collapsed {
+                grid-template-columns: auto minmax(420px, 1fr) minmax(280px, 300px);
+                gap: 10px;
+                padding-right: 12px;
+                box-sizing: border-box;
+            }
+            .range-workbench-config {
+                display: none !important;
+            }
+            .range-session-sidebar.collapsed {
+                width: 44px;
+            }
+            .range-board-canvas {
+                padding: 14px;
+                overflow-x: hidden;
+            }
+            .range-observer-lanes {
+                width: 100%;
+                min-width: 0;
+                grid-auto-flow: row;
+                grid-template-columns: minmax(0, 1fr);
+                grid-auto-columns: minmax(0, 1fr);
+                gap: 14px;
+            }
+            .range-observer-lane,
+            .range-observer-card {
+                min-width: 0;
+            }
+            .range-observer-lane {
+                padding: 14px;
+            }
+            .range-workbench-detail {
+                min-width: 0;
+                padding: 8px;
+            }
+            .range-workbench-detail .range-card-padded {
+                padding: 10px;
+            }
+            .range-trace-diagnostic-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
+            .range-trace-detail-shell {
+                padding: 10px;
+                overflow-wrap: anywhere;
+            }
         }
 
         /* ====== 平板 / 手机通用 ====== */
@@ -4057,7 +5541,7 @@
 
         /* ====== 手机端优化 (≤ 768px) ====== */
         @media (max-width: 768px) {
-            /* 靶场面板最大化 — 吃掉 content-shell 底部 padding */
+            /* 靶场面板最大化，交给内部工作台控制高度 */
             #prompt-range.panel.active {
                 padding: 0;
                 overflow: visible;
@@ -4717,7 +6201,6 @@
             <div class="tab" data-panel="logs">📝 日志</div>
         </div>
 
-        <div class="content-shell">
         <!-- 仪表-->
         <div class="panel active" id="dashboard">
             <h2>系统状态</h2>
@@ -5455,7 +6938,10 @@
             </div>
         </div>
         <div class="panel" id="config">
-            <h2>系统配置</h2>
+            <div class="config-page-head">
+                <h2>系统配置</h2>
+                <p class="config-page-intro">按分类管理连接、聊天、工具、记忆和模型设置；修改后保存即可立即生效。</p>
+            </div>
             <div class="config-subtabs">
                 <button type="button" class="config-subtab active" data-config-panel="overview" onclick="setConfigSubPanel('overview')">总览</button>
                 <button type="button" class="config-subtab" data-config-panel="onebot" onclick="setConfigSubPanel('onebot')">OneBot</button>
@@ -5467,6 +6953,7 @@
                 <button type="button" class="config-subtab" data-config-panel="mcp" onclick="setConfigSubPanel('mcp')">MCP</button>
                 <button type="button" class="config-subtab" data-config-panel="data" onclick="setConfigSubPanel('data')">数据</button>
             </div>
+            <div id="config-validation-box" class="validation-box" style="display:none;"></div>
             <div class="grid">
                 <div class="config-subpanel active" data-config-panel="overview">
                     <div class="card">
@@ -5520,7 +7007,7 @@
                 </div>
                 </div>
                 <div class="config-subpanel" data-config-panel="chat">
-                <div class="card">
+                <div class="card card--wide">
                     <div class="config-card-header">
                         <h3>聊天设置</h3>
                         <p class="config-card-intro">配置会话、触发和访问控制</p>
@@ -5682,35 +7169,44 @@
                         <p class="config-card-intro">配置回复行为开关</p>
                     </div>
                     <div class="config-subsection">
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="config-chat-split" checked>
-                                消息分段发送
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="config-chat-require-at" checked>
-                                群聊优先要求艾特触发
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="config-chat-quote-reply" checked>
-                                非分段回复时首条消息使用引用回复
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="config-chat-mention-sender" checked>
-                                群聊回复时自动 @ 发言人
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="checkbox-label">
-                                <input type="checkbox" id="config-chat-attach-metadata" checked>
-                                附加结构化元数据
-                            </label>
+                        <div class="config-checkbox-grid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-split" checked>
+                                    消息分段发送
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-require-at" checked>
+                                    群聊优先要求艾特触发
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-quote-reply" checked>
+                                    非分段回复时首条消息使用引用回复
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-mention-sender" checked>
+                                    群聊回复时自动 @ 发言人
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-attach-metadata" checked>
+                                    附加结构化元数据
+                                </label>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-human-control" checked>
+                                    启用人类群聊决策规则
+                                </label>
+                                <p class="hint-text">通用规则：读消息头、引用、表情和退场信号，控制旧梗复读与低信息量回复；不包含具体角色设定。</p>
+                            </div>
                         </div>
                     </div>
                     <div class="config-subsection">
@@ -5759,13 +7255,13 @@
                         <h3>上下文注入</h3>
                     </div>
                     <div class="config-subsection">
-                        <div class="form-group">
+                        <div class="form-group full">
                             <label class="checkbox-label">
                                 <input type="checkbox" id="config-context-enabled" checked> 启用上下文感知增强
                             </label>
                             <p class="hint-text">总开关，关闭后以下四项全部失效</p>
                         </div>
-                        <div class="config-subgrid" style="margin-top:8px">
+                        <div class="config-checkbox-grid" style="margin-top:8px">
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-context-session-facts" checked> 会话事实
@@ -5798,7 +7294,7 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>指令与工具</h3>
-                        <p class="config-card-intro">管理员指令、AI 工具与搜索配置</p>
+                        <p class="config-card-intro">管理员指令、AI 工具与搜索配置。按 ChatLuna 类似的 chat / browse / agent 思路：普通群聊不搜，实时资料才搜索，明确代办才调用行动工具。</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">管理员指令</div>
@@ -5835,14 +7331,14 @@
                                     <input type="checkbox" id="config-ai-tool-web-search-enabled">
                                     启用搜索引擎工具
                                 </label>
-                                <p class="hint-text">AI 判断需要联网时自动搜索，拿到标题+摘要后组织回复</p>
+                                <p class="hint-text">仅当问题依赖最新/外部事实时搜索；水群、表情、戳一戳、普通角色对话不会因为开关开启就自动搜索。</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-ai-tool-send-mention-enabled">
                                     启用 AI 主动 @ 工具
                                 </label>
-                                <p class=”hint-text”>模型可自行决定 @ 某成员发送消息，AI 润色后发送，不 @all</p>
+                                <p class="hint-text">只在明确需要代办/转告/提醒某人时使用；服务端禁止 @all。</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
@@ -5854,7 +7350,7 @@
                             <div class="form-group">
                                 <label>文本工具最大轮次</label>
                                 <input type="number" id="config-ai-tool-text-fallback-max-rounds" placeholder="3" min="1" max="8">
-                                <p class="hint-text">避免模型反复套娃</p>
+                                <p class="hint-text">模型不支持原生 tool_calls 时使用 JSON 协议兜底；达到轮次后必须输出最终正文，避免反复套娃。</p>
                             </div>
                             <div class="form-group">
                                 <label>搜索方式</label>
@@ -5866,7 +7362,7 @@
                                     <option value="brave">Brave（免 Key）</option>
                                     <option value="serpapi">SerpAPI（Google 结果 API，需 Key）</option>
                                 </select>
-                                <p class="hint-text">除 Tavily/SerpAPI 需 Key 外，其余免 Key</p>
+                                <p class="hint-text">除 Tavily/SerpAPI 需 Key 外，其余免 Key。建议默认 Bing 或 DuckDuckGo，失败时可启用 Bing 回退。</p>
                             </div>
                             <details style="margin-top:8px">
                                 <summary>搜索详细配置</summary>
@@ -6295,7 +7791,6 @@
                 </div>
                 </div>
             </div>
-            </div>
 
         <!-- 提示词优化靶场 -->
         <div class="panel" id="prompt-range">
@@ -6317,33 +7812,149 @@
                     <button class="range-mobile-tab" data-range-mobile-tab="tools">🔧 工具</button>
                     <button class="range-mobile-tab range-mobile-sidebar-btn" data-range-action="toggle-sidebar" title="会话列表">☰</button>
                 </nav>
-                <!-- 第1列：测试对话 -->
-                <div class="range-col range-chat-col" data-range-col="test">
+                <!-- 第1列：配置侧栏 -->
+                <div class="range-col range-workbench-config" id="range-config-panel" data-range-col="test">
                     <div class="range-chat-header">
-                        <span class="range-chat-header-label">测试</span>
+                        <span class="range-chat-header-label">测试配置</span>
+                        <button type="button" class="range-config-toggle" onclick="toggleRangeConfigPanel()" title="展开或收起配置面板">⚙</button>
                         <select id="range-provider" data-range-action="provider-change" style="display:none"></select>
                         <select id="range-model" data-range-action="model-change" class="range-model-all"></select>
                         <select id="range-character" data-range-action="character-change"></select>
                         <select id="range-worldbook" class="range-select-narrow" data-range-action="worldbook-change"></select>
                         <select id="range-preset" class="range-select-narrow" data-range-action="preset-change"></select>
                     </div>
-                    <div class="range-chat-body" id="range-test-chat"><div class="empty-state">输入消息开始测试</div></div>
-                    <div class="range-chat-status" id="range-test-status" style="display:none"><span class="range-state-dot running"></span>AI 回复中...<button class="secondary range-status-inline-btn" data-range-action="stop-ai">打断</button></div>
-                    <div class="range-chat-foot">
-                        <textarea id="range-message" rows="1" placeholder="Enter 发送，Shift+Enter 换行" data-range-action="message-input"></textarea>
-                        <button id="range-btn-send" data-range-action="send-message">发送</button>
-                        <button class="secondary range-clear-round-btn" data-range-action="clear-test-round" title="清空本轮测试消息">🗑</button>
+                    <div class="range-workbench-scroll">
+                        <div class="card range-card-padded">
+                            <div class="section-head range-section-head">
+                                <h3 class="range-panel-h3">消息输入</h3>
+                                <div class="btn-group">
+                                    <button id="range-btn-send" data-range-action="send-message">发送</button>
+                                    <button class="secondary range-clear-round-btn" data-range-action="clear-test-round" title="清空本轮测试消息">🗑</button>
+                                </div>
+                            </div>
+                            <textarea id="range-message" rows="5" style="width:100%;font-family:monospace;font-size:0.82rem;resize:vertical;" placeholder="输入要测试的消息"></textarea>
+                            <p class="hint-text">这里是单次测试输入；MCP 触发的靶场测试也会自动同步到中间画布和右侧结果区。</p>
+                            <div class="range-chat-status" id="range-test-status" style="display:none"><span class="range-state-dot running"></span>AI 回复中...<button class="secondary range-status-inline-btn" data-range-action="stop-ai">打断</button></div>
+                        </div>
+
+                        <div class="card range-card-padded">
+                            <div class="section-head range-section-head">
+                                <h3 class="range-panel-h3">批测控制</h3>
+                                <button class="secondary range-btn-xs" onclick="saveCurrentRangeEnvironment()">💾 保存环境</button>
+                            </div>
+                            <div class="range-ctx-checkboxes" style="margin-bottom:8px;">
+                                <label class="checkbox-label range-checkbox-label">模式
+                                    <select id="range-test-execution-mode" style="margin-left:6px;">
+                                        <option value="single">单次</option>
+                                        <option value="serial">串行批测</option>
+                                        <option value="parallel">并发批测</option>
+                                    </select>
+                                </label>
+                                <label class="checkbox-label range-checkbox-label">并发
+                                    <input type="number" id="range-test-concurrency" min="1" max="8" value="2" style="width:64px;margin-left:6px;">
+                                </label>
+                            </div>
+                            <div class="range-ctx-checkboxes" style="margin-bottom:8px;">
+                                <label class="checkbox-label range-checkbox-label">环境名
+                                    <input type="text" id="range-env-name" placeholder="默认环境" style="margin-left:6px;min-width:120px;">
+                                </label>
+                            </div>
+                            <textarea id="range-batch-messages" rows="4" style="width:100%;font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="批测消息（每行一条，留空则使用上方当前消息）"></textarea>
+                            <div class="inline-actions">
+                                <button class="secondary range-btn-sm" onclick="runRangeBatchTest()">▶ 执行批测</button>
+                                <button class="secondary range-btn-sm" onclick="refreshRangeBatchTasks()">🔄 刷新任务</button>
+                            </div>
+                        </div>
+
+                        <div class="card range-card-padded">
+                            <div class="section-head range-section-head">
+                                <div>
+                                    <h3 class="range-panel-h3">已保存测试环境</h3>
+                                    <p class="hint-text" style="margin:4px 0 0;">保存角色、世界书、预设和模型组合，方便多环境对比。</p>
+                                </div>
+                                <span id="range-env-count" class="meta-inline">0</span>
+                            </div>
+                            <div id="range-env-list" class="range-iteration-log"><div class="empty-state">还没有保存环境</div></div>
+                        </div>
+
+                        <div class="card range-card-padded">
+                            <div class="section-head range-section-head">
+                                <h3 class="range-panel-h3">📝 伪造聊天记录</h3>
+                                <span id="range-fake-history-count" style="color:var(--text-muted);font-size:0.8rem;"></span>
+                            </div>
+                            <p class="hint-text" style="margin-bottom:8px;">粘贴对话历史模拟继承记忆。格式：<code>[用户] xxx</code> / <code>[角色] xxx</code> 交替。</p>
+                            <textarea id="range-fake-history-input" rows="5" style="width:100%;font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="[用户] 你好啊&#10;[角色] 哟，这位道友有何贵干？"></textarea>
+                            <div class="inline-actions">
+                                <button class="secondary range-btn-xs" onclick="applyRangeFakeHistory()">✅ 应用</button>
+                                <button class="secondary range-btn-xs" onclick="clearRangeFakeHistory()">清空</button>
+                            </div>
+                        </div>
+
+                        <div class="card range-card-padded">
+                            <div class="section-head range-section-head">
+                                <h3 class="range-panel-h3">语料库 <span id="range-corpus-count" class="range-corpus-count"></span></h3>
+                                <div class="btn-group">
+                                    <button class="secondary range-btn-xs" data-range-action="import-corpus">📥 导入</button>
+                                    <button class="secondary range-btn-xs" data-range-action="embed-corpus" id="range-btn-embed">🧬 嵌入</button>
+                                    <button class="secondary range-btn-xs" data-range-action="clear-corpus">清空</button>
+                                </div>
+                            </div>
+                            <div id="range-corpus-status" class="range-corpus-status-text"></div>
+                            <div id="range-corpus-progress" style="display:none" class="range-corpus-progress-wrapper">
+                                <div class="range-corpus-progress-row">
+                                    <span class="range-state-dot running"></span>
+                                    <span id="range-corpus-progress-msg" class="range-corpus-progress-msg"></span>
+                                </div>
+                                <div class="range-corpus-progress-track"><div id="range-corpus-progress-bar" class="range-corpus-progress-fill"></div></div>
+                            </div>
+                            <div class="range-corpus-toolbar">
+                                <div class="form-group"><label>嵌入模型</label><select id="range-embed-model" data-range-action="embed-model-change"><option value="">自动检测</option></select></div>
+                                <div class="form-group"><label>重排模型</label><select id="range-rerank-model" data-range-action="rerank-model-change"><option value="">不启用</option></select></div>
+                            </div>
+                            <div id="range-corpus-lines" class="range-corpus-lines"></div>
+                            <input type="file" id="range-corpus-file" accept=".json" multiple style="display:none" data-range-action="corpus-file">
+                        </div>
+
+                        <div class="card range-card-padded">
+                            <div class="btn-group range-btn-group-wrap">
+                                <button class="secondary range-btn-sm" data-range-action="toggle-decompose">🔬 拆解</button>
+                                <button class="secondary range-btn-sm" data-range-action="create-snapshot">📸 备份</button>
+                                <button class="secondary range-btn-sm" data-range-action="load-snapshots">📂 备份库</button>
+                                <button class="secondary range-btn-sm" data-range-action="reset-chat">🔄 重置</button>
+                            </div>
+                            <div class="range-section-label">上下文注入</div>
+                            <div class="range-ctx-checkboxes">
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-facts" checked> 会话事实</label>
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-participants" checked> 参与者</label>
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-reference" checked> 回复引用</label>
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-intent" checked> 用户意图</label>
+                            </div>
+                            <div class="range-section-label">变量 & 档案</div>
+                            <div class="range-ctx-checkboxes">
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-inject-vars" checked> 注入变量</label>
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-inject-profiles" checked> 注入人物档案</label>
+                            </div>
+                            <div class="range-section-label">输出格式</div>
+                            <div class="range-ctx-checkboxes">
+                                <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-json-mode" checked data-range-action="json-mode-change"> JSON 输出</label>
+                            </div>
+                            <div class="range-iteration-log" id="range-iter-log"><div class="empty-state">迭代日志</div></div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- 第2列：优化师Agent -->
-                <div class="range-col range-chat-col" data-range-col="agent">
+                <!-- 第2列：观察画布 -->
+                <div class="range-col range-workbench-board" data-range-col="agent">
                     <div class="range-chat-header">
-                        <span class="range-chat-header-label">Agent</span>
+                        <span class="range-chat-header-label">测试观察画布</span>
+                        <div class="range-board-mode-pills">
+                            <span class="range-board-pill">Canvas</span>
+                            <span class="range-board-pill">Multi-run</span>
+                        </div>
                         <select id="range-opt-provider" data-range-action="opt-provider-change" style="display:none"></select>
-                        <select id="range-opt-model" data-range-action="opt-model-change" class="range-model-all"></select>
+                        <select id="range-opt-model" data-range-action="opt-model-change" class="range-model-all" style="display:none"></select>
                         <div class="range-header-spacer"></div>
-                        <span class="range-iter-label">上限</span><input type="number" id="range-max-iter" value="5" min="1" max="20" class="range-iter-input">
+                        <span class="range-iter-label">Agent上限</span><input type="number" id="range-max-iter" value="5" min="1" max="20" class="range-iter-input">
                         <span id="range-iter-count" class="range-iter-count-text">-</span>
                         <span class="range-state-indicator idle" id="range-state"><span class="range-state-dot idle"></span><span id="range-state-text">就绪</span></span>
                     </div>
@@ -6351,86 +7962,53 @@
                         <span class="range-phase-label" id="range-phase-label"></span>
                         <span class="range-phase-steps" id="range-phase-steps"></span>
                     </div>
-                    <div class="range-chat-body" id="range-opt-chat">
-                        <div class="chat-bubble bot"><div class="chat-bubble-meta"><span>优化师</span></div>你好，我是提示词优化 Agent。告诉我希望角色怎么回复，我会自动设计测试消息、分析结果、迭代改进。</div>
-                    </div>
-                    <div class="range-chat-status" id="range-opt-status" style="display:none"><span class="range-state-dot running"></span>Agent 思考中...</div>
-                    <div class="range-chat-foot">
-                        <input type="text" id="range-opt-input" placeholder="告诉优化师你的期望..." data-range-action="opt-input">
-                        <button data-range-action="send-opt-message">发送</button>
-                        <button class="secondary range-clear-round-btn" data-range-action="clear-opt-round" title="清空本轮优化对话">🗑</button>
+                    <div id="range-observer-board" class="range-board-canvas">
+                        <div class="range-board-floating-panel">
+                            <div class="range-board-floating-title">Flow Workspace</div>
+                            <div class="range-board-floating-meta">每个环境一块独立测试窗，单测居中显示，批测时并排展开；MCP 同步结果也直接落在这里。</div>
+                        </div>
+                        <div class="empty-state">等待测试运行，单次测试和 MCP/批测结果会在这里生成可观察节点块。</div>
                     </div>
                 </div>
 
-                <!-- 第3列：语料库/日志/工具 -->
-                <div class="range-col" id="range-info-panel" data-range-col="tools">
+                <!-- 第3列：详情与输出 -->
+                <div class="range-col range-workbench-detail" id="range-info-panel" data-range-col="tools">
                     <div class="range-mobile-tools-header" id="range-mobile-tools-header">
-                        <span class="range-mobile-tools-title">工具面板</span>
+                        <span class="range-mobile-tools-title">详情面板</span>
                         <button class="range-mobile-tools-close" data-range-action="close-tools">✕</button>
                     </div>
+
                     <div class="card range-card-padded">
                         <div class="section-head range-section-head">
-                            <h3 class="range-panel-h3">语料库 <span id="range-corpus-count" class="range-corpus-count"></span></h3>
-                            <div class="btn-group">
-                                <button class="secondary range-btn-xs" data-range-action="import-corpus">📥 导入</button>
-                                <button class="secondary range-btn-xs" data-range-action="embed-corpus" id="range-btn-embed">🧬 嵌入</button>
-                                <button class="secondary range-btn-xs" data-range-action="clear-corpus">清空</button>
+                            <div>
+                                <h3 class="range-panel-h3">节点详情</h3>
+                                <p class="hint-text" style="margin:4px 0 0;">点击中间任意测试块或步骤节点，在这里查看细节和 trace。</p>
                             </div>
+                            <span id="range-trace-summary" class="meta-inline">尚未运行</span>
                         </div>
-                        <p class="hint-text" style="margin-bottom:8px;">语料库仅供靶场测试使用——优化师从中挑选消息来测试角色表现，不会注入到真实 AI 对话中。</p>
-                        <div id="range-corpus-status" class="range-corpus-status-text"></div>
-                        <div id="range-corpus-progress" style="display:none" class="range-corpus-progress-wrapper">
-                            <div class="range-corpus-progress-row">
-                                <span class="range-state-dot running"></span>
-                                <span id="range-corpus-progress-msg" class="range-corpus-progress-msg"></span>
-                            </div>
-                            <div class="range-corpus-progress-track"><div id="range-corpus-progress-bar" class="range-corpus-progress-fill"></div></div>
-                        </div>
-                        <div class="range-corpus-toolbar">
-                            <div class="form-group"><label>嵌入模型</label><select id="range-embed-model" data-range-action="embed-model-change"><option value="">自动检测</option></select></div>
-                            <div class="form-group"><label>重排模型</label><select id="range-rerank-model" data-range-action="rerank-model-change"><option value="">不启用</option></select></div>
-                        </div>
-                        <p class="hint-text" style="margin-top:4px;">语料库导入支持 <a href="https://github.com/shuakami/qq-chat-exporter" target="_blank" rel="noopener">QQ Chat Exporter</a> 导出的 JSON 格式。用该工具导出群聊记录后，直接导入即可作为测试语料。</p>
-                        <div id="range-corpus-lines" class="range-corpus-lines"></div>
-                        <input type="file" id="range-corpus-file" accept=".json" multiple style="display:none" data-range-action="corpus-file">
+                        <div id="range-trace-steps" class="range-iteration-log"><div class="empty-state">执行一次测试后会显示固定流程节点</div></div>
+                        <div id="range-trace-detail" class="range-trace-detail-shell">点击某个节点查看详情</div>
                     </div>
+
                     <div class="card range-card-padded">
-                        <div class="section-head range-section-head">
-                            <h3 class="range-panel-h3">📝 伪造聊天记录</h3>
-                            <span id="range-fake-history-count" style="color:var(--text-muted);font-size:0.8rem;"></span>
-                        </div>
-                        <p class="hint-text" style="margin-bottom:8px;">粘贴对话历史模拟继承记忆。格式：<code>[用户] xxx</code> / <code>[角色] xxx</code> 交替。</p>
-                        <textarea id="range-fake-history-input" rows="5" style="width:100%;font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="[用户] 你好啊&#10;[角色] 哟，这位道友有何贵干？&#10;[用户] 我想加入炸天帮&#10;[角色] 交五百灵石入帮费！"></textarea>
-                        <div style="margin-top:8px;display:flex;gap:8px;">
-                            <button class="secondary range-btn-xs" onclick="applyRangeFakeHistory()">✅ 应用</button>
-                            <button class="secondary range-btn-xs" onclick="clearRangeFakeHistory()">清空</button>
-                        </div>
+                        <div class="section-head range-section-head"><h3 class="range-panel-h3">Bot 回复</h3></div>
+                        <div class="range-chat-body range-detail-chat" id="range-test-chat"><div class="empty-state">这里显示前端手动测试和 MCP 靶场同步过来的 bot 回复</div></div>
                     </div>
+
                     <div class="card range-card-padded">
-                        <div class="btn-group range-btn-group-wrap">
-                            <button class="secondary range-btn-sm" data-range-action="toggle-decompose">🔬 拆解</button>
-                            <button class="secondary range-btn-sm" data-range-action="create-snapshot">📸 备份</button>
-                            <button class="secondary range-btn-sm" data-range-action="load-snapshots">📂 备份库</button>
-                            <button class="secondary range-btn-sm" data-range-action="reset-chat">🔄 重置</button>
+                        <div class="section-head range-section-head"><h3 class="range-panel-h3">Agent 回复</h3></div>
+                        <div class="range-chat-body range-detail-chat" id="range-opt-chat">
+                            <div class="chat-bubble bot"><div class="chat-bubble-meta"><span>优化师</span></div>你好，我是提示词优化 Agent。告诉我希望角色怎么回复，我会自动设计测试消息、分析结果、迭代改进。</div>
                         </div>
-                        <div class="range-section-label">上下文注入</div>
-                        <div class="range-ctx-checkboxes">
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-facts" checked> 会话事实</label>
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-participants" checked> 参与者</label>
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-reference" checked> 回复引用</label>
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-ctx-intent" checked> 用户意图</label>
+                        <div class="range-chat-status" id="range-opt-status" style="display:none"><span class="range-state-dot running"></span>Agent 思考中...</div>
+                        <div class="range-chat-foot">
+                            <input type="text" id="range-opt-input" placeholder="告诉优化师你的期望..." data-range-action="opt-input">
+                            <button data-range-action="send-opt-message">发送</button>
+                            <button class="secondary range-clear-round-btn" data-range-action="clear-opt-round" title="清空本轮优化对话">🗑</button>
                         </div>
-                        <div class="range-section-label">变量 & 档案</div>
-                        <div class="range-ctx-checkboxes">
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-inject-vars" checked> 注入变量</label>
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-inject-profiles" checked> 注入人物档案</label>
-                        </div>
-                        <div class="range-section-label">输出格式</div>
-                        <div class="range-ctx-checkboxes">
-                            <label class="checkbox-label range-checkbox-label"><input type="checkbox" id="range-json-mode" checked data-range-action="json-mode-change"> JSON 输出</label>
-                        </div>
-                        <div class="range-iteration-log" id="range-iter-log"><div class="empty-state">迭代日志</div></div>
                     </div>
+
+                    <div id="range-batch-task-list" style="display:none"></div>
                     <div class="card range-card-padded" id="range-diff-card" style="display:none">
                         <div class="section-head range-section-head"><h3 class="range-panel-h3">变更记录</h3></div>
                         <div class="range-diff-container" id="range-diff-container"></div>
@@ -7039,9 +8617,9 @@
                 return;
             }
 
-            const contentShell = document.querySelector('.content-shell');
-            const targetTop = contentShell
-                ? Math.max(0, contentShell.getBoundingClientRect().top + window.scrollY - 12)
+            const shellLayout = document.querySelector('.shell-layout');
+            const targetTop = shellLayout
+                ? Math.max(0, shellLayout.getBoundingClientRect().top + window.scrollY - 12)
                 : window.scrollY;
             if (options.scrollToPanel !== false) {
                 document.body.style.minHeight = `${Math.max(document.body.scrollHeight, window.scrollY + window.innerHeight)}px`;
@@ -7112,6 +8690,7 @@
                 loadConfig();
             }
             if (panelId === 'prompt-range') {
+                loadLatestRangeSyncSnapshot();
                 loadPromptRange();
                 return;
             }
@@ -10185,10 +11764,7 @@
         }
         function updateTextToolFallbackFields() {
             const enabled = document.getElementById('config-ai-tool-text-fallback-enabled')?.checked === true;
-            const maxRoundsInput = document.getElementById('config-ai-tool-text-fallback-max-rounds');
-            if (maxRoundsInput) {
-                maxRoundsInput.disabled = !enabled;
-            }
+            setConfigInputDisabledState('config-ai-tool-text-fallback-max-rounds', !enabled);
         }
 
         function getPresetPromptTokenCount(item = {}) {
@@ -13163,6 +14739,24 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             addAIModelToActiveProvider({ id: modelId, enabled: true });
         }
 
+        function isLocalAIBaseUrl(baseUrl = '') {
+            return /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::|\/|$)/i.test(String(baseUrl || '').trim());
+        }
+
+        function providerNeedsConfigApiKey(provider = {}) {
+            if (String(provider.provider || '').toLowerCase() === 'ollama') return false;
+            if (isLocalAIBaseUrl(provider.baseUrl)) return false;
+            return true;
+        }
+
+        function providerDraftHasApiKey(provider = {}) {
+            const apiKey = String(provider.apiKey || '').trim();
+            if (apiKey && apiKey !== '******') return true;
+            if (apiKey === '******') return true;
+            const currentProvider = (currentConfig.ai?.providers || []).find((item) => item.id === provider.id);
+            return !!currentProvider?.hasApiKey;
+        }
+
         function validateConfigDraft(draft) {
             const errors = [];
             const warnings = [];
@@ -13182,6 +14776,11 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
             if (!draft.ai.model) {
                 errors.push('AI 模型不能为空');
+            }
+
+            const chatProvider = (draft.ai.providers || []).find((provider) => provider.id === draft.chat.modelProviderId);
+            if (chatProvider && providerNeedsConfigApiKey(chatProvider) && !providerDraftHasApiKey(chatProvider)) {
+                errors.push(`当前聊天模型供应商“${chatProvider.name || chatProvider.id}”需要 API Key，请先填写并保存真实密钥`);
             }
 
             if (!draft.ai.maxTokens || draft.ai.maxTokens <= 0) {
@@ -13294,53 +14893,58 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             return { errors, warnings };
         }
 
+        function syncFormGroupDisabledState(input) {
+            const group = input?.closest('.form-group');
+            if (group) {
+                group.classList.toggle('is-disabled', input.disabled === true);
+            }
+        }
+
+        function setConfigInputDisabledState(id, disabled) {
+            const input = document.getElementById(id);
+            if (!input) {
+                return null;
+            }
+            input.disabled = disabled;
+            syncFormGroupDisabledState(input);
+            return input;
+        }
+
         function updateAccessControlLabels() {
             const mode = document.getElementById('config-chat-access-mode')?.value || 'allowlist';
             const groupAllowLabel = document.getElementById('config-chat-groups-label');
             const groupBlockLabel = document.getElementById('config-chat-blocked-groups-label');
             const userAllowLabel = document.getElementById('config-chat-users-label');
             const userBlockLabel = document.getElementById('config-chat-blocked-users-label');
-            const groupAllowInput = document.getElementById('config-chat-groups');
-            const groupBlockInput = document.getElementById('config-chat-blocked-groups');
-            const userAllowInput = document.getElementById('config-chat-users');
-            const userBlockInput = document.getElementById('config-chat-blocked-users');
+            const groupAllowInput = setConfigInputDisabledState('config-chat-groups', mode !== 'allowlist');
+            const groupBlockInput = setConfigInputDisabledState('config-chat-blocked-groups', mode !== 'blocklist');
+            const userAllowInput = setConfigInputDisabledState('config-chat-users', mode !== 'allowlist');
+            const userBlockInput = setConfigInputDisabledState('config-chat-blocked-users', mode !== 'blocklist');
 
             if (!groupAllowLabel || !groupBlockLabel || !userAllowLabel || !userBlockLabel || !groupAllowInput || !groupBlockInput || !userAllowInput || !userBlockInput) {
                 return;
             }
 
             if (mode === 'blocklist') {
-                groupAllowLabel.textContent = '群白名单已停';
-                userAllowLabel.textContent = '用户白名单已停用';
+                groupAllowLabel.textContent = '允许的群号（当前停用）';
+                userAllowLabel.textContent = '允许的用户 QQ（当前停用）';
                 groupBlockLabel.textContent = '群聊黑名单(逗号分隔)';
                 userBlockLabel.textContent = '用户黑名单(逗号分隔)';
-                groupAllowInput.disabled = true;
-                userAllowInput.disabled = true;
-                groupBlockInput.disabled = false;
-                userBlockInput.disabled = false;
                 return;
             }
 
             if (mode === 'disabled') {
-                groupAllowLabel.textContent = '群白名单已停';
-                userAllowLabel.textContent = '用户白名单已停用';
-                groupBlockLabel.textContent = '群黑名单已停';
-                userBlockLabel.textContent = '用户黑名单已停用';
-                groupAllowInput.disabled = true;
-                userAllowInput.disabled = true;
-                groupBlockInput.disabled = true;
-                userBlockInput.disabled = true;
+                groupAllowLabel.textContent = '允许的群号（当前停用）';
+                userAllowLabel.textContent = '允许的用户 QQ（当前停用）';
+                groupBlockLabel.textContent = '群聊黑名单（当前停用）';
+                userBlockLabel.textContent = '用户黑名单（当前停用）';
                 return;
             }
 
             groupAllowLabel.textContent = '允许的群号(逗号分隔)';
             userAllowLabel.textContent = '允许的用户 QQ (逗号分隔)';
-            groupBlockLabel.textContent = '群黑名单已停';
-            userBlockLabel.textContent = '用户黑名单已停用';
-            groupAllowInput.disabled = false;
-            userAllowInput.disabled = false;
-            groupBlockInput.disabled = true;
-            userBlockInput.disabled = true;
+            groupBlockLabel.textContent = '群聊黑名单（当前停用）';
+            userBlockLabel.textContent = '用户黑名单（当前停用）';
         }
 
         function updateAccessControlSummary() {
@@ -13357,16 +14961,42 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             const blockedUsers = document.getElementById('config-chat-blocked-users')?.value.split(',').map((v) => v.trim()).filter(Boolean) || [];
 
             if (mode === 'disabled') {
-                box.textContent = `当前策略：关闭名单控制管理员 QQ ${adminUsers.length} 个`;
+                box.textContent = `当前策略：未启用名单控制；管理员 ${adminUsers.length} 个，群和用户消息都会直接放行。`;
                 return;
             }
 
             if (mode === 'blocklist') {
-                box.textContent = `当前策略：黑名单模式。群 ${blockedGroups.length} 个，用户 ${blockedUsers.length} 个，管理员 ${adminUsers.length} 个`;
+                const emptyText = blockedGroups.length === 0 && blockedUsers.length === 0
+                    ? '未设置任何黑名单，当前不会拦截群或用户。'
+                    : `已设置群 ${blockedGroups.length} 个、用户 ${blockedUsers.length} 个黑名单。`;
+                box.textContent = `当前策略：黑名单模式；${emptyText} 管理员 ${adminUsers.length} 个。`;
                 return;
             }
 
-            box.textContent = `当前策略：白名单模式。群 ${allowedGroups.length} 个，用户 ${allowedUsers.length} 个，管理员 ${adminUsers.length} 个`;
+            const emptyText = allowedGroups.length === 0 && allowedUsers.length === 0
+                ? '当前没有填写白名单，实际会退化为全部放行。'
+                : `已设置群 ${allowedGroups.length} 个、用户 ${allowedUsers.length} 个白名单。`;
+            box.textContent = `当前策略：白名单模式；${emptyText} 管理员 ${adminUsers.length} 个。`;
+        }
+
+        function updateEmptyRetryFields() {
+            const enabled = document.getElementById('config-chat-empty-retry-enabled')?.checked === true;
+            setConfigInputDisabledState('config-chat-empty-retry-max', !enabled);
+            setConfigInputDisabledState('config-chat-empty-retry-delay', !enabled);
+        }
+
+        function updateThinkingNotifyFields() {
+            const enabled = document.getElementById('config-chat-thinking-notify-enabled')?.checked === true;
+            setConfigInputDisabledState('config-chat-thinking-notify-delay', !enabled);
+            setConfigInputDisabledState('config-chat-thinking-notify-message', !enabled);
+        }
+
+        function updateContextInjectionFields() {
+            const enabled = document.getElementById('config-context-enabled')?.checked === true;
+            setConfigInputDisabledState('config-context-session-facts', !enabled);
+            setConfigInputDisabledState('config-context-participants', !enabled);
+            setConfigInputDisabledState('config-context-reply-reference', !enabled);
+            setConfigInputDisabledState('config-context-recent-intent', !enabled);
         }
 
         async function fetchJsonSafe(url, options = {}) {
@@ -13663,6 +15293,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-quote-reply').checked = currentConfig.chat?.quoteReplyEnabled !== false;
                 document.getElementById('config-chat-mention-sender').checked = currentConfig.chat?.mentionSenderOnReply !== false;
                 document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
+                document.getElementById('config-chat-human-control').checked = currentConfig.chat?.humanChatControlEnabled !== false;
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
@@ -13690,6 +15321,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-ai-tool-web-search-blocked-domains').value = (currentConfig.ai?.tools?.webSearch?.blockedDomains || []).join(',');
                 updateTextToolFallbackFields();
                 updateWebSearchProviderFields();
+                updateEmptyRetryFields();
+                updateThinkingNotifyFields();
+                updateContextInjectionFields();
 
                 document.getElementById('config-memory-db-path').value = currentConfig.memory?.storage?.path || './data/chats/memory-store.sqlite';
                 document.getElementById('config-memory-summary-enabled').checked = currentConfig.memory?.summary?.enabled === true;
@@ -14011,6 +15645,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     quoteReplyEnabled: document.getElementById('config-chat-quote-reply').checked,
                     mentionSenderOnReply: document.getElementById('config-chat-mention-sender').checked,
                     attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
+                    humanChatControlEnabled: document.getElementById('config-chat-human-control').checked,
                     emptyReplyRetry: {
                         enabled: document.getElementById('config-chat-empty-retry-enabled').checked,
                         maxRetries: parseInt(document.getElementById('config-chat-empty-retry-max').value) || 2,
@@ -14606,6 +16241,9 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 if (logDataArr.length > 1000) {
                     logDataArr.splice(0, logDataArr.length - 1000);
                 }
+                if (log?.message === '[RANGE_SYNC]' && log?.data?.type === 'range_sync') {
+                    applyRangeSyncPayload({ ...(log.data.payload || {}), source: log.data.source || 'range_sync' });
+                }
                 if (logLevelFilter.has(log.level) && logTerminal) {
                     logTerminal.writeln(colorizeLog(log));
                 }
@@ -14974,6 +16612,21 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     markConfigDirty('文本工具兜底配置已修改');
                 });
             }
+
+            const emptyRetryToggle = document.getElementById('config-chat-empty-retry-enabled');
+            emptyRetryToggle?.addEventListener('change', updateEmptyRetryFields);
+
+            const thinkingNotifyToggle = document.getElementById('config-chat-thinking-notify-enabled');
+            thinkingNotifyToggle?.addEventListener('change', updateThinkingNotifyFields);
+
+            const contextToggle = document.getElementById('config-context-enabled');
+            contextToggle?.addEventListener('change', updateContextInjectionFields);
+
+            ['config-chat-groups', 'config-chat-blocked-groups', 'config-chat-users', 'config-chat-admin-users', 'config-chat-blocked-users'].forEach((id) => {
+                const input = document.getElementById(id);
+                input?.addEventListener('input', updateAccessControlSummary);
+                input?.addEventListener('change', updateAccessControlSummary);
+            });
         });
 
         // ========== 提示词优化靶场 ==========
@@ -15027,6 +16680,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
 
         const RANGE_KIND_LABELS = {
             current_time:'当前时间', situational_context:'会话上下文', input_guardrail:'输入护栏',
+            human_chat_control:'人类群聊决策规则',
             preset_pre_system:'预设-系统前', preset_marker:'预设-标记', summary:'摘要',
             database_recall:'数据库召回', worldbook_entry:'世界书命中',
             character_description:'角色卡-描述', character_personality:'角色卡-性格',
@@ -15047,6 +16701,855 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
         let rangeJsonMode = true;
         let _rangeLastTestScored = false;
         let rangeFakeHistory = []; // 伪造聊天记录 [{ role, content }]
+        let rangeSavedEnvironments = [];
+        let rangeBatchTasks = [];
+        let rangeBatchPollTimer = null;
+        let rangeCurrentTrace = null;
+        let rangeCurrentTraceCard = null;
+        let rangeSelectedObserverCard = null;
+        let rangeObserverCards = [];
+        let rangeSingleResults = [];
+        let rangeSyncResults = [];
+        let rangeLastSyncRunId = '';
+        let rangeAppliedSyncKeys = new Set();
+
+        function toggleRangeConfigPanel() {
+            const layout = document.querySelector('.range-layout-with-sidebar');
+            const panel = document.getElementById('range-config-panel');
+            if (!layout || !panel) return;
+            panel.classList.toggle('collapsed');
+            layout.classList.toggle('config-collapsed', panel.classList.contains('collapsed'));
+            const toggle = panel.querySelector('.range-config-toggle');
+            if (toggle) {
+                toggle.textContent = panel.classList.contains('collapsed') ? '☰' : '⚙';
+                toggle.title = panel.classList.contains('collapsed') ? '展开配置面板' : '收起配置面板';
+            }
+        }
+
+        function buildObserverStepNode(step = {}, index = 0, cardKey = '') {
+            const statusText = formatRangeTraceStatus(step.status);
+            const statusClass = `is-${step.status || 'idle'}`;
+            const clickExpr = cardKey
+                ? `showObserverStepDetail('${escapeInlineJsString(cardKey)}', ${index})`
+                : `showRangeTraceDetail(${index})`;
+            return `<button type="button" class="range-observer-step ${statusClass}" onclick="${clickExpr}">
+                <div class="range-observer-step-head">
+                    <div class="range-observer-step-title">${index + 1}. ${escapeHtml(step.label || step.id || '步骤')}</div>
+                    <div class="range-observer-step-meta">${escapeHtml(statusText)} · ${Number(step.durationMs || 0)}ms</div>
+                </div>
+                <div class="range-observer-step-summary">${escapeHtml(getRangeStepSummary(step))}</div>
+            </button>`;
+        }
+
+        function buildRangeIoBlocks(inputText = '', outputText = '', options = {}) {
+            const input = inputText === undefined || inputText === null ? '' : String(inputText);
+            const output = outputText === undefined || outputText === null ? '' : String(outputText);
+            const emptyInput = options.emptyInput || '暂无输入';
+            const emptyOutput = options.emptyOutput || '暂无输出';
+            return `<div class="${options.detail ? 'range-trace-detail-io' : 'range-io-grid'}">
+                <div class="range-io-block is-input" data-label="输入全文">${escapeHtml(input || emptyInput)}</div>
+                <div class="range-io-block is-output" data-label="输出全文">${escapeHtml(output || emptyOutput)}</div>
+            </div>`;
+        }
+
+        function buildObserverCardIo(card = {}) {
+            return buildRangeIoBlocks(card.inputPreview, card.outputPreview || card.preview, {
+                emptyInput: '暂无输入',
+                emptyOutput: card.status === 'queued' || card.status === 'running' ? '等待输出' : '暂无输出'
+            });
+        }
+
+        function pushRangeSingleResult(result = {}) {
+            if (!result || typeof result !== 'object') return;
+            const trace = result.trace || null;
+            const key = trace?.runId || result.runId || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            rangeSingleResults = rangeSingleResults.filter((item) => item.key !== key);
+            rangeSingleResults.push({ key, result, createdAt: new Date().toISOString() });
+            if (rangeSingleResults.length > 80) {
+                rangeSingleResults = rangeSingleResults.slice(-80);
+            }
+        }
+
+        function getRangeObservationPayload(card = {}) {
+            const payload = card.observationPayload || card.result || card.payload || {};
+            return payload && typeof payload === 'object' ? payload : {};
+        }
+
+        function pickRangeObservationValue(payload = {}, keys = []) {
+            const obs = payload.observation && typeof payload.observation === 'object' ? payload.observation : {};
+            for (const key of keys) {
+                if (payload[key] !== undefined && payload[key] !== null && payload[key] !== '') return payload[key];
+                if (obs[key] !== undefined && obs[key] !== null && obs[key] !== '') return obs[key];
+            }
+            return '';
+        }
+
+        function formatRangeMessagesForObservation(messages = []) {
+            if (!Array.isArray(messages) || messages.length === 0) return '';
+            return messages.map((msg, index) => {
+                const role = msg.role || msg.kind || msg.source || 'message';
+                const source = msg.sourceSlot || msg.source || msg.kind || '';
+                const content = msg.content ?? msg.text ?? msg.message ?? '';
+                const head = source ? `${index + 1}. ${role} / ${source}` : `${index + 1}. ${role}`;
+                return `${head}\n${formatRangeDetailValue(content)}`;
+            }).join('\n\n---\n\n');
+        }
+
+        function formatRangeTraceListForObservation(traceList = []) {
+            if (!Array.isArray(traceList) || traceList.length === 0) return '';
+            return traceList.map((item, index) => {
+                const name = item.label || item.title || item.kind || item.sourceSlot || item.id || `trace-${index + 1}`;
+                return `${index + 1}. ${name}\n${formatRangeDetailValue(item)}`;
+            }).join('\n\n---\n\n');
+        }
+
+        function buildRangeObservationDetail(card = {}) {
+            const payload = getRangeObservationPayload(card);
+            const aiResponse = payload.aiResponse && typeof payload.aiResponse === 'object' ? payload.aiResponse : {};
+            const prompt = payload.prompt && typeof payload.prompt === 'object' ? payload.prompt : {};
+            const inputParts = [
+                pickRangeObservationValue(payload, ['inputHeader']),
+                pickRangeObservationValue(payload, ['userMessage'])
+            ].filter(Boolean).join('\n');
+            const fakeHistory = pickRangeObservationValue(payload, ['fakeHistory']);
+            const messages = pickRangeObservationValue(payload, ['messages']) || prompt.messages || [];
+            const messageTrace = pickRangeObservationValue(payload, ['messageTrace']) || prompt.messageTrace || [];
+            const currentFocus = prompt.currentMessageFocus || pickRangeObservationValue(payload, ['currentMessageFocus']);
+            const promptText = [
+                currentFocus ? `【current-message-focus】\n${formatRangeDetailValue(currentFocus)}` : '',
+                messages ? `【messages】\n${formatRangeMessagesForObservation(messages)}` : '',
+                messageTrace ? `【messageTrace】\n${formatRangeTraceListForObservation(messageTrace)}` : ''
+            ].filter(Boolean).join('\n\n==========\n\n');
+            const reasoning = pickRangeObservationValue(payload, ['reasoningContent']) || aiResponse.reasoningContent || '';
+            const raw = pickRangeObservationValue(payload, ['rawReply']) || aiResponse.rawReply || aiResponse.rawText || '';
+            const regexProcessed = pickRangeObservationValue(payload, ['regexProcessedReply']) || '';
+            const cleaned = pickRangeObservationValue(payload, ['cleanedReply']) || '';
+            const finalText = pickRangeObservationValue(payload, ['finalReply']) || aiResponse.text || payload.reply || card.outputPreview || '';
+            const finalMessages = pickRangeObservationValue(payload, ['finalMessages']) || aiResponse.segments || [];
+            const regexTrace = pickRangeObservationValue(payload, ['regexTrace']);
+            const sections = [
+                ['输入', [inputParts, fakeHistory ? `【fakeHistory】\n${formatRangeDetailValue(fakeHistory)}` : ''].filter(Boolean).join('\n\n')],
+                ['Prompt', promptText],
+                ['Reasoning', reasoning || '无 reasoningContent；正常 QQ 发群链路不会发送这里的内容。'],
+                ['Raw', raw || '无 rawReply 字段'],
+                ['Regex', [regexProcessed ? `【正则后】\n${regexProcessed}` : '', regexTrace ? `【regexTrace】\n${formatRangeDetailValue(regexTrace)}` : ''].filter(Boolean).join('\n\n')],
+                ['Clean', cleaned || '无 cleanedReply 字段'],
+                ['Final', [finalText, finalMessages ? `【最终分段】\n${formatRangeDetailValue(finalMessages)}` : ''].filter(Boolean).join('\n\n')]
+            ];
+            return `<div class="range-observation-detail">
+                ${sections.map(([title, value], index) => `<details class="range-observation-section" ${index < 2 ? 'open' : ''}>
+                    <summary>${escapeHtml(title)}</summary>
+                    <pre>${escapeHtml(formatRangeDetailValue(value) || '暂无数据')}</pre>
+                </details>`).join('')}
+            </div>`;
+        }
+
+        function summarizeObserverCard(card = {}) {
+            const parts = [];
+            if (card.mode) parts.push(card.mode);
+            if (card.environmentName) parts.push(card.environmentName);
+            if (card.durationMs || card.durationMs === 0) parts.push(`${Number(card.durationMs)}ms`);
+            if (card.statusText) parts.push(card.statusText);
+            return parts.filter(Boolean).join(' · ') || '暂无摘要';
+        }
+
+        function inferRangeTraceStatus(trace = null) {
+            const steps = Array.isArray(trace?.steps) ? trace.steps : [];
+            if (steps.some((step) => step?.status === 'failed')) return 'failed';
+            if (steps.some((step) => step?.status === 'running')) return 'running';
+            if (steps.length > 0 && steps.every((step) => step?.status === 'completed' || step?.status === 'skipped')) return 'completed';
+            return trace?.status || 'completed';
+        }
+
+        function getRangeSyncSpeaker(userMessage = '') {
+            const text = String(userMessage || '');
+            const headerMatch = text.match(/用户:([^|】]+)/);
+            if (headerMatch?.[1]) return headerMatch[1].trim();
+            const bracketMatch = text.match(/\]([^[]+?)\]/);
+            if (bracketMatch?.[1]) return bracketMatch[1].trim();
+            return '用户';
+        }
+
+        function buildRangeSyncCard(payload = {}, syncKey = '', index = 0) {
+            const userMessage = String(payload.userMessage || '').trim();
+            const reply = String(payload.reply || '').trim();
+            const trace = payload.trace || null;
+            const traceStatus = trace ? inferRangeTraceStatus(trace) : 'completed';
+            const speaker = getRangeSyncSpeaker(userMessage);
+            const runId = trace?.runId || syncKey || `sync-${index + 1}`;
+            return {
+                key: `sync:${runId}`,
+                id: runId,
+                laneTitle: 'MCP 上下文链',
+                title: `#${index + 1} ${speaker}`,
+                status: traceStatus,
+                statusText: formatRangeTraceStatus(traceStatus),
+                mode: trace?.mode || 'sync',
+                environmentName: trace?.environment?.name || 'MCP 靶场测试',
+                preview: reply || '暂无回复',
+                inputPreview: userMessage,
+                outputPreview: reply,
+                tokenUsage: payload.tokenUsage || null,
+                durationMs: trace?.durationMs || 0,
+                steps: trace?.steps || [],
+                trace,
+                payload,
+                observationPayload: payload,
+                sourceType: 'sync',
+                receivedAt: payload.syncedAt || ''
+            };
+        }
+
+        function renderRangeObserverBoard() {
+            const boardEl = document.getElementById('range-observer-board');
+            if (!boardEl) return;
+
+            rangeObserverCards = [];
+            const singleResult = rangeIterState.lastResult || null;
+            const hasSingle = !!(singleResult && (
+                singleResult.trace
+                || singleResult.userMessage
+                || singleResult.aiResponse?.text
+                || singleResult.testFailed
+            ));
+            const hasSync = Array.isArray(rangeSyncResults) && rangeSyncResults.length > 0;
+            const hasBatch = Array.isArray(rangeBatchTasks) && rangeBatchTasks.length > 0;
+            if (!hasSingle && !hasSync && !hasBatch) {
+                rangeSelectedObserverCard = null;
+                boardEl.innerHTML = `
+                    <div class="range-board-floating-panel">
+                        <div class="range-board-floating-title">Flow Workspace</div>
+                        <div class="range-board-floating-meta">每个环境一块独立测试窗，单测居中显示，批测时并排展开；MCP 同步结果也直接落在这里。</div>
+                    </div>
+                    <div class="empty-state">等待测试运行，单次测试和 MCP/批测结果会在这里生成可观察节点块。</div>
+                `;
+                return;
+            }
+
+            const lanes = [];
+            if (hasSingle) {
+                const singleItems = rangeSingleResults.length > 0
+                    ? rangeSingleResults
+                    : [{ key: 'single', result: singleResult, createdAt: '' }];
+                lanes.push({
+                    title: '手动测试轮次',
+                    meta: `${singleItems.length} 轮 · 按运行顺序向下追加`,
+                    cards: singleItems.map((item, index) => {
+                        const result = item.result || {};
+                        const trace = result.trace || null;
+                        const replyText = String(result.finalReply || result.aiResponse?.text || '').trim();
+                        const userMessage = String(result.userMessage || '').trim();
+                        const traceStatus = trace ? inferRangeTraceStatus(trace) : (result.testFailed ? 'failed' : 'completed');
+                        return {
+                            key: `single:${item.key || trace?.runId || index}`,
+                            id: trace?.runId || item.key || `single-${index + 1}`,
+                            laneTitle: '手动测试轮次',
+                            title: `#${index + 1} ${replyText ? '单次测试结果' : '单次测试'}`,
+                            status: traceStatus,
+                            statusText: formatRangeTraceStatus(traceStatus),
+                            mode: trace?.mode || result.source || 'single',
+                            environmentName: trace?.environment?.name || '当前配置',
+                            preview: replyText || '暂无回复',
+                            inputPreview: userMessage,
+                            outputPreview: replyText,
+                            tokenUsage: result.aiResponse?.tokenUsage || result.aiResponse?.usage || null,
+                            durationMs: trace?.durationMs || 0,
+                            steps: trace?.steps || [],
+                            trace,
+                            result,
+                            observationPayload: result,
+                            sourceType: 'single',
+                            receivedAt: item.createdAt || ''
+                        };
+                    })
+                });
+            }
+
+            if (hasSync) {
+                lanes.unshift({
+                    title: 'MCP 上下文链',
+                    meta: `${rangeSyncResults.length} 条 · 按接收顺序向下追加`,
+                    cards: rangeSyncResults.map((item, index) => buildRangeSyncCard(item.payload || item, item.syncKey || '', index))
+                });
+            }
+
+            if (hasBatch) {
+                rangeBatchTasks.forEach((task, taskIndex) => {
+                    const groups = new Map();
+                    (task.jobs || []).forEach((job) => {
+                        const key = job.environmentName || '默认环境';
+                        if (!groups.has(key)) groups.set(key, []);
+                        groups.get(key).push(job);
+                    });
+                    Array.from(groups.entries()).forEach(([envName, jobs], envIndex) => {
+                        lanes.push({
+                            title: envName,
+                            meta: `${task.mode} · 进度 ${task.progressPercent || 0}% · ${task.completedJobs || 0}/${task.totalJobs || 0}`,
+                            cards: jobs.map((job, jobIndex) => {
+                                const trace = job.trace || null;
+                                const replyPreview = job.resultSummary?.replyPreview || '';
+                                return {
+                                    key: `batch:${task.id}:${job.id || `${taskIndex}-${envIndex}-${jobIndex}`}`,
+                                    id: job.id,
+                                    laneTitle: envName,
+                                    title: job.message || '未命名消息',
+                                    status: job.status || 'queued',
+                                    statusText: formatRangeTraceStatus(job.status || 'queued'),
+                                    mode: task.mode,
+                                    environmentName: envName,
+                                    preview: replyPreview || job.error || '等待结果',
+                                    inputPreview: job.message || '',
+                                    outputPreview: replyPreview || job.error || '',
+                                    tokenUsage: job.resultSummary?.tokenUsage || null,
+                                    durationMs: job.durationMs || trace?.durationMs || 0,
+                                    steps: trace?.steps || [],
+                                    trace,
+                                    sourceType: 'batch',
+                                    taskId: task.id
+                                };
+                            })
+                        });
+                    });
+                });
+            }
+
+            lanes.forEach((lane) => {
+                lane.cards.forEach((card) => rangeObserverCards.push(card));
+            });
+
+            if (!rangeSelectedObserverCard || !rangeObserverCards.some((card) => card.key === rangeSelectedObserverCard)) {
+                rangeSelectedObserverCard = rangeObserverCards[rangeObserverCards.length - 1]?.key || null;
+            }
+
+            boardEl.innerHTML = `<div class="range-observer-lanes">${lanes.map((lane) => `
+                <div class="range-observer-lane ${lane.title === 'MCP 上下文链' ? 'is-sync-chain' : ''}">
+                    <div class="range-observer-lane-head">
+                        <div class="range-observer-lane-title">${escapeHtml(lane.title)}</div>
+                        <div class="range-observer-lane-meta">${escapeHtml(lane.meta)}</div>
+                    </div>
+                    ${lane.cards.map((card) => {
+                        const statusClass = `is-${card.status || 'queued'}`;
+                        return `<div class="range-observer-card ${statusClass} ${rangeSelectedObserverCard === card.key ? 'is-selected' : ''}" onclick="selectObserverCard('${escapeInlineJsString(card.key)}')">
+                            <div class="range-observer-card-head">
+                                <div>
+                                    <div class="range-observer-card-title">${escapeHtml(card.title)}</div>
+                                    <div class="range-observer-card-meta">${escapeHtml(summarizeObserverCard(card))}</div>
+                                </div>
+                                <span class="range-observer-status ${statusClass}">${escapeHtml(card.statusText || formatRangeTraceStatus(card.status || 'queued'))}</span>
+                            </div>
+                            ${buildObserverCardIo(card)}
+                            <div class="range-observer-steps">${(card.steps || []).slice(0, 4).map((step, stepIndex) => buildObserverStepNode(step, stepIndex, card.key)).join('')}</div>
+                        </div>`;
+                    }).join('')}
+                </div>
+            `).join('')}</div>`;
+
+            if (rangeSelectedObserverCard) {
+                updateRangeObserverDetailPanel(rangeSelectedObserverCard);
+            }
+        }
+
+        function getRangeObserverCard(key) {
+            return rangeObserverCards.find((card) => card.key === key) || null;
+        }
+
+        function updateRangeObserverDetailPanel(key) {
+            const card = getRangeObserverCard(key);
+            if (!card) {
+                renderRangeTrace(null);
+                return;
+            }
+            if (card.trace) {
+                renderRangeTrace(card.trace, card);
+            } else {
+                const summaryEl = document.getElementById('range-trace-summary');
+                const stepsEl = document.getElementById('range-trace-steps');
+                const detailEl = document.getElementById('range-trace-detail');
+                if (summaryEl) summaryEl.textContent = summarizeObserverCard(card);
+                if (stepsEl) stepsEl.innerHTML = '<div class="empty-state">当前任务还没有 trace 步骤</div>';
+                if (detailEl) {
+                    detailEl.innerHTML = `
+                        <div class="range-trace-detail-title">${escapeHtml(card.title || '节点详情')}</div>
+                        <div class="range-trace-detail-meta">${escapeHtml(summarizeObserverCard(card))}</div>
+                        ${buildRangeIoBlocks(card.inputPreview, card.outputPreview || card.preview, { detail: true })}
+                        ${buildRangeObservationDetail(card)}
+                    `;
+                }
+                rangeCurrentTraceCard = card;
+                rangeCurrentTrace = null;
+            }
+        }
+
+        function selectObserverCard(key) {
+            rangeSelectedObserverCard = key;
+            renderRangeObserverBoard();
+            updateRangeObserverDetailPanel(key);
+        }
+
+        function showObserverStepDetail(cardKey, stepIndex) {
+            rangeSelectedObserverCard = cardKey;
+            renderRangeObserverBoard();
+            updateRangeObserverDetailPanel(cardKey);
+            showRangeTraceDetail(stepIndex);
+        }
+
+        function applyRangeSyncPayload(payload = {}) {
+            if (!payload) return;
+            const syncKey = payload.trace?.runId || payload.syncedAt || `${payload.source || 'range_sync'}:${payload.userMessage || ''}:${payload.reply || ''}`;
+            if (syncKey && rangeAppliedSyncKeys.has(syncKey)) return;
+            rangeLastSyncRunId = syncKey;
+            if (syncKey) {
+                rangeAppliedSyncKeys.add(syncKey);
+                if (rangeAppliedSyncKeys.size > 200) {
+                    rangeAppliedSyncKeys = new Set(Array.from(rangeAppliedSyncKeys).slice(-100));
+                }
+            }
+            const userMessage = String(payload.userMessage || '').trim();
+            const reply = String(payload.reply || '').trim();
+            const trace = payload.trace || null;
+            const metaLabel = payload.source === 'mcp_range_test' ? 'MCP 靶场测试' : '外部测试同步';
+
+            if (userMessage) {
+                addChatBubble('range-test-chat', 'user', userMessage, `${metaLabel} · 你`);
+            }
+            if (reply) {
+                addChatBubble('range-test-chat', 'bot', reply, `角色 · 自动同步`);
+            }
+
+            if (syncKey) {
+                rangeSyncResults = rangeSyncResults.filter((item) => item.syncKey !== syncKey);
+            }
+            rangeSyncResults.push({ syncKey, payload: { ...payload, userMessage, reply, trace } });
+            if (rangeSyncResults.length > 80) {
+                rangeSyncResults = rangeSyncResults.slice(-80);
+            }
+
+            rangeIterState.lastResult = {
+                userMessage,
+                source: payload.source || 'range_sync',
+                aiResponse: {
+                    text: reply,
+                    reasoningContent: payload.reasoningContent || null,
+                    tokenUsage: payload.tokenUsage || null,
+                    segments: [{ index: 0, text: reply, qqText: reply, isFirst: true, hasPrefix: false, charCount: reply.length }],
+                    segmentCount: reply ? 1 : 0
+                },
+                stats: {
+                    memoryRecallCount: 0,
+                    worldbookHits: 0,
+                    totalTokenEstimate: 0,
+                    segmentCount: trace?.steps?.length || 0
+                },
+                segments: Array.isArray(payload.messages) ? payload.messages : [],
+                trace
+            };
+            renderRangeObserverBoard();
+            saveCurrentSession();
+        }
+
+        async function loadLatestRangeSyncSnapshot() {
+            try {
+                const res = await fetch('/api/prompt-range/sync-latest?limit=20');
+                const data = await res.json();
+                if (!data?.success) return;
+                const history = Array.isArray(data.history) && data.history.length > 0
+                    ? data.history
+                    : (data.latest?.payload ? [data.latest] : []);
+                history.forEach((item) => {
+                    if (!item?.payload) return;
+                    applyRangeSyncPayload({
+                        ...(item.payload || {}),
+                        source: item.source || item.payload?.source || 'range_sync'
+                    });
+                });
+            } catch (e) {
+                console.warn('加载 MCP 靶场同步历史失败', e);
+            }
+        }
+
+        function buildRangeFailureTrace(message, errorLabel, errorMessage) {
+            const now = new Date().toISOString();
+            const text = String(message || '').trim();
+            const detail = String(errorMessage || errorLabel || '请求失败');
+            return {
+                runId: `range-failed-${Date.now()}`,
+                mode: 'single',
+                environment: { name: '当前单次测试' },
+                startedAt: now,
+                finishedAt: now,
+                durationMs: 0,
+                status: 'failed',
+                steps: [
+                    {
+                        id: 'input',
+                        type: 'input',
+                        label: '输入',
+                        status: 'completed',
+                        durationMs: 0,
+                        summary: `消息 ${text.length} 字`,
+                        details: { message: text }
+                    },
+                    {
+                        id: 'ai-response',
+                        type: 'ai_response',
+                        label: 'AI 回复',
+                        status: 'failed',
+                        durationMs: 0,
+                        summary: detail.slice(0, 240),
+                        details: { error: detail, errorLabel }
+                    }
+                ]
+            };
+        }
+
+        function formatRangeTraceStatus(status = '') {
+            switch (status) {
+                case 'completed': return '完成';
+                case 'skipped': return '跳过';
+                case 'failed': return '失败';
+                case 'running': return '运行中';
+                default: return '待执行';
+            }
+        }
+
+        function formatRangeDetailValue(value) {
+            if (value === undefined || value === null || value === '') return '';
+            if (typeof value === 'string') return value;
+            if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+            try {
+                return JSON.stringify(value, null, 2);
+            } catch {
+                return String(value);
+            }
+        }
+
+        function getRangeTokenUsageText(tokenUsage) {
+            if (!tokenUsage || typeof tokenUsage !== 'object') return '';
+            const input = tokenUsage.prompt_tokens ?? tokenUsage.input_tokens ?? tokenUsage.input ?? tokenUsage.promptTokens;
+            const output = tokenUsage.completion_tokens ?? tokenUsage.output_tokens ?? tokenUsage.output ?? tokenUsage.completionTokens;
+            const total = tokenUsage.total_tokens ?? tokenUsage.total ?? tokenUsage.totalTokens;
+            const parts = [];
+            if (input !== undefined) parts.push(`输入 ${input}`);
+            if (output !== undefined) parts.push(`输出 ${output}`);
+            if (total !== undefined) parts.push(`总计 ${total}`);
+            return parts.join(' · ');
+        }
+
+        function buildRangeTraceDiagnostics(step = {}) {
+            const details = step.details && typeof step.details === 'object' ? step.details : {};
+            const traceExtra = rangeCurrentTrace?.extra && typeof rangeCurrentTrace.extra === 'object' ? rangeCurrentTrace.extra : {};
+            const provider = details.providerName || details.providerId || details.requestedProviderId || traceExtra.modelProviderId || rangeCurrentTraceCard?.environmentName || '';
+            const model = details.model || details.requestedModel || traceExtra.model || '';
+            const tokenUsage = getRangeTokenUsageText(details.tokenUsage || rangeCurrentTraceCard?.aiResponse?.tokenUsage || rangeCurrentTraceCard?.tokenUsage);
+            const diagnosticItems = [
+                ['状态', formatRangeTraceStatus(step.status)],
+                ['耗时', `${Number(step.durationMs || 0)}ms`],
+                ['Provider', provider],
+                ['Model', model],
+                ['消息数', details.messageCount],
+                ['Token', tokenUsage],
+                ['推理长度', details.reasoningLength || details.reasoningContentLength],
+                ['错误', details.error || details.errorLabel]
+            ].filter(([, value]) => value !== undefined && value !== null && value !== '');
+            if (!diagnosticItems.length) return '';
+            return `<div class="range-trace-diagnostic-grid">${diagnosticItems.map(([key, value]) => `
+                <div class="range-trace-diagnostic-item">
+                    <div class="range-trace-diagnostic-key">${escapeHtml(key)}</div>
+                    <div class="range-trace-diagnostic-value">${escapeHtml(formatRangeDetailValue(value))}</div>
+                </div>
+            `).join('')}</div>`;
+        }
+
+        function buildRangeTraceDetailText(details = {}) {
+            if (!details || typeof details !== 'object') return '';
+            return Object.entries(details)
+                .filter(([key]) => !['tokenUsage'].includes(key))
+                .map(([key, value]) => `${key}: ${formatRangeDetailValue(value)}`)
+                .join('\n');
+        }
+
+        function getRangeStepSummary(step = {}) {
+            const details = step.details && typeof step.details === 'object' ? step.details : {};
+            return step.summary
+                || details.error
+                || details.preview
+                || details.messagePreview
+                || details.message
+                || '暂无摘要';
+        }
+
+        function renderRangeTraceDetail(step) {
+            const detailEl = document.getElementById('range-trace-detail');
+            if (!detailEl) return;
+            if (!step) {
+                if (rangeCurrentTraceCard) {
+                    detailEl.innerHTML = `
+                        <div class="range-trace-detail-title">${escapeHtml(rangeCurrentTraceCard.title || '测试详情')}</div>
+                        <div class="range-trace-detail-meta">${escapeHtml(summarizeObserverCard(rangeCurrentTraceCard))}</div>
+                        ${buildRangeIoBlocks(rangeCurrentTraceCard.inputPreview, rangeCurrentTraceCard.outputPreview || rangeCurrentTraceCard.preview, { detail: true })}
+                        ${buildRangeObservationDetail(rangeCurrentTraceCard)}
+                    `;
+                } else {
+                    detailEl.textContent = '点击某个节点查看详情';
+                }
+                return;
+            }
+            const details = step.details && typeof step.details === 'object' ? buildRangeTraceDetailText(step.details) : '';
+            const summary = getRangeStepSummary(step);
+            detailEl.innerHTML = `
+                <div class="range-trace-detail-title">${escapeHtml(step.label || step.id || '步骤详情')}</div>
+                <div class="range-trace-detail-meta">${escapeHtml(formatRangeTraceStatus(step.status))} · ${Number(step.durationMs || 0)}ms</div>
+                <div class="range-trace-detail-summary">${escapeHtml(summary)}</div>
+                ${buildRangeTraceDiagnostics(step)}
+                ${rangeCurrentTraceCard ? buildRangeIoBlocks(rangeCurrentTraceCard.inputPreview, rangeCurrentTraceCard.outputPreview || rangeCurrentTraceCard.preview, { detail: true }) : ''}
+                ${rangeCurrentTraceCard ? buildRangeObservationDetail(rangeCurrentTraceCard) : ''}
+                <div class="range-trace-detail-block">${escapeHtml(details || '暂无细节')}</div>
+            `;
+        }
+
+        function showRangeTraceDetail(stepIndex) {
+            const index = Number(stepIndex);
+            const step = rangeCurrentTrace?.steps?.[index] || null;
+            renderRangeTraceDetail(step);
+            const host = document.getElementById('range-trace-steps');
+            if (host) {
+                host.querySelectorAll('.range-trace-node').forEach((node, idx) => {
+                    node.classList.toggle('is-selected', idx === index);
+                });
+            }
+        }
+
+        function renderRangeTrace(trace, card = null) {
+            const summaryEl = document.getElementById('range-trace-summary');
+            const stepsEl = document.getElementById('range-trace-steps');
+            const detailEl = document.getElementById('range-trace-detail');
+            if (!summaryEl || !stepsEl || !detailEl) return;
+            rangeCurrentTrace = trace || null;
+            rangeCurrentTraceCard = card || null;
+            if (!trace || !Array.isArray(trace.steps) || trace.steps.length === 0) {
+                summaryEl.textContent = '尚未运行';
+                stepsEl.innerHTML = '<div class="empty-state">执行一次测试后会显示固定流程节点</div>';
+                renderRangeTraceDetail(null);
+                return;
+            }
+            const envName = trace.environment?.name || trace.environment || '默认环境';
+            summaryEl.textContent = `${trace.runId} · ${trace.mode} · ${envName} · ${trace.durationMs || 0}ms`;
+            stepsEl.innerHTML = `<div class="range-trace-grid">${trace.steps.map((step, index) => {
+                const statusText = formatRangeTraceStatus(step.status);
+                const statusClass = `is-${step.status || 'idle'}`;
+                return `<button type="button" class="range-trace-node ${statusClass}" onclick="showRangeTraceDetail(${index})">
+                    <div class="range-trace-node-head">
+                        <div class="range-trace-node-title">${index + 1}. ${escapeHtml(step.label || step.id || '步骤')}</div>
+                        <span class="range-trace-status-pill ${statusClass}">${escapeHtml(statusText)}</span>
+                    </div>
+                    <div class="range-trace-node-meta">${Number(step.durationMs || 0)}ms</div>
+                    <div class="range-trace-node-summary">${escapeHtml(getRangeStepSummary(step))}</div>
+                </button>`;
+            }).join('')}</div>`;
+            showRangeTraceDetail(0);
+        }
+
+        function collectCurrentRangeEnvironment() {
+            const envName = (document.getElementById('range-env-name')?.value || '').trim() || '默认环境';
+            const overrides = getRangeOverrides();
+            return {
+                id: `env-${Date.now()}`,
+                name: envName,
+                config: {
+                    characterName: RE.character.value || undefined,
+                    worldbookName: RE.worldbook.value || undefined,
+                    presetId: RE.preset.value || undefined,
+                    modelProviderId: overrides.modelProviderId || undefined,
+                    model: overrides.model || undefined,
+                    messageType: 'group',
+                    contextConfig: getRangeContextConfig(),
+                    injectVariables: document.getElementById('range-inject-vars')?.checked !== false,
+                    injectProfiles: document.getElementById('range-inject-profiles')?.checked !== false,
+                    context: rangeFakeHistory.length > 0 ? { recentMessages: rangeFakeHistory } : undefined
+                }
+            };
+        }
+
+        function saveCurrentRangeEnvironment() {
+            const env = collectCurrentRangeEnvironment();
+            rangeSavedEnvironments.unshift(env);
+            rangeSavedEnvironments = rangeSavedEnvironments.slice(0, 12);
+            localStorage.setItem('mimirlink-range-envs', JSON.stringify(rangeSavedEnvironments));
+            renderRangeEnvironmentList();
+            showToast(`已保存测试环境：${env.name}`);
+        }
+
+        function loadSavedRangeEnvironments() {
+            try {
+                const raw = localStorage.getItem('mimirlink-range-envs');
+                rangeSavedEnvironments = raw ? JSON.parse(raw) : [];
+            } catch {
+                rangeSavedEnvironments = [];
+            }
+            renderRangeEnvironmentList();
+        }
+
+        function applyRangeEnvironment(index) {
+            const env = rangeSavedEnvironments[index];
+            if (!env) return;
+            const config = env.config || {};
+            if (config.characterName) RE.character.value = config.characterName;
+            if (config.worldbookName) RE.worldbook.value = config.worldbookName;
+            if (config.presetId) RE.preset.value = config.presetId;
+            if (config.modelProviderId && config.model) {
+                RE.model.value = `${config.modelProviderId}||${config.model}`;
+                RE.provider.value = config.modelProviderId;
+            }
+            if (document.getElementById('range-env-name')) document.getElementById('range-env-name').value = env.name || '';
+            showToast(`已加载环境：${env.name}`);
+        }
+
+        function deleteRangeEnvironment(index) {
+            rangeSavedEnvironments.splice(index, 1);
+            localStorage.setItem('mimirlink-range-envs', JSON.stringify(rangeSavedEnvironments));
+            renderRangeEnvironmentList();
+        }
+
+        function renderRangeEnvironmentList() {
+            const listEl = document.getElementById('range-env-list');
+            const countEl = document.getElementById('range-env-count');
+            if (!listEl || !countEl) return;
+            countEl.textContent = String(rangeSavedEnvironments.length || 0);
+            if (!rangeSavedEnvironments.length) {
+                listEl.innerHTML = '<div class="empty-state">还没有保存环境</div>';
+                return;
+            }
+            listEl.innerHTML = rangeSavedEnvironments.map((env, index) => `
+                <div class="range-env-card">
+                    <div class="range-env-card-head">
+                        <div>
+                            <div class="range-env-card-title">${escapeHtml(env.name || `环境 ${index + 1}`)}</div>
+                            <div class="range-env-card-meta">保存一组测试配置，供批测与对比使用</div>
+                        </div>
+                        <div class="btn-group">
+                            <button class="secondary range-btn-xs" onclick="applyRangeEnvironment(${index})">加载</button>
+                            <button class="secondary range-btn-xs" onclick="deleteRangeEnvironment(${index})">删除</button>
+                        </div>
+                    </div>
+                    <div class="range-env-kv">
+                        <div class="range-env-kv-item"><div class="range-env-kv-key">角色</div><div class="range-env-kv-value">${escapeHtml(env.config?.characterName || '默认角色')}</div></div>
+                        <div class="range-env-kv-item"><div class="range-env-kv-key">世界书</div><div class="range-env-kv-value">${escapeHtml(env.config?.worldbookName || '默认世界书')}</div></div>
+                        <div class="range-env-kv-item"><div class="range-env-kv-key">预设</div><div class="range-env-kv-value">${escapeHtml(env.config?.presetId || '默认预设')}</div></div>
+                        <div class="range-env-kv-item"><div class="range-env-kv-key">模型</div><div class="range-env-kv-value">${escapeHtml(env.config?.model || '默认模型')}</div></div>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        async function runRangeBatchTest() {
+            const mode = document.getElementById('range-test-execution-mode')?.value || 'single';
+            if (mode === 'single') {
+                await sendRangeMessage();
+                return;
+            }
+            const raw = (document.getElementById('range-batch-messages')?.value || '').trim();
+            const messages = raw ? raw.split('\n').map((line) => line.trim()).filter(Boolean) : [String(RE.message.value || '').trim()].filter(Boolean);
+            if (messages.length === 0) {
+                showToast('请先输入批测消息', true);
+                return;
+            }
+            const environments = rangeSavedEnvironments.length > 0 ? rangeSavedEnvironments : [collectCurrentRangeEnvironment()];
+            const concurrency = Math.max(1, Math.min(8, Number(document.getElementById('range-test-concurrency')?.value || 2)));
+            const res = await fetch('/api/prompt-range/test-batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages,
+                    environments,
+                    executionMode: mode,
+                    concurrency,
+                    includeAIResponse: true
+                })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                showToast(data.error || '批测启动失败', true);
+                return;
+            }
+            showToast(`批测已启动：${data.taskId}`);
+            await refreshRangeBatchTasks(data.taskId);
+            startRangeBatchPolling();
+        }
+
+        function renderRangeBatchTasks() {
+            const listEl = document.getElementById('range-batch-task-list');
+            if (!listEl) return;
+            if (!rangeBatchTasks.length) {
+                listEl.innerHTML = '';
+                return;
+            }
+            const active = rangeBatchTasks[0];
+            summaryEl.textContent = `${active.mode} · ${active.progressPercent || 0}% · 完成 ${active.completedJobs || 0}/${active.totalJobs || 0}`;
+            listEl.innerHTML = rangeBatchTasks.map((task) => {
+                const groups = new Map();
+                (task.jobs || []).forEach((job) => {
+                    const key = job.environmentName || '默认环境';
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(job);
+                });
+                const lanes = Array.from(groups.entries()).map(([envName, jobs]) => `
+                    <div class="range-batch-lane">
+                        <div class="range-batch-lane-head">
+                            <div>
+                                <div class="range-batch-lane-title">${escapeHtml(envName)}</div>
+                                <div class="range-batch-lane-meta">${escapeHtml(task.id)} · ${escapeHtml(task.mode)} · 并发 ${task.concurrency}</div>
+                            </div>
+                            <button class="secondary range-btn-xs" onclick="refreshRangeBatchTasks('${task.id}')">刷新</button>
+                        </div>
+                        <div class="range-batch-job-grid">
+                            ${jobs.map((job) => {
+                                const statusClass = `is-${job.status || 'queued'}`;
+                                return `<div class="range-batch-job ${statusClass}">
+                                    <div class="range-batch-job-title">${escapeHtml(job.message || '未命名消息')}</div>
+                                    <div class="range-batch-job-meta">${escapeHtml(job.status || 'queued')} · ${Number(job.durationMs || 0)}ms</div>
+                                    <div class="range-batch-job-preview">${escapeHtml(job.resultSummary?.replyPreview || job.error || job.trace?.steps?.[job.trace.steps.length - 1]?.summary || '等待结果')}</div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                `).join('');
+                return `<div class="range-batch-board">
+                    <div class="range-batch-topline">
+                        <span class="range-batch-pill">任务 ${escapeHtml(task.id)}</span>
+                        <span class="range-batch-pill">模式 ${escapeHtml(task.mode)}</span>
+                        <span class="range-batch-pill">进度 ${task.progressPercent || 0}%</span>
+                        <span class="range-batch-pill">完成 ${task.completedJobs || 0}/${task.totalJobs || 0}</span>
+                    </div>
+                    ${lanes}
+                </div>`;
+            }).join('');
+        }
+
+        async function refreshRangeBatchTasks(taskId = '') {
+            const url = taskId ? `/api/prompt-range/test-batch/${encodeURIComponent(taskId)}` : '/api/prompt-range/test-batches';
+            const res = await fetch(url);
+            const data = await res.json();
+            if (!data.success) return;
+            if (taskId) {
+                rangeBatchTasks = [data.task];
+            } else {
+                rangeBatchTasks = data.tasks || [];
+            }
+            renderRangeBatchTasks();
+            renderRangeObserverBoard();
+        }
+
+        function startRangeBatchPolling() {
+            if (rangeBatchPollTimer) clearInterval(rangeBatchPollTimer);
+            rangeBatchPollTimer = setInterval(async () => {
+                await refreshRangeBatchTasks();
+                const hasRunning = rangeBatchTasks.some((task) => task.running);
+                if (!hasRunning && rangeBatchPollTimer) {
+                    clearInterval(rangeBatchPollTimer);
+                    rangeBatchPollTimer = null;
+                }
+            }, 2000);
+        }
 
         function applyRangeFakeHistory() {
             const input = document.getElementById('range-fake-history-input');
@@ -15136,6 +17639,8 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 refreshSessionSelect();
             }
             updateCorpusStatusUI();
+            loadSavedRangeEnvironments();
+            refreshRangeBatchTasks();
             checkCorpusProgress();
             rangeIterState = { running:false, iteration:0, maxIterations:5, stopReq:false, lastResult:null };
             // 首次加载才重置聊天，切 tab 回来保留历史
@@ -15154,6 +17659,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             RE.diffCard.style.display = 'none';
             RE.decomposeCard.style.display = 'none';
             setupRangeEvents();
+            await loadLatestRangeSyncSnapshot();
         }
 
         let _rangeEventsSetup = false;
@@ -15373,14 +17879,16 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 const chatModels = (prov.models || []).filter(m => (m.capability || classifyModelLocal(m.id||m.name||'')) === 'chat');
                 if (chatModels.length === 0) return;
                 const group = document.createElement('optgroup');
-                group.label = prov.name || prov.id;
+                const missingKey = prov.requiresApiKey && !prov.hasApiKey;
+                group.label = `${prov.name || prov.id}${missingKey ? '（缺 API Key）' : ''}`;
                 chatModels.forEach(m => {
                     const rawId = (m.id || m.name || '');
                     const cleanId = rawId.replace(/^\[[^\]]*\]\s*/, '');
                     const val = (prov.id || '') + '||' + cleanId;
                     const opt = document.createElement('option');
                     opt.value = val;
-                    opt.textContent = m.name || m.id || '';
+                    opt.textContent = `${m.name || m.id || ''}${missingKey ? ' · 缺 Key' : ''}`;
+                    if (missingKey) opt.dataset.missingKey = '1';
                     group.appendChild(opt);
                 });
                 mSel.appendChild(group);
@@ -15450,9 +17958,13 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             const sel = prefix === 'opt' ? 'range-opt-provider' : 'range-provider';
             const mSel = prefix === 'opt' ? 'range-opt-model' : 'range-model';
             const pid = document.getElementById(sel).value;
-            if (pid) { const p = rangeModels.providers.find(x=>x.id===pid); if (p) { o.baseUrl = p.baseUrl; o.apiKey = p.apiKey; } }
+            if (pid) o.modelProviderId = pid;
             const m = document.getElementById(mSel).value;
-            if (m) o.model = parseRangeModelValue(m).modelId;
+            if (m) {
+                const parsed = parseRangeModelValue(m);
+                if (parsed.providerId) o.modelProviderId = parsed.providerId;
+                o.model = parsed.modelId;
+            }
             return o;
         }
 
@@ -15522,6 +18034,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
         function resetRangeChat() {
             rangeTestQueue = [];
             rangeTestBusy = false;
+            rangeSingleResults = [];
             rangeIterState.testFailed = false;
             if (rangeAbortController) { rangeAbortController.abort(); rangeAbortController = null; }
             setRangeState('idle', '就绪');
@@ -15588,7 +18101,7 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                     context: rangeFakeHistory.length > 0 ? { recentMessages: rangeFakeHistory } : undefined
                 };
                 const ov = getRangeOverrides();
-                if (ov.baseUrl) body.modelProviderId = RE.provider.value;
+                if (ov.modelProviderId) body.modelProviderId = ov.modelProviderId;
                 if (ov.model) body.model = ov.model;
 
                 const res = await fetch('/api/prompt-range/test', {
@@ -15598,7 +18111,10 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
                 });
                 const data = await res.json();
                 if (!data.success) throw new Error(data.error||'请求失败');
+                data.userMessage = data.userMessage || text;
                 rangeIterState.lastResult = data;
+                pushRangeSingleResult(data);
+                renderRangeObserverBoard();
                 _rangeLastTestScored = false;
                 rangePromptConfig = data.promptConfigSnapshot;
                 if (data.aiResponse) {
@@ -15618,6 +18134,30 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             } catch(e) {
                 if (e.name !== 'AbortError') {
                     const errLabel = rangeErrorLabel(e);
+                    const userMessage = String(text || '').trim();
+                    const errorOutput = `测试失败: ${e.message || errLabel}`;
+                    rangeIterState.lastResult = {
+                        userMessage,
+                        source: 'single',
+                        testFailed: true,
+                        aiResponse: {
+                            text: errorOutput,
+                            reasoningContent: null,
+                            tokenUsage: null,
+                            segments: [{ index: 0, text: errorOutput, qqText: errorOutput, isFirst: true, hasPrefix: false, charCount: errorOutput.length }],
+                            segmentCount: 1
+                        },
+                        stats: {
+                            memoryRecallCount: 0,
+                            worldbookHits: 0,
+                            totalTokenEstimate: 0,
+                            segmentCount: 1
+                        },
+                        segments: [{ kind: 'user_input', content: userMessage }],
+                        trace: buildRangeFailureTrace(userMessage, errLabel, e.message || errLabel)
+                    };
+                    pushRangeSingleResult(rangeIterState.lastResult);
+                    renderRangeObserverBoard();
                     addChatBubble('range-test-chat', 'bot', `❌ ${errLabel}\n${e.message.slice(0, 120)}`, '系统');
                     setRangeState('failed', errLabel);
                     rangeIterState.testFailed = true;
@@ -16376,7 +18916,7 @@ ACTION: DONE
                 noJsonMode: !rangeJsonMode
             };
             const ov = getRangeOverrides('opt');
-            if (ov.baseUrl) body.modelProviderId = RE.optProvider.value;
+            if (ov.modelProviderId) body.modelProviderId = ov.modelProviderId;
             if (ov.model) body.model = ov.model;
 
             const res = await fetch('/api/prompt-range/optimize-step', {
@@ -16813,6 +19353,7 @@ ACTION: DONE
                 updatedAt: Date.now(),
                 label: deriveRangeSessionLabel(),
                 rounds: rangeIterState.iteration || 0,
+                singleResults: rangeSingleResults,
                 hasError,
                 jsonMode: rangeJsonMode ? true : false,
                 displayModel: activeModel || (activeProviderName ? activeProviderName : ''),
@@ -16874,6 +19415,9 @@ ACTION: DONE
             rangeActiveSessionId = id;
             if (s.chatHtml) RE.testChat.innerHTML = s.chatHtml;
             else resetRangeChat();
+            rangeSingleResults = Array.isArray(s.singleResults) ? s.singleResults : [];
+            rangeIterState.lastResult = rangeSingleResults[rangeSingleResults.length - 1]?.result || null;
+            renderRangeObserverBoard();
             if (s.optHtml) RE.optChat.innerHTML = s.optHtml;
             if (s.character) RE.character.value = s.character;
             if (s.worldbook) RE.worldbook.value = s.worldbook;

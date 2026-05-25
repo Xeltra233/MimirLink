@@ -64,7 +64,7 @@ function isTopicShift(text = '') {
 }
 
 function asksReleaseOldTopic(text = '') {
-    return /(别提|不聊|别聊|停一下|腻了|少用|别再|换话题)/.test(normalizeText(text));
+    return /(别提|不聊|别聊|停一下|腻了|少用|别再|换话题|哪里谈到|哪谈到|谁提|谁说|怎么又|咋又|怎么扯到|咋扯到|刚才有说|前文有说)/.test(normalizeText(text));
 }
 
 function detectIntent({ event, text }) {

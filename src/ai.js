@@ -381,6 +381,18 @@ export class AIClient {
         return `${normalizedBaseUrl}${normalizedPath}`;
     }
 
+    describeNetworkError(error) {
+        const cause = error?.cause || {};
+        const code = cause.code || error?.code || '';
+        const address = cause.address || '';
+        const port = cause.port || '';
+        if (code || address || port) {
+            const target = [address, port].filter(Boolean).join(':');
+            return `连接 AI 服务失败 (${[code, target].filter(Boolean).join(' ')}): ${error.message}`;
+        }
+        return error?.message || '连接 AI 服务失败';
+    }
+
     resolveChatOptions(overrides = {}) {
         return {
             model: overrides.model || this.config.model,
@@ -691,11 +703,16 @@ export class AIClient {
             throw new Error('未配置 AI API URL (baseUrl 或 apiUrl)');
         }
 
-        const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload)
-        });
+        let response;
+        try {
+            response = await fetch(apiUrl, {
+                method: 'POST',
+                headers,
+                body: JSON.stringify(payload)
+            });
+        } catch (error) {
+            throw new Error(this.describeNetworkError(error));
+        }
 
         this.logPipelineStage('收到 chat/completions 响应', {
             status: response.status,

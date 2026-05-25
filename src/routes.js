@@ -118,6 +118,8 @@ const __dirname = path.dirname(__filename);
  * @param {Object} deps - 依赖注入
  */
 export function setupRoutes(app, config, saveConfig, managers) {
+    app.get('/favicon.ico', (req, res) => res.status(204).end());
+
     const sanitizeFilename = (name) => {
         const normalized = String(name || 'unknown')
             .replace(/[<>:"/\\|?*\x00-\x1f]+/g, '_')  // 替换非法字符
@@ -1248,6 +1250,22 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     };
 
+    const stripClientOnlyConfigFlags = (value) => {
+        if (!value || typeof value !== 'object') return value;
+        if (Array.isArray(value)) {
+            value.forEach((item) => stripClientOnlyConfigFlags(item));
+            return value;
+        }
+        delete value.hasApiKey;
+        delete value.hasAccessToken;
+        delete value.passwordSet;
+        delete value.sessionSecretSet;
+        for (const child of Object.values(value)) {
+            stripClientOnlyConfigFlags(child);
+        }
+        return value;
+    };
+
     const normalizeAccessControlConfig = () => {
         config.chat = config.chat || {};
         const mode = config.chat.accessControlMode || 'allowlist';
@@ -1455,6 +1473,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
 	app.post('/api/config', requireAuth, async (req, res) => {
 		try {
 			const newConfig = req.body;
+            stripClientOnlyConfigFlags(newConfig);
 
 			if (newConfig?.onebot?.accessToken === '******') {
 				delete newConfig.onebot.accessToken;
@@ -1536,6 +1555,128 @@ export function setupRoutes(app, config, saveConfig, managers) {
         return new Set(selected.length > 0 ? selected : BACKUP_CATEGORIES);
     }
 
+    const REGEX_RULES_SNAPSHOT_FILE = '_regex_rules_snapshot.json';
+
+    function hasRegexArray(value) {
+        return Array.isArray(value);
+    }
+
+    function hasConfigRegexData(configLike = {}) {
+        if (
+            (configLike.regex && typeof configLike.regex === 'object')
+            || hasRegexArray(configLike.preset?.regexRules)
+        ) {
+            return true;
+        }
+        if (hasRegexArray(configLike.imports?.regexFiles)) {
+            return true;
+        }
+        if (hasRegexArray(configLike.bindings?.global?.regexRules) || hasRegexArray(configLike.bindings?.global?.preset?.regexRules)) {
+            return true;
+        }
+        const characters = configLike.bindings?.characters || {};
+        return Object.values(characters).some((binding) => (
+            hasRegexArray(binding?.regexRules)
+            || hasRegexArray(binding?.preset?.regexRules)
+            || hasRegexArray(binding?.importedFromCard?.regexRules)
+        ));
+    }
+
+    function buildRegexBackupSnapshot(configLike = {}) {
+        const characters = {};
+        for (const [name, binding] of Object.entries(configLike.bindings?.characters || {})) {
+            characters[name] = {
+                regexRules: cloneImportSnapshot(Array.isArray(binding?.regexRules) ? binding.regexRules : null),
+                presetRegexRules: cloneImportSnapshot(Array.isArray(binding?.preset?.regexRules) ? binding.preset.regexRules : null),
+                importedFromCardRegexRules: cloneImportSnapshot(Array.isArray(binding?.importedFromCard?.regexRules) ? binding.importedFromCard.regexRules : null)
+            };
+        }
+        return {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            regex: cloneImportSnapshot(configLike.regex && typeof configLike.regex === 'object' ? configLike.regex : null),
+            presetRegexRules: cloneImportSnapshot(Array.isArray(configLike.preset?.regexRules) ? configLike.preset.regexRules : null),
+            globalRegexRules: cloneImportSnapshot(Array.isArray(configLike.bindings?.global?.regexRules) ? configLike.bindings.global.regexRules : null),
+            globalPresetRegexRules: cloneImportSnapshot(Array.isArray(configLike.bindings?.global?.preset?.regexRules) ? configLike.bindings.global.preset.regexRules : null),
+            characters,
+            importsRegexFiles: cloneImportSnapshot(Array.isArray(configLike.imports?.regexFiles) ? configLike.imports.regexFiles : [])
+        };
+    }
+
+    function applyMaybeArray(target, key, value) {
+        if (Array.isArray(value)) {
+            target[key] = cloneImportSnapshot(value);
+        } else {
+            delete target[key];
+        }
+    }
+
+    function applyRegexBackupSnapshot(snapshot = {}, changes) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            changes.skipped.push('正则规则快照 (格式无效)');
+            return false;
+        }
+
+        ensureBindingConfig();
+        ensureImportsConfig();
+
+        if (snapshot.regex && typeof snapshot.regex === 'object') {
+            config.regex = cloneImportSnapshot(snapshot.regex);
+        } else {
+            delete config.regex;
+        }
+
+        config.preset = config.preset && typeof config.preset === 'object' ? config.preset : {};
+        applyMaybeArray(config.preset, 'regexRules', snapshot.presetRegexRules);
+
+        applyMaybeArray(config.bindings.global, 'regexRules', snapshot.globalRegexRules);
+        if (Array.isArray(snapshot.globalPresetRegexRules)) {
+            config.bindings.global.preset = config.bindings.global.preset && typeof config.bindings.global.preset === 'object'
+                ? config.bindings.global.preset
+                : {};
+            config.bindings.global.preset.regexRules = cloneImportSnapshot(snapshot.globalPresetRegexRules);
+        } else if (config.bindings.global.preset && typeof config.bindings.global.preset === 'object') {
+            delete config.bindings.global.preset.regexRules;
+        }
+
+        const snapshotCharacters = snapshot.characters && typeof snapshot.characters === 'object' ? snapshot.characters : {};
+        for (const [name, characterSnapshot] of Object.entries(snapshotCharacters)) {
+            const binding = getCharacterBinding(name);
+            applyMaybeArray(binding, 'regexRules', characterSnapshot?.regexRules);
+            if (Array.isArray(characterSnapshot?.presetRegexRules)) {
+                binding.preset = binding.preset && typeof binding.preset === 'object' ? binding.preset : {};
+                binding.preset.regexRules = cloneImportSnapshot(characterSnapshot.presetRegexRules);
+            } else if (binding.preset && typeof binding.preset === 'object') {
+                delete binding.preset.regexRules;
+            }
+            if (Array.isArray(characterSnapshot?.importedFromCardRegexRules)) {
+                binding.importedFromCard = binding.importedFromCard && typeof binding.importedFromCard === 'object' ? binding.importedFromCard : {};
+                binding.importedFromCard.regexRules = cloneImportSnapshot(characterSnapshot.importedFromCardRegexRules);
+            } else if (binding.importedFromCard && typeof binding.importedFromCard === 'object') {
+                delete binding.importedFromCard.regexRules;
+            }
+        }
+
+        config.imports.regexFiles = cloneImportSnapshot(Array.isArray(snapshot.importsRegexFiles) ? snapshot.importsRegexFiles : []);
+        changes.replaced.push('正则规则快照');
+        return true;
+    }
+
+    function mergeImportedRulesIntoTarget(targetLayer, importedRules, changes) {
+        if (!Array.isArray(importedRules) || importedRules.length === 0) {
+            return 0;
+        }
+        const targetRules = getRegexTargetRules(targetLayer || 'global');
+        if (!targetRules) {
+            changes.skipped.push(`正则导入规则 (${targetLayer || 'global'} 层无可写目标)`);
+            return 0;
+        }
+        const existing = new Set(targetRules.map((rule) => stableStringify(rule)));
+        const nextRules = importedRules.filter((rule) => !existing.has(stableStringify(rule)));
+        targetRules.push(...cloneImportSnapshot(nextRules));
+        return nextRules.length;
+    }
+
     app.get('/api/config/backup', requireAuth, async (req, res) => {
         const tmpDir = path.join(__dirname, '..', 'data', '_backup_tmp');
         const includeKeys = req.query.includeKeys === 'true';
@@ -1588,11 +1729,14 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             }
             // regex 导入文件备份（从 config.imports.regexFiles 提取）
-            if (categories.has('regex') && config.imports?.regexFiles?.length > 0) {
+            if (categories.has('regex')) {
+                const snapshot = buildRegexBackupSnapshot(config);
+                fsSync.writeFileSync(path.join(tmpDataDir, REGEX_RULES_SNAPSHOT_FILE), JSON.stringify(snapshot, null, 2), 'utf8');
+
                 const regexBackupDir = path.join(tmpDataDir, '_regex_imports');
                 fsSync.mkdirSync(regexBackupDir, { recursive: true });
                 const manifest = [];
-                for (const record of config.imports.regexFiles) {
+                for (const record of config.imports?.regexFiles || []) {
                     if (record.id && (record.rules || record.importedRules)) {
                         const filename = `${record.id}.json`;
                         fsSync.writeFileSync(path.join(regexBackupDir, filename), JSON.stringify(record, null, 2), 'utf8');
@@ -1636,13 +1780,17 @@ export function setupRoutes(app, config, saveConfig, managers) {
             });
 
             const found = [];
-            if (fsSync.existsSync(path.join(tmpDir, 'config.json'))) found.push('config');
+            const backupConfigPath = path.join(tmpDir, 'config.json');
+            if (fsSync.existsSync(backupConfigPath)) found.push('config');
             const dataDir = path.join(tmpDir, 'data');
             if (fsSync.existsSync(dataDir)) {
                 for (const [cat, sub] of Object.entries(BACKUP_DATA_SUBDIRS)) {
                     if (sub && fsSync.existsSync(path.join(dataDir, sub))) found.push(cat);
                     if (!sub && cat === 'corpus' && fsSync.existsSync(path.join(dataDir, 'range-corpus.json'))) found.push(cat);
-                    if (!sub && cat === 'regex' && fsSync.existsSync(path.join(dataDir, '_regex_imports'))) found.push(cat);
+                    if (!sub && cat === 'regex' && (
+                        fsSync.existsSync(path.join(dataDir, REGEX_RULES_SNAPSHOT_FILE))
+                        || fsSync.existsSync(path.join(dataDir, '_regex_imports'))
+                    )) found.push(cat);
                 }
             }
             // 如果 config.json 存在, presets 也包含在内
@@ -1650,8 +1798,19 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 if (!found.includes('presets')) found.push('presets');
             }
             // regex 独立检测（不依赖 config.json）
-            if (!found.includes('regex') && fsSync.existsSync(path.join(dataDir, '_regex_imports'))) {
+            if (!found.includes('regex') && fsSync.existsSync(dataDir) && (
+                fsSync.existsSync(path.join(dataDir, REGEX_RULES_SNAPSHOT_FILE))
+                || fsSync.existsSync(path.join(dataDir, '_regex_imports'))
+            )) {
                 found.push('regex');
+            }
+            if (!found.includes('regex') && fsSync.existsSync(backupConfigPath)) {
+                try {
+                    const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+                    if (hasConfigRegexData(backupConfig)) found.push('regex');
+                } catch (configInspectErr) {
+                    logger.warn('[备份检测] config.json 正则检测失败:', configInspectErr.message);
+                }
             }
             // memory 永远单独显示
             if (fsSync.existsSync(path.join(dataDir, 'chats'))) found.push('memory');
@@ -1699,8 +1858,14 @@ export function setupRoutes(app, config, saveConfig, managers) {
             if (categories.has('config')) {
                 const backupConfigPath = path.join(tmpDir, 'config.json');
                 if (fsSync.existsSync(backupConfigPath)) {
+                    const runtimeServerConfig = config.server && typeof config.server === 'object'
+                        ? { ...config.server }
+                        : null;
                     const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
                     const merged = deepMergeConfig(config, backupConfig);
+                    if (runtimeServerConfig) {
+                        merged.server = { ...(merged.server || {}), ...runtimeServerConfig };
+                    }
                     for (const key of Object.keys(merged)) {
                         config[key] = merged[key];
                     }
@@ -1708,23 +1873,6 @@ export function setupRoutes(app, config, saveConfig, managers) {
                         if (!(key in merged)) delete config[key];
                     }
                     saveConfig(config);
-                    const verifyPaths = [
-                        path.join(__dirname, '..', 'config', 'config.json'),
-                        path.join(__dirname, '..', 'config.json')
-                    ];
-                    for (const vp of verifyPaths) {
-                        if (fsSync.existsSync(vp)) {
-                            try {
-                                const verifyConfig = JSON.parse(fsSync.readFileSync(vp, 'utf8'));
-                                for (const key of Object.keys(verifyConfig)) {
-                                    config[key] = verifyConfig[key];
-                                }
-                                break;
-                            } catch (verifyErr) {
-                                logger.warn('[恢复] config 验证读取失败:', verifyErr.message);
-                            }
-                        }
-                    }
                     changes.replaced.push('config.json');
                 }
             } else {
@@ -1745,11 +1893,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     const src = path.join(backupDataDir, sub);
                     const dst = path.join(currentDataDir, sub);
                     if (fsSync.existsSync(src)) {
+                        mergeDirSync(src, dst, new Set(), changes);
                         if (cat === 'memory') {
-                            // 记忆库：保留当前 chats 目录，不覆盖
-                            changes.skipped.push('data/chats (记忆库已保留)');
-                        } else {
-                            mergeDirSync(src, dst, new Set(), changes);
+                            changes.replaced.push('data/chats (记忆库已恢复)');
                         }
                     }
                 }
@@ -1769,17 +1915,42 @@ export function setupRoutes(app, config, saveConfig, managers) {
             // 清理前先处理正则导入文件恢复
             if (categories.has('regex')) {
                 try {
+                    const regexSnapshotPath = path.join(tmpDir, 'data', REGEX_RULES_SNAPSHOT_FILE);
+                    if (fsSync.existsSync(regexSnapshotPath)) {
+                        const snapshot = JSON.parse(fsSync.readFileSync(regexSnapshotPath, 'utf8'));
+                        applyRegexBackupSnapshot(snapshot, changes);
+                        saveConfig(config);
+                    } else {
+                        const backupConfigPath = path.join(tmpDir, 'config.json');
+                        if (fsSync.existsSync(backupConfigPath)) {
+                            const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+                            if (hasConfigRegexData(backupConfig)) {
+                                applyRegexBackupSnapshot(buildRegexBackupSnapshot(backupConfig), changes);
+                                saveConfig(config);
+                            }
+                        }
+                    }
+
                     const regexBackupDir = path.join(tmpDir, 'data', '_regex_imports');
                     if (fsSync.existsSync(regexBackupDir)) {
                         const manifestPath = path.join(regexBackupDir, '_manifest.json');
                         if (fsSync.existsSync(manifestPath)) {
                             const manifest = JSON.parse(fsSync.readFileSync(manifestPath, 'utf8'));
                             const restoredRecords = [];
+                            let restoredRuntimeRules = 0;
                             for (const item of manifest) {
                                 const recordPath = path.join(regexBackupDir, item.filename);
                                 if (fsSync.existsSync(recordPath)) {
                                     const record = JSON.parse(fsSync.readFileSync(recordPath, 'utf8'));
                                     restoredRecords.push(record);
+                                    if (!fsSync.existsSync(regexSnapshotPath)) {
+                                        const targetLayer = record.targetLayer || 'global';
+                                        if (targetLayer === 'character' && !record.characterName) {
+                                            changes.skipped.push(`正则导入规则 ${record.filename || record.id || ''} (缺少角色名，无法安全恢复到角色层)`);
+                                        } else {
+                                            restoredRuntimeRules += mergeImportedRulesIntoTarget(targetLayer, record.importedRules || record.rules || [], changes);
+                                        }
+                                    }
                                 }
                             }
                             if (restoredRecords.length > 0) {
@@ -1788,17 +1959,20 @@ export function setupRoutes(app, config, saveConfig, managers) {
                                 saveConfig(config);
                                 logger.info(`[恢复] 正则导入记录已恢复: ${restoredRecords.length} 条`);
                                 changes.replaced.push(`正则导入记录 (${restoredRecords.length} 条)`);
+                                if (restoredRuntimeRules > 0) {
+                                    changes.merged.push(`正则导入运行规则 (${restoredRuntimeRules} 条)`);
+                                }
                             } else {
                                 logger.warn('[恢复] 正则备份清单为空');
-                                changes.skipped.push('正则导入记录 (备份为空)');
+                                if (!fsSync.existsSync(regexSnapshotPath)) changes.skipped.push('正则导入记录 (备份为空)');
                             }
                         } else {
                             logger.warn('[恢复] 正则备份清单文件不存在');
-                            changes.skipped.push('正则导入记录 (无清单文件)');
+                            if (!fsSync.existsSync(regexSnapshotPath)) changes.skipped.push('正则导入记录 (无清单文件)');
                         }
                     } else {
                         logger.warn('[恢复] 正则备份目录不存在');
-                        changes.skipped.push('正则导入记录 (无备份目录)');
+                        if (!fsSync.existsSync(regexSnapshotPath)) changes.skipped.push('正则导入记录 (无备份目录)');
                     }
                 } catch (regexRestoreErr) {
                     logger.error('[恢复] 正则导入文件恢复失败:', regexRestoreErr.message);
@@ -4036,6 +4210,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
     function stripPresetToPrompts(importedPreset) {
         if (!importedPreset?.prompts) return importedPreset;
         const cleaned = (importedPreset.prompts || []).map(p => ({
+            identifier: String(p.identifier || '').trim(),
             name: String(p.name || '').trim(),
             content: String(p.content || ''),
             enabled: p.enabled !== false,
@@ -4046,7 +4221,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             marker: p.marker === true,
             forbid_overrides: p.forbid_overrides === true
         }));
-        return { prompts: cleaned };
+        return { ...importedPreset, prompts: cleaned };
     }
 
     app.post('/api/preset/import', requireAuth, (req, res) => {
@@ -4301,6 +4476,740 @@ ${promptListText}
     let rangeCorpusStore = { lines: [], stats: null, updatedAt: 0, embeddings: null };
     let corpusEmbedProgress = { running: false, stage: 'idle', currentMessage: '', progressPercent: 0, totalBatches: 0, currentBatch: 0, error: null };
     let corpusEmbedAborted = false;
+    let rangeBatchTaskSeq = 0;
+    const rangeBatchTasks = new Map();
+
+    function createRangeTrace({ mode = 'single', environment = null, message = '', extra = {} } = {}) {
+        const traceStartedAt = Date.now();
+        return {
+            runId: `range-trace-${traceStartedAt}-${Math.random().toString(36).slice(2, 8)}`,
+            mode,
+            environment,
+            message,
+            startedAt: new Date(traceStartedAt).toISOString(),
+            finishedAt: null,
+            durationMs: 0,
+            extra,
+            steps: []
+        };
+    }
+
+    function pushRangeTraceStep(trace, step) {
+        if (!trace || !step) return;
+        trace.steps.push(step);
+    }
+
+    function finishRangeTrace(trace) {
+        if (!trace) return trace;
+        const startedAt = Date.parse(trace.startedAt || new Date().toISOString()) || Date.now();
+        const finishedAt = Date.now();
+        trace.finishedAt = new Date(finishedAt).toISOString();
+        trace.durationMs = Math.max(0, finishedAt - startedAt);
+        return trace;
+    }
+
+    async function measureRangeTraceStep(trace, {
+        id,
+        type,
+        label,
+        summary = '',
+        details = {},
+        skipped = false,
+        action
+    }) {
+        const startedAt = Date.now();
+        const step = {
+            id,
+            type: type || id,
+            label: label || id,
+            status: skipped ? 'skipped' : 'running',
+            startedAt: new Date(startedAt).toISOString(),
+            finishedAt: null,
+            durationMs: 0,
+            summary,
+            details
+        };
+        pushRangeTraceStep(trace, step);
+        if (skipped || typeof action !== 'function') {
+            step.status = skipped ? 'skipped' : 'completed';
+            step.finishedAt = new Date().toISOString();
+            step.durationMs = Date.now() - startedAt;
+            return step;
+        }
+        try {
+            const result = await action(step);
+            step.status = 'completed';
+            step.finishedAt = new Date().toISOString();
+            step.durationMs = Date.now() - startedAt;
+            return { step, result };
+        } catch (error) {
+            step.status = 'failed';
+            step.finishedAt = new Date().toISOString();
+            step.durationMs = Date.now() - startedAt;
+            step.summary = step.summary || '执行失败';
+            step.details = {
+                ...(step.details || {}),
+                error: error.message
+            };
+            throw error;
+        }
+    }
+
+    function normalizeRangeModelId(model = '') {
+        const text = String(model || '').trim();
+        if (!text) return '';
+        return text.includes('||') ? text.split('||').pop() : text;
+    }
+
+    function resolveRangeModelSelection({ modelProviderId = '', model = '' } = {}) {
+        const providerId = String(modelProviderId || config.chat?.modelProviderId || config.ai?.activeProviderId || '').trim();
+        const requestedModel = normalizeRangeModelId(model || config.chat?.model || config.ai?.model || '');
+        const provider = providerId
+            ? (config.ai?.providers || []).find((item) => item?.id === providerId)
+            : null;
+        const baseUrl = provider?.baseUrl || config.ai?.baseUrl || '';
+        const apiKey = provider?.apiKey || ((providerId === config.ai?.activeProviderId || providerId === 'default') ? config.ai?.apiKey : '') || config.ai?.apiKey || '';
+        return {
+            provider,
+            providerId,
+            model: requestedModel || provider?.model || config.ai?.model || '',
+            baseUrl,
+            apiKey
+        };
+    }
+
+    function isLocalAIEndpoint(baseUrl = '') {
+        const text = String(baseUrl || '').trim().toLowerCase();
+        return /^https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(?::|\/|$)/.test(text);
+    }
+
+    function requiresRangeApiKey(provider, baseUrl = '') {
+        if (String(provider?.provider || '').toLowerCase() === 'ollama') return false;
+        if (isLocalAIEndpoint(baseUrl)) return false;
+        return true;
+    }
+
+    function assertRangeAIReady(selection) {
+        const baseUrl = String(selection?.baseUrl || '').trim();
+        if (!baseUrl) {
+            throw new Error('模型供应商未配置 Base URL，请先在配置页补全');
+        }
+        if (requiresRangeApiKey(selection?.provider, baseUrl) && !selection?.apiKey) {
+            const providerLabel = selection?.provider?.name || selection?.providerId || '当前模型供应商';
+            throw new Error(`${providerLabel} 未配置 API Key，请先在配置页保存该供应商的真实密钥`);
+        }
+    }
+
+    function describeRangeNetworkError(error) {
+        const cause = error?.cause || {};
+        const code = cause.code || error?.code || '';
+        const address = cause.address || '';
+        const port = cause.port || '';
+        if (code || address || port) {
+            const target = [address, port].filter(Boolean).join(':');
+            return `连接 AI 服务失败 (${[code, target].filter(Boolean).join(' ')}): ${error.message}`;
+        }
+        return error?.message || '连接 AI 服务失败';
+    }
+
+    function buildRangeAIOverrides({ modelProviderId = '', model = '', baseUrl = '', apiKey = '' } = {}) {
+        const selection = resolveRangeModelSelection({ modelProviderId, model });
+        const overrides = {
+            provider: selection.provider,
+            providerId: selection.providerId || '',
+            providerName: selection.provider?.name || '',
+            model: normalizeRangeModelId(model) || selection.model || '',
+            baseUrl: baseUrl || selection.baseUrl || '',
+            apiKey: apiKey || selection.apiKey || ''
+        };
+        assertRangeAIReady(overrides);
+        return overrides;
+    }
+
+    function buildRangeInputHeader({ messageType = 'group', groupId = '', userId = '', groupName = '', userName = '' } = {}) {
+        const isGroup = messageType === 'group';
+        return [
+            isGroup ? '群聊' : '私聊',
+            `QQ:${userId || 'range-user'}`,
+            `昵称:${userName || '靶场用户'}`,
+            `群号:${isGroup ? (groupId || '_range_group_') : 'N/A'}`,
+            `群名:${isGroup ? (groupName || '靶场测试群') : 'N/A'}`,
+            'eventType:range_test'
+        ].join('|');
+    }
+
+    function compactRangeMessages(messages = [], limit = 3000) {
+        return (Array.isArray(messages) ? messages : []).map((message, index) => {
+            const content = typeof message?.content === 'string' ? message.content : '';
+            return {
+                index,
+                role: message?.role || 'unknown',
+                content: content.length > limit
+                    ? `${content.slice(0, Math.floor(limit / 2))}\n...（截断，共${content.length}字）...\n${content.slice(-Math.floor(limit / 2))}`
+                    : content,
+                meta: message?.meta || {}
+            };
+        });
+    }
+
+    function buildRangeMessageTrace(messages = [], messageTrace = []) {
+        return compactRangeMessages(messages, 600).map((message, index) => {
+            const trace = Array.isArray(messageTrace) ? messageTrace[index] || {} : {};
+            return {
+                index,
+                role: message.role,
+                source: message.meta?.source || null,
+                sourceId: message.meta?.sourceId || null,
+                sourceStages: trace.sourceStages || [],
+                sourceIds: trace.sourceIds || [],
+                sourceSlots: trace.sourceSlots || [],
+                contentLength: String(message.content || '').length,
+                contentPreview: String(message.content || '').slice(0, 300)
+            };
+        });
+    }
+
+    function buildRangeObservation({
+        inputHeader = '',
+        userMessage = '',
+        context = {},
+        built = null,
+        recalledEntries = [],
+        aiResponse = null,
+        regexTrace = null,
+        finalReply = ''
+    } = {}) {
+        const fakeHistory = Array.isArray(context?.recentMessages) ? context.recentMessages : [];
+        const messages = compactRangeMessages(built?.messages || []);
+        const messageTrace = buildRangeMessageTrace(built?.messages || [], built?.messageTrace || []);
+        const currentMessageFocus = messages.find((message) => message.meta?.source === 'current_message_focus') || null;
+        return {
+            inputHeader,
+            userMessage,
+            fakeHistory,
+            fakeHistoryCount: fakeHistory.length,
+            prompt: {
+                messages,
+                messageTrace,
+                runtimeSources: built?.runtimeSources || [],
+                currentMessageFocus,
+                worldBookEntries: built?.worldBookEntries || [],
+                recalledEntries
+            },
+            reasoningContent: aiResponse?.reasoningContent || null,
+            rawReply: aiResponse?.rawReply || aiResponse?.rawContent || '',
+            regexProcessedReply: aiResponse?.regexProcessedReply || '',
+            cleanedReply: aiResponse?.text || '',
+            finalReply: finalReply || aiResponse?.finalReply || aiResponse?.text || '',
+            finalMessages: aiResponse?.segments || [],
+            regexTrace
+        };
+    }
+
+    async function runRangePromptTest(payload = {}, options = {}) {
+        const {
+            userMessage, characterName, messageType = 'group',
+            groupId = '', userId = '',
+            modelProviderId, model,
+            worldbookName, presetId,
+            context = {},
+            contextConfig: contextOverrides = {},
+            injectVariables = true,
+            injectProfiles = true
+        } = payload || {};
+
+        const trace = createRangeTrace({
+            mode: options.mode || 'single',
+            environment: options.environment || null,
+            message: String(userMessage || '').trim(),
+            extra: {
+                messageType,
+                modelProviderId: modelProviderId || null,
+                model: model || null
+            }
+        });
+
+        const normalizedMessage = String(userMessage || '').trim();
+        if (!normalizedMessage) {
+            const error = new Error('请提供测试消息');
+            error.statusCode = 400;
+            throw error;
+        }
+
+        let savedContextConfig = null;
+        let resolvedCharacterName = '';
+        let resolvedInputs = null;
+        let recallNamespace = null;
+        let recalledEntries = [];
+        let built = null;
+        let aiResponse = null;
+        let regexTrace = null;
+        const inputHeader = buildRangeInputHeader(payload);
+
+        pushRangeTraceStep(trace, {
+            id: 'input',
+            type: 'input',
+            label: '输入',
+            status: 'completed',
+            startedAt: trace.startedAt,
+            finishedAt: trace.startedAt,
+            durationMs: 0,
+            summary: `消息 ${normalizedMessage.length} 字`,
+            details: {
+                messageType,
+                inputHeader,
+                characterName: characterName || '',
+                worldbookName: worldbookName || '',
+                presetId: presetId || '',
+                messagePreview: normalizedMessage.slice(0, 160)
+            }
+        });
+
+        try {
+            savedContextConfig = promptBuilder.contextConfig;
+            if (Object.keys(contextOverrides).length > 0) {
+                promptBuilder.updateConfig({ ...config, context: {
+                    enabled: contextOverrides.enabled !== undefined ? contextOverrides.enabled : config.context?.enabled,
+                    includeSessionFacts: contextOverrides.includeSessionFacts !== undefined ? contextOverrides.includeSessionFacts : config.context?.includeSessionFacts,
+                    includeParticipants: contextOverrides.includeParticipants !== undefined ? contextOverrides.includeParticipants : config.context?.includeParticipants,
+                    includeReplyReference: contextOverrides.includeReplyReference !== undefined ? contextOverrides.includeReplyReference : config.context?.includeReplyReference,
+                    includeRecentUserIntent: contextOverrides.includeRecentUserIntent !== undefined ? contextOverrides.includeRecentUserIntent : config.context?.includeRecentUserIntent
+                }});
+            }
+
+            resolvedCharacterName = characterName || config.chat?.defaultCharacter || '';
+            resolvedInputs = resolveChatRuntimeInputs({
+                characterName: resolvedCharacterName, config, characterManager, worldBookManager
+            });
+
+            if (worldbookName) {
+                const overrideWb = worldBookManager.readWorldBook(worldbookName);
+                if (overrideWb) resolvedInputs.worldBook = overrideWb;
+            }
+
+            if (presetId && Array.isArray(config.imports?.presetFiles)) {
+                const importRecord = config.imports.presetFiles.find(r => r?.id === presetId);
+                if (importRecord?.importedPreset) {
+                    resolvedInputs.preset = PromptBuilder.normalizePreset(importRecord.importedPreset);
+                }
+            }
+
+            recallNamespace = {
+                scopeType: messageType === 'group' ? 'group' : 'private',
+                scopeKey: messageType === 'group' ? String(groupId || '_test_') : String(userId || '_test_'),
+                characterName: resolvedCharacterName,
+                presetName: resolvedInputs.preset?.name || ''
+            };
+
+            await measureRangeTraceStep(trace, {
+                id: 'memory-recall',
+                type: 'memory_recall',
+                label: '记忆召回',
+                summary: '检索相关长期记忆',
+                details: {
+                    scopeType: recallNamespace.scopeType,
+                    scopeKey: recallNamespace.scopeKey,
+                    characterName: recallNamespace.characterName,
+                    presetName: recallNamespace.presetName
+                },
+                action: async (step) => {
+                    try {
+                        recalledEntries = sessionManager.recallMemory(recallNamespace, normalizedMessage, {
+                            recentLimit: 4, searchLimit: 4, summaryLimit: 3, fixedLimit: 6
+                        });
+                        step.summary = `命中 ${recalledEntries.length} 条记忆`;
+                        step.details = {
+                            ...step.details,
+                            count: recalledEntries.length,
+                            items: recalledEntries.slice(0, 6).map((entry, index) => ({
+                                index,
+                                type: entry?.type || '',
+                                content: String(entry?.content || '').slice(0, 160),
+                                score: entry?.score ?? null
+                            }))
+                        };
+                    } catch (e) {
+                        logger.warn('[靶场] 记忆召回失败', e.message);
+                        recalledEntries = [];
+                        step.summary = '记忆召回失败，已回退为空';
+                        step.details = {
+                            ...step.details,
+                            error: e.message,
+                            count: 0,
+                            items: []
+                        };
+                    }
+                }
+            });
+
+            await measureRangeTraceStep(trace, {
+                id: 'prompt-build',
+                type: 'prompt_build',
+                label: 'Prompt 拼装',
+                summary: '构建系统段、历史段和输入段',
+                details: {
+                    contextOverrideEnabled: Object.keys(contextOverrides).length > 0,
+                    historyMessageCount: Array.isArray(context?.recentMessages) ? context.recentMessages.length : 0,
+                    summaryCount: Array.isArray(context?.summaries) ? context.summaries.length : 0
+                },
+                action: async (step) => {
+                    built = await promptBuilder.build(
+                        resolvedCharacterName, normalizedMessage,
+                        context || { recentMessages: [], summaries: [] },
+                        new Set(),
+                        {
+                            sessionId: `range_${Date.now()}`,
+                            messageType,
+                            messageCount: 1,
+                            recalledEntries,
+                            participants: [],
+                            injectionRisk: null,
+                            replyReference: null
+                        },
+                        { character: resolvedInputs.character, worldBook: resolvedInputs.worldBook, presetConfig: resolvedInputs.preset }
+                    );
+                    const comp = built.runtimeComposition || {};
+                    const systemSegmentCount = Array.isArray(comp.systemSegments) ? comp.systemSegments.length : 0;
+                    const historyMessageCount = Array.isArray(comp.historyMessages) ? comp.historyMessages.length : 0;
+                    const postHistorySegmentCount = Array.isArray(comp.postHistorySegments) ? comp.postHistorySegments.length : 0;
+                    const assistantPrefillCount = Array.isArray(comp.assistantPrefillSegments) ? comp.assistantPrefillSegments.length : 0;
+                    step.summary = `${built.messages?.length || 0} 条消息 / 约 ${estimateTokenCount(JSON.stringify(built.messages || [])).toString()} token`;
+                    step.details = {
+                        ...step.details,
+                        systemSegmentCount,
+                        historyMessageCount,
+                        postHistorySegmentCount,
+                        assistantPrefillCount,
+                        worldbookHits: (built.worldBookEntries || []).length
+                    };
+                }
+            });
+
+            if (Object.keys(contextOverrides).length > 0 && savedContextConfig) {
+                promptBuilder.contextConfig = savedContextConfig;
+            }
+
+            await measureRangeTraceStep(trace, {
+                id: 'variable-inject',
+                type: 'variable_inject',
+                label: '变量注入',
+                summary: injectVariables ? '注入变量状态并解析宏' : '已禁用变量注入',
+                details: {
+                    enabled: injectVariables,
+                    scopeType: recallNamespace.scopeType,
+                    scopeKey: recallNamespace.scopeKey
+                },
+                skipped: !injectVariables,
+                action: async (step) => {
+                    const { buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
+                    const scopeOpts = {
+                        scopeType: recallNamespace.scopeType,
+                        scopeKey: recallNamespace.scopeKey,
+                        characterName: recallNamespace.characterName,
+                        presetName: recallNamespace.presetName
+                    };
+                    let macroResolvedCount = 0;
+                    for (const msg of built.messages) {
+                        if (typeof msg.content === 'string') {
+                            const before = msg.content;
+                            msg.content = resolveVariableMacros(msg.content, sessionManager, scopeOpts);
+                            if (msg.content !== before) macroResolvedCount += 1;
+                        }
+                    }
+                    const statusBlock = buildVariableStatusBlock(sessionManager, scopeOpts);
+                    if (statusBlock) {
+                        const sysIdx = built.messages.findIndex(m => m.role === 'system');
+                        if (sysIdx >= 0) built.messages[sysIdx].content += '\n' + statusBlock;
+                        else built.messages.unshift({ role: 'system', content: statusBlock });
+                    }
+                    step.summary = statusBlock ? `已注入状态块，解析 ${macroResolvedCount} 条宏` : `无状态块，解析 ${macroResolvedCount} 条宏`;
+                    step.details = {
+                        ...step.details,
+                        macroResolvedCount,
+                        statusBlockPreview: statusBlock ? statusBlock.slice(0, 200) : ''
+                    };
+                }
+            });
+
+            await measureRangeTraceStep(trace, {
+                id: 'profile-inject',
+                type: 'profile_inject',
+                label: '档案注入',
+                summary: injectProfiles ? '注入参与者档案摘要' : '已禁用档案注入',
+                details: {
+                    enabled: injectProfiles
+                },
+                skipped: !injectProfiles,
+                action: async (step) => {
+                    const profiles = sessionManager?.listParticipantProfiles?.(10) || [];
+                    if (profiles.length > 0) {
+                        const profileText = profiles.map(p => `[档案:${p.participantName || p.title}]\n${(p.content || '').slice(0, 300)}`).join('\n\n');
+                        const sysIdx = built.messages.findIndex(m => m.role === 'system');
+                        if (sysIdx >= 0) built.messages[sysIdx].content += '\n' + profileText;
+                        step.summary = `注入 ${profiles.length} 份档案摘要`;
+                        step.details = {
+                            ...step.details,
+                            profileCount: profiles.length,
+                            names: profiles.slice(0, 10).map((p) => p.participantName || p.title || '未命名')
+                        };
+                    } else {
+                        step.summary = '无可注入档案';
+                        step.details = {
+                            ...step.details,
+                            profileCount: 0,
+                            names: []
+                        };
+                    }
+                }
+            });
+
+            const comp = built.runtimeComposition;
+            const segments = [];
+            const pushSegment = (seg) => {
+                if (!seg || !seg.content) return;
+                segments.push({
+                    id: seg.id || '', kind: seg.kind || 'unknown',
+                    label: seg.label || '', content: seg.content,
+                    order: seg.order || 0, stage: seg.stage || '',
+                    meta: seg.meta || {}, tokenEstimate: estimateTokenCount(seg.content)
+                });
+            };
+            for (const seg of (comp.systemSegments || [])) pushSegment(seg);
+            for (const msg of (comp.historyMessages || [])) {
+                segments.push({
+                    id: msg.meta?.sourceId || `history-${segments.length}`,
+                    kind: 'history_message',
+                    label: `历史消息 (${msg.role || 'unknown'})`,
+                    content: msg.content, order: 90, stage: 'history',
+                    meta: msg.meta || {}, tokenEstimate: estimateTokenCount(msg.content)
+                });
+            }
+            for (const seg of (comp.postHistorySegments || [])) pushSegment(seg);
+            pushSegment(comp.currentMessageFocusSegment);
+            segments.push({
+                id: 'user-input', kind: 'user_input', label: '当前用户输入',
+                content: normalizedMessage, order: 130, stage: 'input',
+                meta: {}, tokenEstimate: estimateTokenCount(normalizedMessage)
+            });
+            for (const seg of (comp.assistantPrefillSegments || [])) pushSegment(seg);
+
+            const stats = {
+                totalTokenEstimate: segments.reduce((s, sg) => s + (sg.tokenEstimate || 0), 0),
+                segmentCount: segments.length,
+                worldbookHits: (built.worldBookEntries || []).length,
+                memoryRecallCount: recalledEntries.length,
+                messageCount: built.messages?.length || 0
+            };
+
+            if (payload.includeAIResponse) {
+                let debugPayload = null;
+                let provider = null;
+                await measureRangeTraceStep(trace, {
+                    id: 'ai-request',
+                    type: 'ai_request',
+                    label: '模型请求',
+                    summary: '向模型发送对话请求',
+                    details: {
+                        requestedProviderId: modelProviderId || '',
+                        requestedModel: model || ''
+                    },
+                    action: async (step) => {
+                        const selection = resolveRangeModelSelection({ modelProviderId, model });
+                        provider = selection.provider;
+
+                        const debugBaseUrl = String(selection.baseUrl || '').replace(/\/+$/, '');
+                        const debugApiKey = selection.apiKey || '';
+                        const debugModel = selection.model;
+                        debugPayload = {
+                            model: debugModel,
+                            messages: built.messages,
+                            max_tokens: config.ai?.maxTokens,
+                            temperature: config.ai?.temperature,
+                            stream: false
+                        };
+                        step.summary = `${provider?.name || selection.providerId || '默认 provider'} / ${debugModel || '未指定模型'}`;
+                        step.details = {
+                            ...step.details,
+                            providerName: provider?.name || '',
+                            providerId: selection.providerId || '',
+                            model: debugModel || '',
+                            endpoint: debugBaseUrl,
+                            messageCount: built.messages.length,
+                            hasApiKey: !!debugApiKey
+                        };
+                        assertRangeAIReady(selection);
+
+                        let upstreamResponse = null;
+                        try {
+                            upstreamResponse = await fetch(`${debugBaseUrl}/chat/completions`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    ...(debugApiKey ? { Authorization: `Bearer ${debugApiKey}` } : {})
+                                },
+                                body: JSON.stringify(debugPayload)
+                            });
+                        } catch (error) {
+                            throw new Error(describeRangeNetworkError(error));
+                        }
+                        const upstreamRawText = await upstreamResponse.text();
+                        let upstreamParsed = null;
+                        try {
+                            upstreamParsed = JSON.parse(upstreamRawText);
+                        } catch {}
+                        if (!upstreamResponse.ok) {
+                            const upstreamError = upstreamParsed?.error?.message
+                                || upstreamParsed?.message
+                                || upstreamRawText
+                                || upstreamResponse.statusText
+                                || '上游模型请求失败';
+                            throw new Error(`模型请求失败 (${upstreamResponse.status}): ${String(upstreamError).slice(0, 500)}`);
+                        }
+                        const upstreamMessage = upstreamParsed?.choices?.[0]?.message || {};
+                        const rawText = aiClient.extractTextContent(upstreamMessage.content) || '';
+                        const { extractTaggedContent, extractVisibleContent } = await import('./variable-bridge.js');
+                        const visibleText = extractVisibleContent(rawText);
+                        const regexResult = typeof regexProcessor?.processOutputWithTrace === 'function'
+                            ? regexProcessor.processOutputWithTrace(visibleText)
+                            : { text: typeof regexProcessor?.processOutput === 'function' ? regexProcessor.processOutput(visibleText) : visibleText, trace: null };
+                        const regexProcessedText = regexResult?.text ?? visibleText;
+                        regexTrace = regexResult?.trace || null;
+                        let cleanedText = regexProcessedText;
+                        try {
+                            const { stripInternalTags } = await import('./variable-bridge.js');
+                            const beforeCleanup = cleanedText;
+                            cleanedText = stripInternalTags(cleanedText);
+                            regexTrace = {
+                                output: regexTrace,
+                                cleanup: {
+                                    beforeLength: beforeCleanup.length,
+                                    afterLength: cleanedText.length,
+                                    changed: beforeCleanup !== cleanedText
+                                }
+                            };
+                        } catch {}
+                        const reasoningContent = extractTaggedContent(rawText, 'thinking') || aiClient.extractTextContent(upstreamMessage.reasoning_content) || null;
+                        if (!cleanedText && !reasoningContent) {
+                            throw new Error(`模型返回空回复: ${String(upstreamRawText || '').slice(0, 500)}`);
+                        }
+                        const splitEnabled = config.chat.splitMessage !== false;
+                        const mentionPrefix = messageType === 'group' && config.chat.mentionSenderOnReply !== false ? `[CQ:at,qq=${userId || '000000'}] ` : '';
+                        const rawSegments = splitEnabled
+                            ? cleanedText.split(/\n\n+/).filter(s => s.trim())
+                            : [cleanedText];
+                        const qqSegments = rawSegments.map((seg, idx) => ({
+                            index: idx,
+                            text: seg.trim(),
+                            qqText: idx === 0 ? `${mentionPrefix}${seg.trim()}` : seg.trim(),
+                            isFirst: idx === 0,
+                            hasPrefix: idx === 0 && !!mentionPrefix,
+                            charCount: seg.trim().length
+                        }));
+                        aiResponse = {
+                            text: cleanedText,
+                            rawReply: rawText,
+                            regexProcessedReply: regexProcessedText,
+                            finalReply: cleanedText,
+                            reasoningContent,
+                            rawReasoningContent: upstreamMessage.reasoning_content ?? null,
+                            rawContent: upstreamMessage.content ?? null,
+                            rawMessage: upstreamMessage,
+                            rawResponse: upstreamParsed,
+                            rawResponseText: upstreamRawText,
+                            usage: aiClient.getTokenStats(),
+                            segments: qqSegments,
+                            segmentCount: qqSegments.length,
+                            splitConfig: { splitEnabled, mentionPrefix: !!mentionPrefix, segmentDelayMs: config.chat.segmentDelayMs ?? 300 }
+                        };
+                    }
+                });
+
+                await measureRangeTraceStep(trace, {
+                    id: 'ai-response',
+                    type: 'ai_response',
+                    label: 'AI 回复',
+                    summary: aiResponse?.text ? `${aiResponse.text.length} 字回复` : '无回复',
+                    details: {
+                        reasoningLength: aiResponse?.reasoningContent?.length || 0,
+                        tokenUsage: aiResponse?.usage || null,
+                        preview: aiResponse?.text ? aiResponse.text.slice(0, 240) : ''
+                    },
+                    action: async () => null
+                });
+
+                await measureRangeTraceStep(trace, {
+                    id: 'qq-split',
+                    type: 'qq_split',
+                    label: 'QQ 分段',
+                    summary: `拆成 ${aiResponse?.segmentCount || 0} 段`,
+                    details: {
+                        splitEnabled: aiResponse?.splitConfig?.splitEnabled || false,
+                        mentionPrefix: aiResponse?.splitConfig?.mentionPrefix || false,
+                        segmentDelayMs: aiResponse?.splitConfig?.segmentDelayMs || 0,
+                        segments: (aiResponse?.segments || []).map((segment) => ({
+                            index: segment.index,
+                            charCount: segment.charCount,
+                            hasPrefix: segment.hasPrefix,
+                            preview: String(segment.text || '').slice(0, 120)
+                        }))
+                    },
+                    action: async () => null
+                });
+            }
+
+            finishRangeTrace(trace);
+            const observation = buildRangeObservation({
+                inputHeader,
+                userMessage: normalizedMessage,
+                context,
+                built,
+                recalledEntries,
+                aiResponse,
+                regexTrace,
+                finalReply: aiResponse?.finalReply || aiResponse?.text || ''
+            });
+            return {
+                success: true,
+                character: { name: built.character?.name || resolvedCharacterName },
+                worldBook: resolvedInputs.worldBook ? { name: resolvedInputs.worldBook.name || null } : null,
+                segments,
+                stats,
+                bindingTrace: resolvedInputs.bindingTrace,
+                aiResponse,
+                inputHeader,
+                fakeHistory: observation.fakeHistory,
+                fakeHistoryCount: observation.fakeHistoryCount,
+                messages: observation.prompt.messages,
+                messageTrace: observation.prompt.messageTrace,
+                prompt: observation.prompt,
+                reasoningContent: observation.reasoningContent,
+                rawReply: observation.rawReply,
+                regexProcessedReply: observation.regexProcessedReply,
+                cleanedReply: observation.cleanedReply,
+                finalReply: observation.finalReply,
+                finalMessages: observation.finalMessages,
+                regexTrace: observation.regexTrace,
+                observation,
+                promptConfigSnapshot: resolvedInputs.preset,
+                contextConfig: {
+                    enabled: promptBuilder.contextConfig?.enabled !== false,
+                    includeSessionFacts: promptBuilder.contextConfig?.includeSessionFacts !== false,
+                    includeParticipants: promptBuilder.contextConfig?.includeParticipants !== false,
+                    includeReplyReference: promptBuilder.contextConfig?.includeReplyReference !== false,
+                    includeRecentUserIntent: promptBuilder.contextConfig?.includeRecentUserIntent !== false
+                },
+                trace
+            };
+        } catch (error) {
+            finishRangeTrace(trace);
+            error.rangeTrace = trace;
+            throw error;
+        } finally {
+            if (Object.keys(contextOverrides).length > 0 && savedContextConfig) {
+                promptBuilder.contextConfig = savedContextConfig;
+            }
+        }
+    }
 
     // 启动时从磁盘加载语料和嵌入
     (() => {
@@ -4431,261 +5340,333 @@ ${promptListText}
         return 'chat';
     }
 
+    const RANGE_SYNC_HISTORY_LIMIT = 50;
+
+    function getRangeSyncHistoryPath() {
+        const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
+        return path.join(dataDir, 'range-sync-history.json');
+    }
+
+    function getRangeSyncKey(sync = {}) {
+        const payload = sync.payload || sync;
+        return payload?.trace?.runId
+            || payload?.syncedAt
+            || sync.receivedAt
+            || `${payload?.source || sync.source || 'range_sync'}:${payload?.userMessage || ''}:${payload?.reply || ''}`;
+    }
+
+    function mergeRangeSyncHistory(...histories) {
+        const merged = [];
+        const indexByKey = new Map();
+        for (const history of histories) {
+            if (!Array.isArray(history)) continue;
+            for (const item of history) {
+                if (!item?.payload) continue;
+                const key = getRangeSyncKey(item);
+                if (key && indexByKey.has(key)) {
+                    const previousIndex = indexByKey.get(key);
+                    merged.splice(previousIndex, 1);
+                    indexByKey.clear();
+                    merged.forEach((entry, index) => {
+                        const entryKey = getRangeSyncKey(entry);
+                        if (entryKey) indexByKey.set(entryKey, index);
+                    });
+                }
+                if (key) indexByKey.set(key, merged.length);
+                merged.push(item);
+            }
+        }
+        return merged.slice(-RANGE_SYNC_HISTORY_LIMIT);
+    }
+
+    function readRangeSyncHistory() {
+        const inMemory = Array.isArray(config.__rangeSyncHistory)
+            ? config.__rangeSyncHistory.filter((item) => item?.payload)
+            : [];
+        const latest = config.__rangeSyncLatest?.payload ? [config.__rangeSyncLatest] : [];
+        try {
+            const historyPath = getRangeSyncHistoryPath();
+            if (!fsSync.existsSync(historyPath)) {
+                const merged = mergeRangeSyncHistory(inMemory, latest);
+                config.__rangeSyncHistory = merged;
+                config.__rangeSyncLatest = merged[merged.length - 1] || null;
+                return merged;
+            }
+            const parsed = JSON.parse(fsSync.readFileSync(historyPath, 'utf8'));
+            const fileHistory = Array.isArray(parsed) ? parsed.filter((item) => item?.payload) : [];
+            const merged = mergeRangeSyncHistory(fileHistory, inMemory, latest);
+            config.__rangeSyncHistory = merged;
+            config.__rangeSyncLatest = merged[merged.length - 1] || null;
+            return merged;
+        } catch (error) {
+            logger.warn('[靶场] 读取 MCP 同步历史失败', { error: error.message });
+        }
+        const merged = mergeRangeSyncHistory(inMemory, latest);
+        config.__rangeSyncHistory = merged;
+        config.__rangeSyncLatest = merged[merged.length - 1] || null;
+        return merged;
+    }
+
     app.post('/api/prompt-range/test', requireAuth, async (req, res) => {
         try {
+            const result = await runRangePromptTest(req.body || {}, { mode: 'single' });
+            res.json(result);
+        } catch (error) {
+            logger.error('[靶场] 测试失败', error);
+            res.status(error.statusCode || 500).json({
+                success: false,
+                error: error.message,
+                trace: error.rangeTrace || null
+            });
+        }
+    });
+
+    app.get('/api/prompt-range/sync-latest', requireAuth, (req, res) => {
+        const limit = Math.max(1, Math.min(Number(req.query.limit) || 20, RANGE_SYNC_HISTORY_LIMIT));
+        const history = readRangeSyncHistory().slice(-limit);
+        const latest = config.__rangeSyncLatest?.payload
+            ? config.__rangeSyncLatest
+            : (history[history.length - 1] || null);
+        res.json({
+            success: true,
+            latest: latest?.payload ? latest : null,
+            history
+        });
+    });
+
+    app.post('/api/prompt-range/test-batch', requireAuth, async (req, res) => {
+        try {
             const {
-                userMessage, characterName, messageType = 'group',
-                groupId = '', userId = '',
-                modelProviderId, model,
-                worldbookName, presetId,
-                context = {},
-                contextConfig: contextOverrides = {},
-                injectVariables = true,
-                injectProfiles = true
+                messages = [],
+                environments = [],
+                executionMode = 'serial',
+                concurrency = 2,
+                includeAIResponse = true
             } = req.body || {};
 
-            const normalizedMessage = String(userMessage || '').trim();
-            if (!normalizedMessage) {
-                return res.status(400).json({ success: false, error: '请提供测试消息' });
+            const normalizedMessages = Array.isArray(messages)
+                ? messages.map((item) => String(item || '').trim()).filter(Boolean)
+                : [];
+            const normalizedEnvironments = Array.isArray(environments) && environments.length > 0
+                ? environments
+                    .map((env, index) => ({
+                        id: String(env?.id || `env-${index + 1}`),
+                        name: String(env?.name || `环境 ${index + 1}`),
+                        config: env?.config && typeof env.config === 'object' ? env.config : {}
+                    }))
+                : [{ id: 'default', name: '默认环境', config: {} }];
+
+            if (normalizedMessages.length === 0) {
+                return res.status(400).json({ success: false, error: '请至少提供一条测试消息' });
             }
 
-            // 临时覆盖上下文配置以支持靶场开关测试
-            const savedContextConfig = promptBuilder.contextConfig;
-            if (Object.keys(contextOverrides).length > 0) {
-                promptBuilder.updateConfig({ ...config, context: {
-                    enabled: contextOverrides.enabled !== undefined ? contextOverrides.enabled : config.context?.enabled,
-                    includeSessionFacts: contextOverrides.includeSessionFacts !== undefined ? contextOverrides.includeSessionFacts : config.context?.includeSessionFacts,
-                    includeParticipants: contextOverrides.includeParticipants !== undefined ? contextOverrides.includeParticipants : config.context?.includeParticipants,
-                    includeReplyReference: contextOverrides.includeReplyReference !== undefined ? contextOverrides.includeReplyReference : config.context?.includeReplyReference,
-                    includeRecentUserIntent: contextOverrides.includeRecentUserIntent !== undefined ? contextOverrides.includeRecentUserIntent : config.context?.includeRecentUserIntent
-                }});
-            }
-
-            const resolvedCharacterName = characterName || config.chat?.defaultCharacter || '';
-            const resolvedInputs = resolveChatRuntimeInputs({
-                characterName: resolvedCharacterName, config, characterManager, worldBookManager
-            });
-
-            // 世界书覆盖
-            if (worldbookName) {
-                const overrideWb = worldBookManager.readWorldBook(worldbookName);
-                if (overrideWb) resolvedInputs.worldBook = overrideWb;
-            }
-
-            // 预设覆盖
-            if (presetId && Array.isArray(config.imports?.presetFiles)) {
-                const importRecord = config.imports.presetFiles.find(r => r?.id === presetId);
-                if (importRecord?.importedPreset) {
-                    resolvedInputs.preset = PromptBuilder.normalizePreset(importRecord.importedPreset);
-                }
-            }
-
-            const recallNamespace = {
-                scopeType: messageType === 'group' ? 'group' : 'private',
-                scopeKey: messageType === 'group' ? String(groupId || '_test_') : String(userId || '_test_'),
-                characterName: resolvedCharacterName,
-                presetName: resolvedInputs.preset?.name || ''
-            };
-            let recalledEntries = [];
-            try {
-                recalledEntries = sessionManager.recallMemory(recallNamespace, normalizedMessage, {
-                    recentLimit: 4, searchLimit: 4, summaryLimit: 3, fixedLimit: 6
-                });
-            } catch (e) {
-                logger.warn('[靶场] 记忆召回失败', e.message);
-            }
-
-            const built = await promptBuilder.build(
-                resolvedCharacterName, normalizedMessage,
-                context || { recentMessages: [], summaries: [] },
-                new Set(),
-                {
-                    sessionId: `range_${Date.now()}`, messageType, messageCount: 1,
-                    recalledEntries, participants: [], injectionRisk: null, replyReference: null
-                },
-                { character: resolvedInputs.character, worldBook: resolvedInputs.worldBook, presetConfig: resolvedInputs.preset }
-            );
-
-            // 恢复原始上下文配置
-            if (Object.keys(contextOverrides).length > 0 && savedContextConfig) {
-                promptBuilder.contextConfig = savedContextConfig;
-            }
-
-            const comp = built.runtimeComposition;
-            const segments = [];
-            const pushSegment = (seg) => {
-                if (!seg || !seg.content) return;
-                segments.push({
-                    id: seg.id || '', kind: seg.kind || 'unknown',
-                    label: seg.label || '', content: seg.content,
-                    order: seg.order || 0, stage: seg.stage || '',
-                    meta: seg.meta || {}, tokenEstimate: estimateTokenCount(seg.content)
-                });
-            };
-            for (const seg of (comp.systemSegments || [])) pushSegment(seg);
-            for (const msg of (comp.historyMessages || [])) {
-                segments.push({
-                    id: msg.meta?.sourceId || `history-${segments.length}`,
-                    kind: 'history_message',
-                    label: `历史消息 (${msg.role || 'unknown'})`,
-                    content: msg.content, order: 90, stage: 'history',
-                    meta: msg.meta || {}, tokenEstimate: estimateTokenCount(msg.content)
-                });
-            }
-            for (const seg of (comp.postHistorySegments || [])) pushSegment(seg);
-            segments.push({
-                id: 'user-input', kind: 'user_input', label: '当前用户输入',
-                content: normalizedMessage, order: 130, stage: 'input',
-                meta: {}, tokenEstimate: estimateTokenCount(normalizedMessage)
-            });
-            for (const seg of (comp.assistantPrefillSegments || [])) pushSegment(seg);
-
-            const stats = {
-                totalTokenEstimate: segments.reduce((s, sg) => s + (sg.tokenEstimate || 0), 0),
-                segmentCount: segments.length,
-                worldbookHits: (built.worldBookEntries || []).length,
-                memoryRecallCount: recalledEntries.length,
-                messageCount: built.messages?.length || 0
-            };
-
-            // 变量桥接：靶场也注入变量状态和解析宏（可开关）
-            if (injectVariables) {
-            try {
-                const { buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
-                const scopeOpts = {
-                    scopeType: recallNamespace.scopeType, scopeKey: recallNamespace.scopeKey,
-                    characterName: recallNamespace.characterName, presetName: recallNamespace.presetName
-                };
-                for (const msg of built.messages) {
-                    if (typeof msg.content === 'string') {
-                        msg.content = resolveVariableMacros(msg.content, sessionManager, scopeOpts);
-                    }
-                }
-                const statusBlock = buildVariableStatusBlock(sessionManager, scopeOpts);
-                if (statusBlock) {
-                    const sysIdx = built.messages.findIndex(m => m.role === 'system');
-                    if (sysIdx >= 0) built.messages[sysIdx].content += '\n' + statusBlock;
-                    else built.messages.unshift({ role: 'system', content: statusBlock });
-                }
-            } catch (e) { logger.warn('[靶场] 变量注入失败:', e.message); }
-            }
-
-            // 人物档案注入（可开关）
-            if (injectProfiles) {
-            try {
-                const profiles = sessionManager?.listParticipantProfiles?.(10) || [];
-                if (profiles.length > 0) {
-                    const profileText = profiles.map(p => `[档案:${p.participantName||p.title}]\n${(p.content||'').slice(0, 300)}`).join('\n\n');
-                    const sysIdx = built.messages.findIndex(m => m.role === 'system');
-                    if (sysIdx >= 0) built.messages[sysIdx].content += '\n' + profileText;
-                }
-            } catch (e) { logger.warn('[靶场] 档案注入失败:', e.message); }
-            }
-
-            let aiResponse = null;
-            if (req.body.includeAIResponse) {
-                try {
-                    const overrides = {};
-                    const provider = modelProviderId
-                        ? (config.ai?.providers || []).find((item) => item.id === modelProviderId)
-                        : null;
-                    if (provider) { overrides.baseUrl = provider.baseUrl; overrides.apiKey = provider.apiKey; }
-                    if (model) overrides.model = String(model).includes('||') ? String(model).split('||').pop() : model;
-
-                    const debugBaseUrl = String(overrides.baseUrl || config.ai?.baseUrl || '').replace(/\/+$/, '');
-                    const debugApiKey = overrides.apiKey || config.ai?.apiKey || '';
-                    const debugModel = overrides.model || provider?.model || config.ai?.model;
-                    const debugPayload = {
-                        model: debugModel,
-                        messages: built.messages,
-                        max_tokens: overrides.maxTokens ?? config.ai?.maxTokens,
-                        temperature: overrides.temperature ?? config.ai?.temperature,
-                        stream: false
-                    };
-
-                    const upstreamResponse = await fetch(`${debugBaseUrl}/chat/completions`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            ...(debugApiKey ? { Authorization: `Bearer ${debugApiKey}` } : {})
-                        },
-                        body: JSON.stringify(debugPayload)
+            const taskId = `range-batch-${Date.now()}-${++rangeBatchTaskSeq}`;
+            const taskStartedAt = Date.now();
+            const requestedMode = executionMode === 'parallel' ? 'parallel' : 'serial';
+            const effectiveConcurrency = requestedMode === 'parallel'
+                ? Math.max(1, Math.min(8, Number(concurrency) || 2))
+                : 1;
+            const jobs = [];
+            normalizedEnvironments.forEach((environment) => {
+                normalizedMessages.forEach((message, index) => {
+                    jobs.push({
+                        jobId: `${environment.id}-${index + 1}`,
+                        environment,
+                        message,
+                        order: jobs.length + 1
                     });
-                    const upstreamRawText = await upstreamResponse.text();
-                    let upstreamParsed = null;
-                    try {
-                        upstreamParsed = JSON.parse(upstreamRawText);
-                    } catch {}
-                    const upstreamMessage = upstreamParsed?.choices?.[0]?.message || {};
-                    const rawText = aiClient.extractTextContent(upstreamMessage.content) || '';
-                    // 清洗 ST 卡常见内部标签
-                    let cleanedText = rawText;
-                    try {
-                        const { stripInternalTags } = await import('./variable-bridge.js');
-                        cleanedText = stripInternalTags(rawText);
-                    } catch {}
+                });
+            });
 
-                    const reasoningContent = aiClient.extractTextContent(upstreamMessage.reasoning_content) || null;
+            const task = {
+                id: taskId,
+                mode: requestedMode,
+                concurrency: effectiveConcurrency,
+                startedAt: new Date(taskStartedAt).toISOString(),
+                finishedAt: null,
+                running: true,
+                stage: 'queued',
+                currentMessage: '批量测试排队中',
+                progressPercent: 0,
+                totalJobs: jobs.length,
+                completedJobs: 0,
+                failedJobs: 0,
+                environments: normalizedEnvironments.map((item) => ({ id: item.id, name: item.name })),
+                jobs: jobs.map((job) => ({
+                    id: job.jobId,
+                    order: job.order,
+                    environmentId: job.environment.id,
+                    environmentName: job.environment.name,
+                    message: job.message,
+                    status: 'queued',
+                    stage: 'queued',
+                    startedAt: null,
+                    finishedAt: null,
+                    durationMs: 0,
+                    trace: null,
+                    resultSummary: null,
+                    error: null
+                }))
+            };
+            rangeBatchTasks.set(taskId, task);
 
-                    // 模拟QQ分段下发
-                    const splitEnabled = config.chat.splitMessage !== false;
-                    const mentionPrefix = messageType === 'group' && config.chat.mentionSenderOnReply !== false ? `[CQ:at,qq=${userId || '000000'}] ` : '';
-                    const rawSegments = splitEnabled
-                        ? cleanedText.split(/\n\n+/).filter(s => s.trim())
-                        : [cleanedText];
-                    const qqSegments = rawSegments.map((seg, idx) => ({
-                        index: idx,
-                        text: seg.trim(),
-                        qqText: idx === 0 ? `${mentionPrefix}${seg.trim()}` : seg.trim(),
-                        isFirst: idx === 0,
-                        hasPrefix: idx === 0 && !!mentionPrefix,
-                        charCount: seg.trim().length
-                    }));
-
-                    aiResponse = {
-                        text: cleanedText,
-                        reasoningContent,
-                        rawReasoningContent: upstreamMessage.reasoning_content ?? null,
-                        rawContent: upstreamMessage.content ?? null,
-                        rawMessage: upstreamMessage,
-                        rawResponse: upstreamParsed,
-                        rawResponseText: upstreamRawText,
-                        usage: aiClient.getTokenStats(),
-                        segments: qqSegments,
-                        segmentCount: qqSegments.length,
-                        splitConfig: { splitEnabled, mentionPrefix: !!mentionPrefix, segmentDelayMs: config.chat.segmentDelayMs ?? 300 }
-                    };
-                } catch (e) {
-                    logger.warn('[靶场] AI调用失败', e.message);
-                    aiResponse = { text: `[AI调用失败: ${e.message}]`, reasoningContent: null, usage: null };
+            const updateTaskProgress = () => {
+                const finishedCount = task.jobs.filter((job) => ['completed', 'failed'].includes(job.status)).length;
+                task.completedJobs = task.jobs.filter((job) => job.status === 'completed').length;
+                task.failedJobs = task.jobs.filter((job) => job.status === 'failed').length;
+                task.progressPercent = task.totalJobs > 0
+                    ? Math.round((finishedCount / task.totalJobs) * 100)
+                    : 0;
+                const runningJob = task.jobs.find((job) => job.status === 'running');
+                task.stage = runningJob ? 'running' : (finishedCount >= task.totalJobs ? 'completed' : 'queued');
+                task.currentMessage = runningJob
+                    ? `正在测试 ${runningJob.environmentName} / ${runningJob.message.slice(0, 30)}`
+                    : (finishedCount >= task.totalJobs ? '批量测试已完成' : '等待执行');
+                if (finishedCount >= task.totalJobs) {
+                    task.running = false;
+                    task.finishedAt = new Date().toISOString();
                 }
-            }
+            };
+
+            const runJob = async (job) => {
+                const taskJob = task.jobs.find((item) => item.id === job.jobId);
+                if (!taskJob) return;
+                const startedAt = Date.now();
+                taskJob.status = 'running';
+                taskJob.stage = 'running';
+                taskJob.startedAt = new Date(startedAt).toISOString();
+                updateTaskProgress();
+                try {
+                    const payload = {
+                        ...job.environment.config,
+                        userMessage: job.message,
+                        includeAIResponse
+                    };
+                    const result = await runRangePromptTest(payload, {
+                        mode: requestedMode,
+                        environment: {
+                            id: job.environment.id,
+                            name: job.environment.name
+                        }
+                    });
+                    taskJob.status = 'completed';
+                    taskJob.stage = 'completed';
+                    taskJob.finishedAt = new Date().toISOString();
+                    taskJob.durationMs = Date.now() - startedAt;
+                    taskJob.trace = result.trace || null;
+                    taskJob.resultSummary = {
+                        replyPreview: String(result.aiResponse?.text || '').slice(0, 160),
+                        segmentCount: result.aiResponse?.segmentCount || 0,
+                        memoryRecallCount: result.stats?.memoryRecallCount || 0,
+                        worldbookHits: result.stats?.worldbookHits || 0,
+                        totalTokenEstimate: result.stats?.totalTokenEstimate || 0
+                    };
+                } catch (error) {
+                    taskJob.status = 'failed';
+                    taskJob.stage = 'failed';
+                    taskJob.finishedAt = new Date().toISOString();
+                    taskJob.durationMs = Date.now() - startedAt;
+                    taskJob.error = error.message;
+                }
+                updateTaskProgress();
+            };
+
+            const executeSerial = async () => {
+                for (const job of jobs) {
+                    await runJob(job);
+                }
+            };
+
+            const executeParallel = async () => {
+                let cursor = 0;
+                const workers = Array.from({ length: Math.min(effectiveConcurrency, jobs.length) }, async () => {
+                    while (cursor < jobs.length) {
+                        const current = jobs[cursor++];
+                        if (!current) break;
+                        await runJob(current);
+                    }
+                });
+                await Promise.all(workers);
+            };
+
+            Promise.resolve().then(async () => {
+                try {
+                    if (requestedMode === 'parallel') await executeParallel();
+                    else await executeSerial();
+                } catch (error) {
+                    logger.error('[靶场] 批量测试失败', error);
+                    task.running = false;
+                    task.stage = 'failed';
+                    task.currentMessage = `批量测试失败: ${error.message}`;
+                    task.finishedAt = new Date().toISOString();
+                }
+            });
 
             res.json({
                 success: true,
-                character: { name: built.character?.name || resolvedCharacterName },
-                worldBook: resolvedInputs.worldBook ? { name: resolvedInputs.worldBook.name || null } : null,
-                segments, stats,
-                bindingTrace: resolvedInputs.bindingTrace,
-                aiResponse,
-                promptConfigSnapshot: resolvedInputs.preset,
-                contextConfig: {
-                    enabled: promptBuilder.contextConfig?.enabled !== false,
-                    includeSessionFacts: promptBuilder.contextConfig?.includeSessionFacts !== false,
-                    includeParticipants: promptBuilder.contextConfig?.includeParticipants !== false,
-                    includeReplyReference: promptBuilder.contextConfig?.includeReplyReference !== false,
-                    includeRecentUserIntent: promptBuilder.contextConfig?.includeRecentUserIntent !== false
+                taskId,
+                task: {
+                    id: task.id,
+                    mode: task.mode,
+                    concurrency: task.concurrency,
+                    startedAt: task.startedAt,
+                    running: task.running,
+                    progressPercent: task.progressPercent,
+                    totalJobs: task.totalJobs,
+                    completedJobs: task.completedJobs,
+                    failedJobs: task.failedJobs,
+                    stage: task.stage,
+                    currentMessage: task.currentMessage
                 }
             });
         } catch (error) {
-            logger.error('[靶场] 测试失败', error);
+            logger.error('[靶场] 批量测试启动失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });
 
+    app.get('/api/prompt-range/test-batch/:taskId', requireAuth, (req, res) => {
+        const task = rangeBatchTasks.get(String(req.params.taskId || ''));
+        if (!task) {
+            return res.status(404).json({ success: false, error: '批量任务不存在' });
+        }
+        res.json({ success: true, task });
+    });
+
+    app.get('/api/prompt-range/test-batches', requireAuth, (req, res) => {
+        const tasks = Array.from(rangeBatchTasks.values())
+            .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+            .slice(0, 20)
+            .map((task) => ({
+                id: task.id,
+                mode: task.mode,
+                concurrency: task.concurrency,
+                startedAt: task.startedAt,
+                finishedAt: task.finishedAt,
+                running: task.running,
+                stage: task.stage,
+                currentMessage: task.currentMessage,
+                progressPercent: task.progressPercent,
+                totalJobs: task.totalJobs,
+                completedJobs: task.completedJobs,
+                failedJobs: task.failedJobs,
+                environments: task.environments
+            }));
+        res.json({ success: true, tasks });
+    });
+
+    app.delete('/api/prompt-range/test-batch/:taskId', requireAuth, (req, res) => {
+        const taskId = String(req.params.taskId || '');
+        if (!rangeBatchTasks.has(taskId)) {
+            return res.status(404).json({ success: false, error: '批量任务不存在' });
+        }
+        rangeBatchTasks.delete(taskId);
+        res.json({ success: true });
+    });
+
     app.post('/api/prompt-range/agent-chat', requireAuth, async (req, res) => {
         try {
-            const { messages, baseUrl, apiKey, model, rangeContext } = req.body || {};
+            const { messages, baseUrl, apiKey, modelProviderId, model, rangeContext } = req.body || {};
             if (!Array.isArray(messages) || messages.length === 0) {
                 return res.status(400).json({ success: false, error: '请提供消息数组' });
             }
@@ -4705,15 +5686,26 @@ ${promptListText}
                 }
             }
 
-            const safeModel = (typeof model === 'string' && model.includes('||')) ? model.split('||').pop() : model;
-            const replyResult = await aiClient.chat(normalizedMessages, { baseUrl, apiKey, model: safeModel });
+            const aiOverrides = buildRangeAIOverrides({ modelProviderId, model, baseUrl, apiKey });
+            const replyResult = await aiClient.chat(normalizedMessages, {
+                baseUrl: aiOverrides.baseUrl,
+                apiKey: aiOverrides.apiKey,
+                model: aiOverrides.model
+            });
             const reply = aiClient.getVisibleResponseContent(replyResult);
             const agentDecision = resolveRangeAgentDecision(reply, rangeContext);
             res.json({
                 success: true,
                 reply,
                 reasoningContent: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent : null,
-                agentDecision
+                agentDecision,
+                provider: {
+                    id: aiOverrides.providerId,
+                    name: aiOverrides.providerName,
+                    endpoint: String(aiOverrides.baseUrl || '').replace(/\/+$/, ''),
+                    model: aiOverrides.model,
+                    hasApiKey: !!aiOverrides.apiKey
+                }
             });
         } catch (error) {
             logger.error('[靶场] Agent对话失败', error);
@@ -5249,6 +6241,8 @@ ${lastResultText}
         const providers = (config.ai?.providers || []).map(p => ({
             id: p.id, name: p.name, provider: p.provider,
             model: p.model,
+            hasApiKey: !!p.apiKey,
+            requiresApiKey: requiresRangeApiKey(p, p.baseUrl),
             models: (p.models || []).map(m => ({
                 ...m,
                 capability: classifyModel(m.id || m.name || '')
@@ -5361,6 +6355,15 @@ ${lastResultText}
 
     app.get('/api/prompt-range/corpus', requireAuth, (req, res) => {
         res.json({ success: true, corpus: rangeCorpusStore.lines.join('\n'), stats: rangeCorpusStore.stats });
+    });
+
+    app.get('/api/prompt-range/corpus-progress', requireAuth, (req, res) => {
+        res.json({
+            success: true,
+            ...corpusEmbedProgress,
+            lineCount: rangeCorpusStore.lines.length,
+            hasEmbeddings: Array.isArray(rangeCorpusStore.embeddings) && rangeCorpusStore.embeddings.length > 0
+        });
     });
 
     app.post('/api/prompt-range/apply-changes', requireAuth, async (req, res) => {

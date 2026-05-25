@@ -720,6 +720,18 @@ async function generateReplyWithRetry({ aiClient, messages, toolContext, chatAIO
     throw error;
 }
 
+function buildDebugReplyWithReasoning(reasoningContent, visibleReply) {
+    const reasoning = typeof reasoningContent === 'string' ? reasoningContent.trim() : '';
+    const reply = typeof visibleReply === 'string' ? visibleReply.trim() : '';
+    if (!reasoning) {
+        return reply;
+    }
+    if (!reply) {
+        return `【思维链】\n${reasoning}`;
+    }
+    return `【思维链】\n${reasoning}\n\n【正文】\n${reply}`;
+}
+
 function buildAIServiceFailureMessage(error, config = {}) {
     const message = String(error?.message || '');
     if (message === 'AI_TIMEOUT') {
@@ -796,9 +808,14 @@ function summarizeOneBotSegment(segment, botSelfId = '') {
     if (type === 'at') {
         const qq = String(data.qq || '').trim();
         if (!qq || qq === 'all') {
-            return { type, qq, promptText: '' };
+            return { type, qq, promptText: '[@全体成员] ' };
         }
-        return { type, qq, isBot: botSelfId ? qq === String(botSelfId) : false, promptText: qq === String(botSelfId) ? '@bot ' : `@${qq} ` };
+        const name = getAny('name', 'card', 'nickname', 'display_name');
+        const isBot = botSelfId ? qq === String(botSelfId) : false;
+        const mentionText = isBot
+            ? '[@bot] '
+            : `[@${name ? `${name}|` : ''}QQ:${qq}] `;
+        return { type, qq, name: name ? String(name) : '', isBot, promptText: mentionText };
     }
 
     if (type === 'reply') {
@@ -967,6 +984,12 @@ async function extractMessageInfo(config, event, bot) {
     }
 
     plainText = sanitizeContent(plainText || event.raw_message || '');
+    const onlyAtBot = isAtMe
+        && messageSegments.some((segment) => segment?.type === 'at' && segment?.isBot === true)
+        && !messageSegments.some((segment) => segment?.type !== 'at' && segment?.type !== 'reply');
+    if (!plainText && onlyAtBot) {
+        plainText = '[@bot]（只@了bot，没有附加文字；请结合附近群聊上下文判断对方是在叫你接话、催你回应还是让你看上文）';
+    }
     plainText = sanitizeForInjection(plainText, config, event.user_id);
     const replyInfo = await buildReplyInfo(event, bot, replyToMessageId);
     const replySnippet = sanitizeForInjection(replyInfo.snippet, config, event.user_id);
@@ -1845,10 +1868,10 @@ async function sendQuotedStatusMessage(event, message) {
     await bot.sendPrivateMessage(event.user_id, normalizedMessage);
 }
 
-async function dispatchReply(event, processedReply) {
+async function dispatchReply(event, processedReply, options = {}) {
     const ttsConfig = ttsManager.getConfig();
     const { textParts } = parseVoiceTags(processedReply);
-    const splitMessage = config.chat.splitMessage !== false;
+    const splitMessage = options.forceSingleMessage ? false : config.chat.splitMessage !== false;
     const segmentDelayMs = config.chat.segmentDelayMs ?? 300;
     const proactiveIntervalMs = config.chat.proactiveMessageIntervalMs ?? Math.max(segmentDelayMs, 1200);
     const quoteReplyEnabled = config.chat.quoteReplyEnabled !== false;
@@ -3088,7 +3111,13 @@ async function processBatch(batch) {
                 replyPreview: reply.slice(0, 200),
                 reasoningLength: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent.length : 0
             });
-            let processedReply = regexProcessor.processOutput(reply);
+            const { extractTaggedContent, extractVisibleContent } = await import('./variable-bridge.js');
+            const reasoningContent = (
+                extractTaggedContent(reply, 'thinking')
+                || (typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent.trim() : '')
+            );
+            const visibleReply = extractVisibleContent(reply);
+            let processedReply = regexProcessor.processOutput(visibleReply);
             // 清洗 ST 卡常见内部标签（draft_notes / thinking / cot 等）
             try {
                 const { stripInternalTags } = await import('./variable-bridge.js');
@@ -3163,10 +3192,15 @@ ${varStatus || '(无)'}
                     }
                 }
             } catch (e) { logger.warn('[变量] 提取失败:', e.message); }
+            const replyToSend = reasoningContent
+                ? buildDebugReplyWithReasoning(reasoningContent, processedReply)
+                : processedReply;
             logger.info('[执行] 输出后处理完成', {
                 sessionId,
                 processedReplyLength: typeof processedReply === 'string' ? processedReply.length : 0,
-                processedReplyPreview: typeof processedReply === 'string' ? processedReply.slice(0, 200) : null
+                processedReplyPreview: typeof processedReply === 'string' ? processedReply.slice(0, 200) : null,
+                sendReplyLength: typeof replyToSend === 'string' ? replyToSend.length : 0,
+                sendReplyIncludesReasoning: !!reasoningContent
             });
 
             sessionManager.addMessage(sessionId, 'assistant', processedReply, {
@@ -3193,9 +3227,10 @@ ${varStatus || '(无)'}
             logger.info('[执行] 准备下发回复', {
                 sessionId,
                 messageType: event.message_type,
-                splitMessage: config.chat.splitMessage !== false
+                splitMessage: reasoningContent ? false : config.chat.splitMessage !== false,
+                includeReasoningContent: !!reasoningContent
             });
-            await dispatchReply(event, processedReply);
+            await dispatchReply(event, replyToSend, { forceSingleMessage: !!reasoningContent });
             logger.info('[执行] 回复下发完成', {
                 sessionId
             });

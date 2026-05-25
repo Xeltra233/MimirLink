@@ -1,11 +1,214 @@
-import { readFileSync, writeFileSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { resolve, dirname, isAbsolute, relative, basename } from 'path';
 import { fileURLToPath } from 'url';
+import { extractTaggedContent, extractVisibleContent, stripInternalTags } from './variable-bridge.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+export function sanitizeMcpRangeReply(rawReply) {
+    const reply = stripInternalTags(extractVisibleContent(String(rawReply || ''))).trim();
+    if (!reply) {
+        throw new Error('AI 返回空回复，靶场已阻止把调试 Prompt 当作回复展示');
+    }
+    return reply;
+}
+
 export function createMCPHandler(managers, config, saveConfig) {
-    const { aiClient, promptBuilder, characterManager, worldBookManager, sessionManager, logger } = managers;
+    const { aiClient, promptBuilder, characterManager, worldBookManager, sessionManager, regexProcessor, logger } = managers;
+
+    const RANGE_SYNC_HISTORY_LIMIT = 50;
+
+    function getRangeSyncHistoryPath() {
+        const dataDir = config.chat?.dataDir || resolve(process.cwd(), 'data');
+        return resolve(dataDir, 'range-sync-history.json');
+    }
+
+    function getRangeSyncKey(sync = {}) {
+        const payload = sync.payload || sync;
+        return payload?.trace?.runId
+            || payload?.syncedAt
+            || sync.receivedAt
+            || `${payload?.source || sync.source || 'range_sync'}:${payload?.userMessage || ''}:${payload?.reply || ''}`;
+    }
+
+    function readRangeSyncHistory() {
+        try {
+            const historyPath = getRangeSyncHistoryPath();
+            if (!existsSync(historyPath)) return [];
+            const parsed = JSON.parse(readFileSync(historyPath, 'utf8'));
+            return Array.isArray(parsed) ? parsed.filter((item) => item?.payload) : [];
+        } catch (error) {
+            logger.warn('[RANGE_SYNC] 读取历史失败', { error: error.message });
+            return [];
+        }
+    }
+
+    function writeRangeSyncHistory(history = []) {
+        try {
+            const historyPath = getRangeSyncHistoryPath();
+            mkdirSync(dirname(historyPath), { recursive: true });
+            writeFileSync(historyPath, JSON.stringify(history.slice(-RANGE_SYNC_HISTORY_LIMIT), null, 2), 'utf8');
+        } catch (error) {
+            logger.warn('[RANGE_SYNC] 写入历史失败', { error: error.message });
+        }
+    }
+
+    function publishRangeSyncPayload(payload = {}, source = 'mcp_range_test') {
+        const sync = {
+            type: 'range_sync',
+            source,
+            receivedAt: new Date().toISOString(),
+            payload: {
+                ...payload,
+                source,
+                syncedAt: new Date().toISOString()
+            }
+        };
+        config.__rangeSyncLatest = sync;
+        const history = readRangeSyncHistory();
+        const nextKey = getRangeSyncKey(sync);
+        const deduped = nextKey
+            ? history.filter((item) => getRangeSyncKey(item) !== nextKey)
+            : history;
+        const nextHistory = [...deduped, sync].slice(-RANGE_SYNC_HISTORY_LIMIT);
+        config.__rangeSyncHistory = nextHistory;
+        writeRangeSyncHistory(nextHistory);
+        logger.info('[RANGE_SYNC]', sync);
+        return sync;
+    }
+
+    function isMcpRangeEmptyReplyError(error) {
+        return String(error?.message || error || '').includes('AI 返回空回复');
+    }
+
+    function resolveMcpRangePresetFile(presetFilePath) {
+        const rawPath = String(presetFilePath || '').trim();
+        if (!rawPath) return null;
+        const presetRoot = resolve(process.cwd(), '..', '预设');
+        const resolvedPath = isAbsolute(rawPath) ? resolve(rawPath) : resolve(presetRoot, rawPath);
+        const relativePath = relative(presetRoot, resolvedPath);
+        if (relativePath.startsWith('..') || isAbsolute(relativePath)) {
+            throw new Error('presetFilePath 只能读取项目预设目录内的 JSON 文件');
+        }
+        if (!resolvedPath.toLowerCase().endsWith('.json')) {
+            throw new Error('presetFilePath 只支持 JSON 预设文件');
+        }
+        if (!existsSync(resolvedPath)) {
+            throw new Error(`预设文件不存在: ${basename(resolvedPath)}`);
+        }
+        return resolvedPath;
+    }
+
+    function loadMcpRangePresetOverride(presetFilePath) {
+        const resolvedPath = resolveMcpRangePresetFile(presetFilePath);
+        if (!resolvedPath) return null;
+        const PromptBuilderClass = promptBuilder.constructor;
+        let rawPreset = null;
+        try {
+            rawPreset = JSON.parse(readFileSync(resolvedPath, 'utf8'));
+        } catch (error) {
+            throw new Error(`读取预设文件失败: ${error.message}`);
+        }
+        const importedPreset = PromptBuilderClass.importPreset(rawPreset);
+        const presetConfig = PromptBuilderClass.normalizePreset(importedPreset);
+        return {
+            presetConfig,
+            info: {
+                source: 'presetFilePath',
+                name: presetConfig?.name || rawPreset?.name || basename(resolvedPath, '.json'),
+                fileName: basename(resolvedPath),
+                filePath: resolvedPath
+            }
+        };
+    }
+
+    function buildMcpRangeMessageTrace(messages = [], messageTrace = []) {
+        return (Array.isArray(messages) ? messages : []).map((message, index) => {
+            const trace = Array.isArray(messageTrace) ? messageTrace[index] || {} : {};
+            const content = typeof message?.content === 'string' ? message.content : '';
+            return {
+                index,
+                role: message?.role || 'unknown',
+                source: message?.meta?.source || null,
+                sourceId: message?.meta?.sourceId || null,
+                sourceStages: trace.sourceStages || [],
+                sourceIds: trace.sourceIds || [],
+                sourceSlots: trace.sourceSlots || [],
+                contentLength: content.length,
+                contentPreview: content.length > 300 ? `${content.slice(0, 300)}...` : content
+            };
+        });
+    }
+
+    function buildMcpRangeInputHeader({ message = '', scopeKey = '' } = {}) {
+        return [
+            '群聊',
+            `QQ:${scopeKey || 'user:test'}`,
+            '昵称:靶场用户',
+            '群号:_mcp_range_group_',
+            '群名:MCP靶场测试群',
+            'eventType:mcp_range_test',
+            `messageLength:${String(message || '').length}`
+        ].join('|');
+    }
+
+    function compactMcpRangeMessages(messages = [], limit = 3000) {
+        return (Array.isArray(messages) ? messages : []).map((message, index) => {
+            const content = typeof message?.content === 'string' ? message.content : '';
+            return {
+                index,
+                role: message?.role || 'unknown',
+                content: content.length > limit
+                    ? `${content.slice(0, Math.floor(limit / 2))}\n...（截断，共${content.length}字）...\n${content.slice(-Math.floor(limit / 2))}`
+                    : content,
+                meta: message?.meta || {}
+            };
+        });
+    }
+
+    function buildMcpRangeObservation({ inputHeader = '', message = '', recentMessages = [], built = null, messageTrace = [], reasoningContent = null, rawReply = '', regexProcessedReply = '', cleanedReply = '', finalReply = '', regexTrace = null } = {}) {
+        const messages = compactMcpRangeMessages(built?.messages || []);
+        return {
+            inputHeader,
+            userMessage: String(message || ''),
+            fakeHistory: recentMessages,
+            fakeHistoryCount: recentMessages.length,
+            prompt: {
+                messages,
+                messageTrace,
+                runtimeSources: built?.runtimeSources || [],
+                currentMessageFocus: messages.find((item) => item.meta?.source === 'current_message_focus') || null,
+                worldBookEntries: built?.worldBookEntries || []
+            },
+            reasoningContent,
+            rawReply,
+            regexProcessedReply,
+            cleanedReply,
+            finalReply,
+            finalMessages: finalReply ? [{ index: 0, text: finalReply, qqText: finalReply, isFirst: true, hasPrefix: false, charCount: finalReply.length }] : [],
+            regexTrace
+        };
+    }
+
+    async function callMcpRangeAIWithEmptyReplyRetry(messages, overrides, maxAttempts = 3) {
+        const attempts = [];
+        let lastError = null;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            try {
+                const aiResult = await aiClient.chat(messages, overrides);
+                const reply = sanitizeMcpRangeReply(aiClient.getVisibleResponseContent(aiResult));
+                attempts.push({ attempt, status: 'success', emptyReply: false });
+                return { aiResult, reply, attempts };
+            } catch (error) {
+                lastError = error;
+                const emptyReply = isMcpRangeEmptyReplyError(error);
+                attempts.push({ attempt, status: 'failed', emptyReply, error: String(error?.message || error || '').slice(0, 240) });
+                if (!emptyReply || attempt >= maxAttempts) throw error;
+                logger.warn('[MCP range_test] 空回复，准备重试', { attempt, maxAttempts });
+            }
+        }
+        throw lastError;
+    }
 
     // === ST 格式校验 ===
     const ST_WORLDBOOK_ENTRY_FIELDS = {
@@ -66,6 +269,30 @@ export function createMCPHandler(managers, config, saveConfig) {
         worldBookManager.clearCache();
     }
 
+    function normalizeMcpModelId(model = '') {
+        const text = String(model || '').trim();
+        if (!text) return '';
+        return text.includes('||') ? text.split('||').pop() : text;
+    }
+
+    function resolveMcpRangeModelOverrides({ modelProviderId = '', model = '' } = {}) {
+        const requestedProviderId = String(modelProviderId || config.chat?.modelProviderId || config.ai?.activeProviderId || '').trim();
+        const requestedModel = normalizeMcpModelId(model || config.chat?.model || config.ai?.model || '');
+        const provider = requestedProviderId
+            ? (config.ai?.providers || []).find((item) => item.id === requestedProviderId)
+            : null;
+        const overrides = {};
+        if (provider?.baseUrl) overrides.baseUrl = provider.baseUrl;
+        if (provider?.apiKey) overrides.apiKey = provider.apiKey;
+        if (requestedModel) overrides.model = requestedModel;
+        return {
+            overrides,
+            provider,
+            providerId: requestedProviderId,
+            model: requestedModel || provider?.model || config.ai?.model || ''
+        };
+    }
+
     // 工具注册表
     const tools = {
 
@@ -76,14 +303,19 @@ export function createMCPHandler(managers, config, saveConfig) {
                 properties: {
                     message: { type: 'string', description: '测试消息内容' },
                     characterName: { type: 'string', description: '角色名，可选，默认用当前靶场选择的角色' },
+                    modelProviderId: { type: 'string', description: '可选，模型供应商 ID；默认使用聊天配置' },
+                    model: { type: 'string', description: '可选，模型 ID；默认使用聊天配置' },
                     fakeHistory: { type: 'array', items: { type: 'object', properties: { role: { type: 'string' }, content: { type: 'string' } } }, description: '可选，伪造的聊天记录 [{role:"user"|"assistant", content}]' },
-                    scopeKey: { type: 'string', description: '可选，变量作用域标识，默认 user:test。用不同值模拟不同用户隔离' }
+                    scopeKey: { type: 'string', description: '可选，变量作用域标识，默认 user:test。用不同值模拟不同用户隔离' },
+                    presetFilePath: { type: 'string', description: '可选，仅测试用：临时读取预设目录内的 JSON 预设，不写入配置' },
+                    disableAssistantPrefill: { type: 'boolean', description: '可选，仅测试用：本次 range_test 临时移除 assistant prefill，不写入配置' }
                 },
                 required: ['message']
             },
-            handler: async ({ message, characterName, fakeHistory, scopeKey }) => {
+            handler: async ({ message, characterName, modelProviderId, model, fakeHistory, scopeKey, presetFilePath, disableAssistantPrefill = false }) => {
                 const resolvedChar = characterName || config.chat?.defaultCharacter || '';
                 if (!resolvedChar) return { content: [{ type: 'text', text: '请指定 characterName' }] };
+                const modelSelection = resolveMcpRangeModelOverrides({ modelProviderId, model });
 
                 // 防注入过滤：模拟非管理员消息清洗
                 let cleanMessage = message;
@@ -107,18 +339,27 @@ export function createMCPHandler(managers, config, saveConfig) {
                 try { character = characterManager.readFromPng(charName); } catch {}
                 if (!character) return { content: [{ type: 'text', text: `角色 "${resolvedChar}" 未找到` }] };
 
-                // 加载角色绑定的世界书和预设
+                // 加载角色绑定的世界书和预设；presetFilePath 只作为本次测试调用的临时覆盖。
                 let worldBook = null;
                 let presetConfig = null;
+                let presetOverrideInfo = null;
                 try {
                     const PromptBuilderClass = promptBuilder.constructor;
                     const binding = PromptBuilderClass.getEffectiveBinding(config, charName);
                     if (binding.worldbook) worldBook = worldBookManager.readWorldBook(binding.worldbook);
                     if (binding.preset) {
                         const importRecord = (config.imports?.presetFiles || []).find(r => r?.id === binding.preset);
-                        if (importRecord?.importedPreset) presetConfig = PromptBuilderClass.normalizePreset(importRecord.importedPreset);
+                        if (importRecord?.importedPreset) {
+                            presetConfig = PromptBuilderClass.normalizePreset(importRecord.importedPreset);
+                            presetOverrideInfo = { source: 'binding', name: presetConfig?.name || '', presetId: binding.preset };
+                        }
                     }
                 } catch {}
+                const presetOverride = loadMcpRangePresetOverride(presetFilePath);
+                if (presetOverride) {
+                    presetConfig = presetOverride.presetConfig;
+                    presetOverrideInfo = presetOverride.info;
+                }
 
                 const recentMessages = Array.isArray(fakeHistory) ? fakeHistory.map(m => ({ role: m.role || 'user', content: m.content || '' })) : [];
 
@@ -136,7 +377,7 @@ export function createMCPHandler(managers, config, saveConfig) {
                     try {
                         const { applyStaticSetvarsFromText, buildVariableStatusBlock, resolveVariableMacros } = await import('./variable-bridge.js');
                         const scopeOpts = { scopeType: 'user_persistent', scopeKey: resolvedScopeKey, characterName: charName, presetName: presetConfig?.name || '' };
-                        const allMessages = built.messages;
+                        let allMessages = built.messages;
                         for (const msg of allMessages) {
                             if (typeof msg.content === 'string') {
                                 const r = applyStaticSetvarsFromText(msg.content, sessionManager, scopeOpts, { keepMacros: false });
@@ -153,6 +394,11 @@ export function createMCPHandler(managers, config, saveConfig) {
                             const sysIdx = allMessages.findIndex(m => m.role === 'system');
                             if (sysIdx >= 0) allMessages[sysIdx].content += '\n' + statusBlock;
                             else allMessages.unshift({ role: 'system', content: statusBlock });
+                        }
+                        if (disableAssistantPrefill === true) {
+                            allMessages = allMessages.filter((msg) => msg?.meta?.source !== 'assistant_prefill');
+                            built.messages = allMessages;
+                            built.messageTrace = promptBuilder.constructor.createMessageTrace(built.messages, built.runtimeSources || []);
                         }
                     } catch {}
 
@@ -176,22 +422,59 @@ export function createMCPHandler(managers, config, saveConfig) {
                         }
                     } catch {}
 
-                    const aiResult = await aiClient.chat(built.messages, {});
-                    const rawReply = aiClient.getVisibleResponseContent(aiResult);
-                    // 清洗 thinking/cot 等内部标签
-                    let reply = rawReply;
-                    try {
-                        const { stripInternalTags } = await import('./variable-bridge.js');
-                        reply = stripInternalTags(reply);
-                    } catch {}
+                    logger.info('[MCP range_test] 使用模型', {
+                        providerId: modelSelection.providerId,
+                        providerName: modelSelection.provider?.name || '',
+                        model: modelSelection.model,
+                        hasProviderOverride: Boolean(modelSelection.overrides.baseUrl || modelSelection.overrides.apiKey)
+                    });
+                    const { aiResult, reply, attempts: replyAttempts } = await callMcpRangeAIWithEmptyReplyRetry(built.messages, modelSelection.overrides);
                     const usage = aiResult?.usage || null;
+                    const rawReply = aiClient.getVisibleResponseContent(aiResult);
+                    const reasoningContent = extractTaggedContent(rawReply, 'thinking') || (typeof aiResult?.reasoningContent === 'string' ? aiResult.reasoningContent : null);
+                    const visibleReply = extractVisibleContent(rawReply);
+                    const regexResult = typeof regexProcessor?.processOutputWithTrace === 'function'
+                        ? regexProcessor.processOutputWithTrace(visibleReply)
+                        : { text: typeof regexProcessor?.processOutput === 'function' ? regexProcessor.processOutput(visibleReply) : visibleReply, trace: null };
+                    const regexProcessedReply = regexResult?.text ?? visibleReply;
+                    const cleanedReply = stripInternalTags(regexProcessedReply).trim();
+                    const finalReply = cleanedReply || reply;
+                    const regexTrace = {
+                        output: regexResult?.trace || null,
+                        cleanup: {
+                            beforeLength: regexProcessedReply.length,
+                            afterLength: cleanedReply.length,
+                            changed: regexProcessedReply !== cleanedReply
+                        }
+                    };
+                    const messageTrace = buildMcpRangeMessageTrace(built.messages, built.messageTrace);
+                    const inputHeader = buildMcpRangeInputHeader({ message, scopeKey: resolvedScopeKey });
+                    const observation = buildMcpRangeObservation({
+                        inputHeader,
+                        message,
+                        recentMessages,
+                        built,
+                        messageTrace,
+                        reasoningContent,
+                        rawReply,
+                        regexProcessedReply,
+                        cleanedReply,
+                        finalReply,
+                        regexTrace
+                    });
+
+                    const traceSteps = [
+                        { id: 'input', type: 'input', label: '输入', status: 'completed', durationMs: 0, summary: `消息 ${String(message || '').length} 字`, details: { inputHeader, messagePreview: String(message || '').slice(0, 160) } },
+                        { id: 'prompt-build', type: 'prompt_build', label: 'Prompt 拼装', status: 'completed', durationMs: 0, summary: `${built.messages?.length || 0} 条消息`, details: { messageCount: built.messages?.length || 0, fakeHistoryCount: recentMessages.length, presetOverride: presetOverrideInfo, disableAssistantPrefill: disableAssistantPrefill === true } },
+                        { id: 'ai-response', type: 'ai_response', label: 'AI 回复', status: 'completed', durationMs: 0, summary: `${modelSelection.provider?.name || modelSelection.providerId || '默认 provider'} / ${modelSelection.model || '未指定模型'} · ${finalReply.length} 字回复`, details: { rawPreview: rawReply.slice(0, 240), cleanedPreview: cleanedReply.slice(0, 240), finalPreview: finalReply.slice(0, 240), reasoningPreview: reasoningContent ? reasoningContent.slice(0, 300) : '', reasoningLength: reasoningContent?.length || 0, tokenUsage: usage, providerId: modelSelection.providerId, providerName: modelSelection.provider?.name || '', model: modelSelection.model, replyAttempts, regexAppliedCount: regexTrace.output?.appliedRules?.length || 0 } }
+                    ];
 
                     // 变量提取：UpdateVariable JSONPatch
                     let appliedVars = [];
                     const extractScopeOpts = { scopeType: 'user_persistent', scopeKey: resolvedScopeKey, characterName: charName, presetName: presetConfig?.name || '' };
                     try {
                         const { extractAndApplyVariables } = await import('./variable-bridge.js');
-                        const result = extractAndApplyVariables(reply, sessionManager, extractScopeOpts);
+                        const result = extractAndApplyVariables(finalReply, sessionManager, extractScopeOpts);
                         appliedVars = result.applied || [];
                     } catch {}
 
@@ -211,7 +494,7 @@ export function createMCPHandler(managers, config, saveConfig) {
                                 const vpProvider = (config.ai?.providers || []).find(p => p.id === vpProviderId) || {};
                                 logger.info('[变量-额外解析] 开始', { vpModel, vpProviderId, providerType: vpProvider.provider });
 
-                                const varParsePrompt = '你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。\n\n当前变量：\n' + (varStatus || '(无)') + '\n\n用户：' + message + '\n角色：' + reply + '\n\n请输出变量更新（无变化输出空数组）：\n<UpdateVariable>\n[{"op":"replace","path":"/变量名","value":新值}]\n</UpdateVariable>';
+                                const varParsePrompt = '你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。\n\n当前变量：\n' + (varStatus || '(无)') + '\n\n用户：' + message + '\n角色：' + finalReply + '\n\n请输出变量更新（无变化输出空数组）：\n<UpdateVariable>\n[{"op":"replace","path":"/变量名","value":新值}]\n</UpdateVariable>';
 
                                 const vpResult = await aiClient.chat([{ role: 'user', content: varParsePrompt }], {
                                     temperature: 0.1, maxTokens: 1024,
@@ -232,23 +515,109 @@ export function createMCPHandler(managers, config, saveConfig) {
                         } catch (e) { /* 额外解析失败不影响主流程 */ }
                     }
 
-                    return {
-                        content: [{ type: 'text', text: JSON.stringify({
-                            reply,
-                            tokenUsage: usage,
+                    publishRangeSyncPayload({
+                            userMessage: String(message || ''),
+                            characterName: resolvedChar,
+                            modelProviderId: modelSelection.providerId,
+                            model: modelSelection.model,
+                            reply: finalReply,
+                            reasoningContent,
+                            rawReply,
+                            regexProcessedReply,
+                            cleanedReply,
+                            finalReply,
                             fakeHistoryCount: recentMessages.length,
                             variablesApplied: appliedVars.length,
-                            messages: built.messages.map(m => ({
-                                role: m.role,
-                                content: m.content.length > 3000
-                                    ? m.content.slice(0, 1500) + '\n...（截断，共' + m.content.length + '字）...\n' + m.content.slice(-1500)
-                                    : m.content,
-                                meta: m.meta
-                            }))
+                            tokenUsage: usage,
+                            replyAttempts,
+                            presetOverride: presetOverrideInfo,
+                            disableAssistantPrefill: disableAssistantPrefill === true,
+                            messageTrace,
+                            inputHeader,
+                            fakeHistory: recentMessages,
+                            prompt: observation.prompt,
+                            regexTrace,
+                            observation,
+                            trace: {
+                                runId: `mcp-range-${Date.now()}`,
+                                mode: 'single',
+                                environment: { name: 'MCP 靶场测试' },
+                                durationMs: 0,
+                                steps: traceSteps
+                            },
+                            messages: observation.prompt.messages
+                    });
+
+                    return {
+                        content: [{ type: 'text', text: JSON.stringify({
+                            reply: finalReply,
+                            tokenUsage: usage,
+                            inputHeader,
+                            fakeHistory: recentMessages,
+                            fakeHistoryCount: recentMessages.length,
+                            variablesApplied: appliedVars.length,
+                            replyAttempts,
+                            presetOverride: presetOverrideInfo,
+                            promptMessageCount: built.messages.length,
+                            reasoningContent,
+                            rawReply,
+                            regexProcessedReply,
+                            cleanedReply,
+                            finalReply,
+                            regexTrace,
+                            disableAssistantPrefill: disableAssistantPrefill === true,
+                            messageTrace,
+                            prompt: observation.prompt,
+                            observation
                         }, null, 2) }]
                     };
                 } catch (e) {
-                    return { content: [{ type: 'text', text: `测试失败: ${e.message}` }] };
+                    const errorMessage = e?.message || String(e || '未知错误');
+                    const failedReply = `测试失败: ${errorMessage}`;
+                    publishRangeSyncPayload({
+                            userMessage: String(message || ''),
+                            characterName: resolvedChar,
+                            modelProviderId: modelSelection.providerId,
+                            model: modelSelection.model,
+                            reply: failedReply,
+                            reasoningContent: null,
+                            fakeHistoryCount: recentMessages.length,
+                            variablesApplied: 0,
+                            tokenUsage: null,
+                            trace: {
+                                runId: `mcp-range-${Date.now()}`,
+                                mode: 'single',
+                                environment: { name: 'MCP 靶场测试' },
+                                durationMs: 0,
+                                steps: [
+                                    {
+                                        id: 'input',
+                                        type: 'input',
+                                        label: '输入',
+                                        status: 'completed',
+                                        durationMs: 0,
+                                        summary: `消息 ${String(message || '').length} 字`,
+                                        details: { messagePreview: String(message || '').slice(0, 160) }
+                                    },
+                                    {
+                                        id: 'ai-response',
+                                        type: 'ai_response',
+                                        label: 'AI 回复',
+                                        status: 'failed',
+                                        durationMs: 0,
+                                        summary: errorMessage.slice(0, 240),
+                                        details: {
+                                            error: errorMessage,
+                                            providerId: modelSelection.providerId,
+                                            providerName: modelSelection.provider?.name || '',
+                                            model: modelSelection.model
+                                        }
+                                    }
+                                ]
+                            },
+                            messages: []
+                    });
+                    return { content: [{ type: 'text', text: failedReply }] };
                 }
             }
         },

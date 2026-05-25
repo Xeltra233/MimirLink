@@ -1313,11 +1313,14 @@ function buildTextToolFallbackHint({ tools = [], maxRounds = 3 } = {}) {
 
     return [
         '当当前模型不支持原生 tool_calls 时，你必须改用“文本工具兜底协议”。',
+        '工具决策先分三类: chat=普通群聊闲聊，不调用工具；browse=最新/外部事实/资料核验，调用 web_search；agent=明确要求你代办或 @ 某人，才调用对应工具。',
+        '普通角色扮演、水群、调侃、情绪接话、低信息输入、表情/戳一戳，不要为了显得聪明而调用搜索。',
         `最多允许 ${Math.max(1, Number(maxRounds) || 3)} 轮工具调用；若拿到足够信息就直接结束。`,
         '需要调用工具时，整条回复必须只输出一个 JSON 对象，禁止输出解释、Markdown、代码块、前后缀。',
         '调用工具格式：',
         '{"action":"tool_calls","tool_calls":[{"name":"工具名","arguments":{}}]}',
         '拿到工具结果后，如果还需要继续调用工具，继续按同样格式只输出 JSON。',
+        '拿到足够工具结果后必须输出 final；final 只写给用户看的正文，不暴露 JSON 协议、工具名、参数或“我准备搜索”。',
         '最终回答格式：',
         '{"action":"final","content":"这里放最终回复正文"}',
         '禁止输出不存在的工具名；arguments 必须是 JSON 对象。',
@@ -1664,10 +1667,13 @@ export function buildAIToolContext({ config = {}, aiClient, bot, logger, default
             : '无';
         toolHints.push([
             `你当前可用联网工具: web_search（provider=${webSearchConfig.provider || 'duckduckgo'}）。`,
-            '适用场景: 天气、最新消息、实时信息、外部资料、需要网页事实核验的问题。',
+            '先做模式判断: chat=普通群聊/角色扮演/情绪接话，不搜；browse=最新信息/外部事实/资料核验/用户明确让你查，必须搜；agent=代办动作，按可用工具执行。',
+            '适用场景: 天气、最新消息、实时信息、外部资料、链接/项目/库/新闻/价格/政策/版本等需要网页事实核验的问题。',
+            '不适用场景: 水群、玩梗、低信息、QQ表情、戳一戳、只喊名字、普通角色对话；这些场景直接按群聊回复，不要调用搜索。',
             `工具限制: 默认最多 ${maxResults} 条结果，超时 ${timeoutMs}ms，单条摘要最长 ${maxSnippetLength} 字。`,
             `域名限制: 允许域名=${allowedDomains}；屏蔽域名=${blockedDomains}。`,
             '如果用户的问题明显依赖实时或外部信息，优先调用 web_search，不要先说自己不能联网。',
+            '搜索结果只作为依据，最终回复用自然语言总结；不要泄露工具 JSON、参数、工具名，也不要说“我准备搜索”。',
             '如果搜索失败或无结果，再明确告诉用户这次搜索失败，而不是笼统说你没有上网能力。'
         ].join('\n'));
     }
