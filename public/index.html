@@ -7207,6 +7207,13 @@
                                 </label>
                                 <p class="hint-text">通用规则：读消息头、引用、表情和退场信号，控制旧梗复读与低信息量回复；不包含具体角色设定。</p>
                             </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-send-reasoning-to-qq">
+                                    调试：发送思维链到 QQ
+                                </label>
+                                <p class="hint-text">默认关闭。开启后 QQ 会收到【思维链】和【正文】合并消息，仅建议临时调试使用；靶场和 MCP 不受此开关影响。</p>
+                            </div>
                         </div>
                     </div>
                     <div class="config-subsection">
@@ -15294,6 +15301,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-mention-sender').checked = currentConfig.chat?.mentionSenderOnReply !== false;
                 document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
                 document.getElementById('config-chat-human-control').checked = currentConfig.chat?.humanChatControlEnabled !== false;
+                document.getElementById('config-chat-send-reasoning-to-qq').checked = currentConfig.chat?.sendReasoningToQQ === true;
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
@@ -15646,6 +15654,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     mentionSenderOnReply: document.getElementById('config-chat-mention-sender').checked,
                     attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
                     humanChatControlEnabled: document.getElementById('config-chat-human-control').checked,
+                    sendReasoningToQQ: document.getElementById('config-chat-send-reasoning-to-qq').checked,
                     emptyReplyRetry: {
                         enabled: document.getElementById('config-chat-empty-retry-enabled').checked,
                         maxRetries: parseInt(document.getElementById('config-chat-empty-retry-max').value) || 2,

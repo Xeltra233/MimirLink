@@ -39,14 +39,26 @@ test('real chat path records routing decisions for skipped messages', () => {
     assert.ok(source.includes('[路由] 消息未触发回复'));
 });
 
-test('real chat path can expose reasoning content as one QQ message for debugging', () => {
+test('LLM toggle state is persisted and restored from runtime config', () => {
+    assert.ok(source.includes('config.runtime.llmEnabled'));
+    assert.ok(source.includes('llmEnabled = config.runtime?.llmEnabled !== false;'));
+    assert.ok(source.includes('function setLlmEnabled(nextEnabled)'));
+    assert.ok(source.includes('config.runtime = config.runtime || {};'));
+    assert.ok(source.includes('config.runtime.llmEnabled = llmEnabled;'));
+    assert.ok(source.includes('saveConfig(config);'));
+    assert.ok(source.includes('const newState = setLlmEnabled(!llmEnabled);'));
+});
+
+test('real chat path keeps reasoning available but does not send it to QQ by default', () => {
     assert.ok(source.includes('function buildDebugReplyWithReasoning'));
     assert.ok(source.includes('【思维链】'));
     assert.ok(source.includes('【正文】'));
-    assert.ok(source.includes('const replyToSend = reasoningContent'));
-    assert.ok(source.includes('sendReplyIncludesReasoning: !!reasoningContent'));
-    assert.ok(source.includes('includeReasoningContent: !!reasoningContent'));
-    assert.ok(source.includes('await dispatchReply(event, replyToSend, { forceSingleMessage: !!reasoningContent })'));
+    assert.ok(source.includes('const sendReasoningToQQ = config.chat?.sendReasoningToQQ === true;'));
+    assert.ok(source.includes('const replyToSend = sendReasoningToQQ && reasoningContent'));
+    assert.ok(source.includes('reasoningAvailable: !!reasoningContent'));
+    assert.ok(source.includes('sendReplyIncludesReasoning: sendReasoningToQQ && !!reasoningContent'));
+    assert.ok(source.includes('includeReasoningContent: sendReasoningToQQ && !!reasoningContent'));
+    assert.ok(source.includes('await dispatchReply(event, replyToSend, { forceSingleMessage: sendReasoningToQQ && !!reasoningContent })'));
     assert.ok(source.includes('const splitMessage = options.forceSingleMessage ? false : config.chat.splitMessage !== false;'));
 });
 

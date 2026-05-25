@@ -497,6 +497,11 @@ function normalizeConfig(config) {
         message: typeof thinkingNotify.message === 'string' ? thinkingNotify.message : ''
     };
 
+    config.runtime = config.runtime || {};
+    if (typeof config.runtime.llmEnabled !== 'boolean') {
+        config.runtime.llmEnabled = true;
+    }
+
     normalizeAIConfig(config);
     normalizeParticipantProfileConfig(config);
     ensureCommandAndToolConfig(config);
@@ -613,6 +618,14 @@ function buildGroupMentionPrefix(userId) {
 
 // LLM 开关状态
 let llmEnabled = true;
+
+function setLlmEnabled(nextEnabled) {
+    llmEnabled = nextEnabled !== false;
+    config.runtime = config.runtime || {};
+    config.runtime.llmEnabled = llmEnabled;
+    saveConfig(config);
+    return llmEnabled;
+}
 
 function sanitizeContent(text) {
     return (text || '').replace(/\r/g, '').trim();
@@ -1414,6 +1427,7 @@ async function callWithTimeout(promiseFactory, timeoutMs) {
 }
 
 const config = loadConfig();
+llmEnabled = config.runtime?.llmEnabled !== false;
 ensureBindingConfig(config);
 // 清理旧版 ST 预设水印（temperature/top_p/UUID identifiers 等无用水印）
 stripLegacyPresetMetadata(config);
@@ -3192,7 +3206,8 @@ ${varStatus || '(无)'}
                     }
                 }
             } catch (e) { logger.warn('[变量] 提取失败:', e.message); }
-            const replyToSend = reasoningContent
+            const sendReasoningToQQ = config.chat?.sendReasoningToQQ === true;
+            const replyToSend = sendReasoningToQQ && reasoningContent
                 ? buildDebugReplyWithReasoning(reasoningContent, processedReply)
                 : processedReply;
             logger.info('[执行] 输出后处理完成', {
@@ -3200,7 +3215,8 @@ ${varStatus || '(无)'}
                 processedReplyLength: typeof processedReply === 'string' ? processedReply.length : 0,
                 processedReplyPreview: typeof processedReply === 'string' ? processedReply.slice(0, 200) : null,
                 sendReplyLength: typeof replyToSend === 'string' ? replyToSend.length : 0,
-                sendReplyIncludesReasoning: !!reasoningContent
+                reasoningAvailable: !!reasoningContent,
+                sendReplyIncludesReasoning: sendReasoningToQQ && !!reasoningContent
             });
 
             sessionManager.addMessage(sessionId, 'assistant', processedReply, {
@@ -3227,10 +3243,10 @@ ${varStatus || '(无)'}
             logger.info('[执行] 准备下发回复', {
                 sessionId,
                 messageType: event.message_type,
-                splitMessage: reasoningContent ? false : config.chat.splitMessage !== false,
-                includeReasoningContent: !!reasoningContent
+                splitMessage: sendReasoningToQQ && reasoningContent ? false : config.chat.splitMessage !== false,
+                includeReasoningContent: sendReasoningToQQ && !!reasoningContent
             });
-            await dispatchReply(event, replyToSend, { forceSingleMessage: !!reasoningContent });
+            await dispatchReply(event, replyToSend, { forceSingleMessage: sendReasoningToQQ && !!reasoningContent });
             logger.info('[执行] 回复下发完成', {
                 sessionId
             });
@@ -3300,7 +3316,7 @@ const managers = {
         composition: sessionManager.getDashboardCompositionStats()
     }),
     getLlmEnabled: () => llmEnabled,
-    setLlmEnabled: (v) => { llmEnabled = v; }
+    setLlmEnabled
 };
 setupRoutes(app, config, saveConfig, managers);
 
@@ -3475,9 +3491,9 @@ async function handleMessage(event) {
 
     // /llm 指令：管理员切换 LLM 开关
     if (plainText.trim() === '/llm' && isAdminUser(config, event.user_id)) {
-        llmEnabled = !llmEnabled;
-        const statusText = llmEnabled ? '✅ LLM 已开启' : '⛔ LLM 已关闭';
-        logger.info(`[指令] 管理员 ${event.user_id} 切换 LLM 状态: ${llmEnabled}`);
+        const newState = setLlmEnabled(!llmEnabled);
+        const statusText = newState ? '✅ LLM 已开启' : '⛔ LLM 已关闭';
+        logger.info(`[指令] 管理员 ${event.user_id} 切换 LLM 状态: ${newState}`);
         if (event.message_type === 'group') {
             await bot.sendGroupMessage(event.group_id, statusText);
         } else {
