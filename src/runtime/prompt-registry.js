@@ -13,6 +13,10 @@ function resolveRuntimeSourceSlot(source = {}) {
         return 'post_history';
     }
 
+    if (placement === 'current_message_focus') {
+        return 'current_message_focus';
+    }
+
     if (placement === 'user_input') {
         return 'user_input';
     }
