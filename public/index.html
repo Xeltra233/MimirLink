@@ -6788,7 +6788,7 @@
                     <div style="margin-top:12px;">
                         <div class="form-group">
                             <label>导入目标</label>
-                            <select id="regex-import-target-layer">
+                            <select id="regex-import-target-layer" onchange="editingRegexIndex = null; loadRegexRules();">
                                 <option value="global">全局</option>
                                 <option value="preset">预设</option>
                                 <option value="character">角色</option>
@@ -13868,20 +13868,46 @@
         }
 
         // 正则规则
+        function getSelectedRegexTargetLayer() {
+            return document.getElementById('regex-import-target-layer')?.value || 'global';
+        }
+
+        function getRegexRulesForLayer(targetLayer = getSelectedRegexTargetLayer()) {
+            if (targetLayer === 'preset') {
+                return currentConfig.preset?.regexRules || [];
+            }
+            if (targetLayer === 'character') {
+                const characterName = currentConfig.chat?.defaultCharacter || '';
+                return characterName ? (currentConfig.bindings?.characters?.[characterName]?.regexRules || []) : [];
+            }
+            return currentConfig.bindings?.global?.regexRules || currentConfig.regex?.rules || [];
+        }
+
+        function formatRegexLayerLabel(targetLayer = getSelectedRegexTargetLayer()) {
+            if (targetLayer === 'preset') return '预设';
+            if (targetLayer === 'character') return `角色${currentConfig.chat?.defaultCharacter ? `：${currentConfig.chat.defaultCharacter}` : ''}`;
+            return '全局';
+        }
+
         async function loadRegexRules() {
             try {
                 const res = await fetch('/api/regex');
-                const rules = await res.json();
+                const globalRulesFromApi = await res.json();
+                if (!currentConfig || Object.keys(currentConfig).length === 0) {
+                    await loadConfig();
+                }
+                const targetLayer = getSelectedRegexTargetLayer();
+                const rules = targetLayer === 'global' ? globalRulesFromApi : getRegexRulesForLayer(targetLayer);
                 currentRegexRules = rules;
 
                 const list = document.getElementById('regex-list');
                 if (rules.length === 0) {
-                    list.innerHTML = '<div class="empty-state">暂无规则</div>';
+                    list.innerHTML = `<div class="empty-state">${escapeHtml(formatRegexLayerLabel(targetLayer))}暂无规则</div>`;
                 } else {
                     list.innerHTML = rules.map((r, i) => `
                     <div class="regex-rule ${editingRegexIndex === i ? 'selected' : ''}" onclick="editRegexRule(${i})" style="cursor:pointer; border:${editingRegexIndex === i ? '1px solid var(--accent)' : '1px solid transparent'};">
                         <div style="display: flex; justify-content: space-between; align-items: center;">
-                            <strong>${escapeHtml(r.name || '未命名规则')}</strong>
+                            <strong>${escapeHtml(r.name || '未命名规则')}</strong><span class="meta-inline">${escapeHtml(formatRegexLayerLabel(targetLayer))}</span>
                             <button class="danger" onclick="event.stopPropagation(); deleteRegexRule(${i})" style="padding: 5px 10px;">删除</button>
                         </div>
                         <div class="pattern">${escapeHtml(r.pattern || '')}</div>
@@ -14013,8 +14039,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 await fetch(url, {
                     method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(rule)
+                    body: JSON.stringify({ ...rule, targetLayer: getSelectedRegexTargetLayer() })
                 });
+                await loadConfig();
                 loadRegexRules();
                 showToast(editingRegexIndex === null ? '规则已添' : '规则已更');
                 resetRegexEditor();
@@ -14026,7 +14053,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
         async function deleteRegexRule(index) {
             if (!confirm('确定要删除此规则吗？')) return;
             try {
-                await fetch(`/api/regex/${index}`, { method: 'DELETE' });
+                const targetLayer = encodeURIComponent(getSelectedRegexTargetLayer());
+                await fetch(`/api/regex/${index}?targetLayer=${targetLayer}`, { method: 'DELETE' });
+                await loadConfig();
                 loadRegexRules();
                 showToast('规则已删除');
             } catch (e) {

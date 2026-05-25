@@ -1030,6 +1030,72 @@ test('regex import records can be deleted as a whole file from the target layer'
     }
 });
 
+test('regex CRUD endpoints operate on selected character layer', async () => {
+    const app = express();
+    app.use(express.json());
+
+    const config = {
+        auth: { enabled: false },
+        preset: { regexRules: [{ name: 'Preset Rule', pattern: 'preset', flags: 'g', replacement: '', stage: 'output' }] },
+        regex: {},
+        bindings: {
+            global: { regexRules: [{ name: 'Global Rule', pattern: 'global', flags: 'g', replacement: '', stage: 'output' }] },
+            characters: {
+                '角色A': {
+                    regexRules: [{ name: 'Character Rule', pattern: 'old', flags: 'g', replacement: '', stage: 'output' }]
+                }
+            }
+        },
+        chat: { defaultCharacter: '角色A' },
+        server: {}
+    };
+
+    setupRoutes(app, config, () => {}, createManagers(config));
+
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const listResponse = await fetch(`http://127.0.0.1:${port}/api/regex?targetLayer=character`);
+        const listBody = await listResponse.json();
+
+        assert.equal(listResponse.status, 200, JSON.stringify(listBody));
+        assert.deepEqual(listBody.map((rule) => rule.name), ['Character Rule']);
+
+        const addResponse = await fetch(`http://127.0.0.1:${port}/api/regex`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetLayer: 'character', name: 'Character Added', pattern: 'add', flags: 'g', replacement: '', stage: 'output' })
+        });
+        const addBody = await addResponse.json();
+
+        assert.equal(addResponse.status, 200, JSON.stringify(addBody));
+        assert.equal(config.bindings.characters['角色A'].regexRules.length, 2);
+        assert.equal(config.bindings.global.regexRules.length, 1);
+
+        const updateResponse = await fetch(`http://127.0.0.1:${port}/api/regex/1`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetLayer: 'character', name: 'Character Updated', pattern: 'updated', flags: 'gi', replacement: 'x', stage: 'input' })
+        });
+        const updateBody = await updateResponse.json();
+
+        assert.equal(updateResponse.status, 200, JSON.stringify(updateBody));
+        assert.equal(config.bindings.characters['角色A'].regexRules[1].name, 'Character Updated');
+        assert.equal(config.bindings.characters['角色A'].regexRules[1].pattern, 'updated');
+
+        const deleteResponse = await fetch(`http://127.0.0.1:${port}/api/regex/0?targetLayer=character`, { method: 'DELETE' });
+        const deleteBody = await deleteResponse.json();
+
+        assert.equal(deleteResponse.status, 200, JSON.stringify(deleteBody));
+        assert.deepEqual(config.bindings.characters['角色A'].regexRules.map((rule) => rule.name), ['Character Updated']);
+        assert.deepEqual(config.bindings.global.regexRules.map((rule) => rule.name), ['Global Rule']);
+        assert.deepEqual(config.preset.regexRules.map((rule) => rule.name), ['Preset Rule']);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+});
+
 test('regex processor applies prompt-only rules on input and skips markdown-only or depth-limited output rules', () => {
     const processor = new RegexProcessor({
         enabled: true,

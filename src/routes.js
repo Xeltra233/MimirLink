@@ -3549,19 +3549,20 @@ export function setupRoutes(app, config, saveConfig, managers) {
             ensureImportsConfig();
             return res.json(config.imports.regexFiles.map((record) => summarizeRegexImportRecord(record)));
         }
-        const rules = Array.isArray(config.bindings.global.regexRules) ? config.bindings.global.regexRules : [];
+        const targetLayer = req.query?.targetLayer || 'global';
+        const rules = getRegexTargetRules(targetLayer) || [];
         res.json(rules);
     });
 
     // 添加正则规则（需要认证）
     app.post('/api/regex', requireAuth, (req, res) => {
         try {
-            const rule = req.body;
-            ensureBindingConfig();
-            if (!Array.isArray(config.bindings.global.regexRules)) {
-                config.bindings.global.regexRules = Array.isArray(config.regex.rules) ? config.regex.rules : [];
+            const { targetLayer = 'global', ...rule } = req.body || {};
+            const targetRules = getRegexTargetRules(targetLayer);
+            if (!targetRules) {
+                return res.status(400).json({ success: false, error: '当前没有选中角色，无法添加到角色层' });
             }
-            config.bindings.global.regexRules.push(rule);
+            targetRules.push(rule);
             applyRuntimeConfig();
             saveConfig(config);
             res.json({ success: true, message: '规则已添加' });
@@ -3574,12 +3575,13 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // 删除正则规则（需要认证）
     app.delete('/api/regex/:index', requireAuth, (req, res) => {
         const index = parseInt(req.params.index);
-        ensureBindingConfig();
-        if (!Array.isArray(config.bindings.global.regexRules)) {
-            config.bindings.global.regexRules = Array.isArray(config.regex.rules) ? config.regex.rules : [];
+        const targetLayer = req.query?.targetLayer || 'global';
+        const targetRules = getRegexTargetRules(targetLayer);
+        if (!targetRules) {
+            return res.status(400).json({ success: false, error: '当前没有选中角色，无法删除角色层规则' });
         }
-        if (index >= 0 && index < config.bindings.global.regexRules.length) {
-            config.bindings.global.regexRules.splice(index, 1);
+        if (index >= 0 && index < targetRules.length) {
+            targetRules.splice(index, 1);
         }
         applyRuntimeConfig();
         saveConfig(config);
@@ -3590,17 +3592,18 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.put('/api/regex/:index', requireAuth, (req, res) => {
         try {
             const index = parseInt(req.params.index);
-            ensureBindingConfig();
-            if (!Array.isArray(config.bindings.global.regexRules)) {
-                config.bindings.global.regexRules = Array.isArray(config.regex.rules) ? config.regex.rules : [];
+            const { targetLayer = 'global', ...updates } = req.body || {};
+            const targetRules = getRegexTargetRules(targetLayer);
+            if (!targetRules) {
+                return res.status(400).json({ success: false, error: '当前没有选中角色，无法更新角色层规则' });
             }
-            if (index < 0 || index >= config.bindings.global.regexRules.length) {
+            if (index < 0 || index >= targetRules.length) {
                 return res.status(404).json({ success: false, error: '规则不存在' });
             }
 
-            config.bindings.global.regexRules[index] = {
-                ...config.bindings.global.regexRules[index],
-                ...req.body
+            targetRules[index] = {
+                ...targetRules[index],
+                ...updates
             };
             applyRuntimeConfig();
             saveConfig(config);
