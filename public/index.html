@@ -15813,8 +15813,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             event.returnValue = '';
         });
         // === 配置备份/恢复 ===
-        const BACKUP_CATS = ['config','characters','worldbooks','memory','presets','corpus','knowledge','regex'];
-        const BACKUP_CAT_LABELS = { config:'配置', characters:'角色卡', worldbooks:'世界书', memory:'记忆库', presets:'预设', corpus:'语料', knowledge:'知识库', regex:'正则规则' };
+        const BACKUP_CATS = ['config','bindings','characters','worldbooks','memory','presets','corpus','knowledge','regex'];
+        const BACKUP_CAT_LABELS = { config:'配置', bindings:'绑定关系', characters:'角色卡', worldbooks:'世界书', memory:'记忆库', presets:'预设', corpus:'语料', knowledge:'知识库', regex:'正则规则' };
 
         function showBackupModal() {
             const overlay = document.createElement('div');

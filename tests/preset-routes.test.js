@@ -1745,6 +1745,104 @@ test('legacy config-only regex restore honors empty arrays without overwriting u
     }
 });
 
+test('bindings-only backup restores character bindings without overwriting model config', async () => {
+    const app = express();
+    app.use(express.json());
+
+    const backupConfig = {
+        auth: { enabled: false },
+        ai: {
+            provider: 'backup-provider',
+            baseUrl: 'https://backup.example/v1',
+            apiKey: 'backup-key',
+            model: 'backup-model'
+        },
+        onebot: { url: 'ws://backup-onebot' },
+        chat: { defaultCharacter: '备份角色', modelProviderId: 'backup-chat-provider', model: 'backup-chat-model' },
+        bindings: {
+            global: { worldbook: 'backup-global-world.json', preset: null, regexRules: [], memoryDbPath: './data/chats/backup-global.sqlite' },
+            characters: {
+                '备份角色': {
+                    worldbook: 'backup-character-world.json',
+                    preset: { name: 'Backup Character Preset' },
+                    regexRules: [{ name: 'Backup Character Rule', pattern: 'backup' }],
+                    memoryDbPath: './data/chats/characters/backup.sqlite'
+                }
+            }
+        }
+    };
+
+    const backupBody = await buildBackupWithFiles({ configJson: backupConfig });
+
+    const config = {
+        auth: { enabled: false },
+        ai: {
+            provider: 'current-provider',
+            baseUrl: 'https://current.example/v1',
+            apiKey: 'current-key',
+            model: 'current-model'
+        },
+        onebot: { url: 'ws://current-onebot' },
+        chat: { defaultCharacter: '当前角色', modelProviderId: 'current-chat-provider', model: 'current-chat-model' },
+        bindings: {
+            global: { worldbook: 'current-global-world.json', preset: null, regexRules: [], memoryDbPath: './data/chats/current-global.sqlite' },
+            characters: {
+                '当前角色': {
+                    worldbook: 'current-character-world.json',
+                    preset: { name: 'Current Character Preset' },
+                    regexRules: [{ name: 'Current Character Rule', pattern: 'current' }],
+                    memoryDbPath: './data/chats/characters/current.sqlite'
+                }
+            }
+        },
+        server: { port: 23456 }
+    };
+    let saveCount = 0;
+    setupRoutes(app, config, () => { saveCount += 1; }, createManagers(config));
+
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const inspectResponse = await fetch(`http://127.0.0.1:${port}/api/config/backup/inspect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/gzip' },
+            body: backupBody
+        });
+        const inspectBody = await inspectResponse.json();
+        assert.equal(inspectResponse.status, 200, JSON.stringify(inspectBody));
+        assert.ok(inspectBody.categories.includes('bindings'));
+
+        const restoreResponse = await fetch(`http://127.0.0.1:${port}/api/config/restore?categories=bindings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/gzip' },
+            body: backupBody
+        });
+        const restoreBody = await restoreResponse.json();
+
+        assert.equal(restoreResponse.status, 200, JSON.stringify(restoreBody));
+        assert.equal(restoreBody.success, true);
+        assert.ok(restoreBody.changes.replaced.includes('绑定关系'));
+        assert.ok(restoreBody.changes.replaced.includes('当前默认角色'));
+        assert.equal(saveCount, 1);
+
+        assert.equal(config.chat.defaultCharacter, '备份角色');
+        assert.equal(config.bindings.global.worldbook, 'backup-global-world.json');
+        assert.equal(config.bindings.characters['备份角色'].worldbook, 'backup-character-world.json');
+        assert.deepEqual(config.bindings.characters['备份角色'].regexRules, [{ name: 'Backup Character Rule', pattern: 'backup' }]);
+
+        assert.equal(config.ai.provider, 'current-provider');
+        assert.equal(config.ai.baseUrl, 'https://current.example/v1');
+        assert.equal(config.ai.apiKey, 'current-key');
+        assert.equal(config.ai.model, 'current-model');
+        assert.equal(config.chat.modelProviderId, 'current-chat-provider');
+        assert.equal(config.chat.model, 'current-chat-model');
+        assert.equal(config.onebot.url, 'ws://current-onebot');
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+});
+
 test('config restore preserves current runtime server binding', async () => {
     const app = express();
 

@@ -1537,7 +1537,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // ==================== 角色卡管理 ====================
 
     // === 配置备份/恢复（tar.gz 全量打包，支持分类过滤） ===
-    const BACKUP_CATEGORIES = ['config','characters','worldbooks','memory','presets','corpus','regex','knowledge'];
+    const BACKUP_CATEGORIES = ['config','bindings','characters','worldbooks','memory','presets','corpus','regex','knowledge'];
     const BACKUP_DATA_SUBDIRS = {
         characters: 'characters',
         worldbooks: 'worlds',
@@ -1556,6 +1556,46 @@ export function setupRoutes(app, config, saveConfig, managers) {
     }
 
     const REGEX_RULES_SNAPSHOT_FILE = '_regex_rules_snapshot.json';
+    const BINDINGS_SNAPSHOT_FILE = '_bindings_snapshot.json';
+
+    function buildBindingsBackupSnapshot(configLike = {}) {
+        return {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            defaultCharacter: typeof configLike.chat?.defaultCharacter === 'string' ? configLike.chat.defaultCharacter : '',
+            bindings: cloneImportSnapshot(configLike.bindings || null)
+        };
+    }
+
+    function hasConfigBindingData(configLike = {}) {
+        return Boolean(
+            configLike.bindings && typeof configLike.bindings === 'object'
+            || typeof configLike.chat?.defaultCharacter === 'string'
+        );
+    }
+
+    function applyBindingsBackupSnapshot(snapshot = {}, changes) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            changes.skipped.push('绑定关系快照 (格式无效)');
+            return false;
+        }
+
+        if (snapshot.bindings && typeof snapshot.bindings === 'object') {
+            config.bindings = cloneImportSnapshot(snapshot.bindings);
+            ensureBindingConfig();
+            changes.replaced.push('绑定关系');
+        } else {
+            changes.skipped.push('绑定关系 (快照为空)');
+        }
+
+        if (typeof snapshot.defaultCharacter === 'string') {
+            config.chat = config.chat && typeof config.chat === 'object' ? config.chat : {};
+            config.chat.defaultCharacter = snapshot.defaultCharacter;
+            changes.replaced.push('当前默认角色');
+        }
+
+        return true;
+    }
 
     function hasRegexArray(value) {
         return Array.isArray(value);
@@ -1746,6 +1786,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 fsSync.writeFileSync(path.join(regexBackupDir, '_manifest.json'), JSON.stringify(manifest, null, 2), 'utf8');
             }
 
+            // 绑定关系独立备份：只包含角色/全局绑定与当前默认角色，不包含模型、Key、OneBot 等配置。
+            if (categories.has('bindings')) {
+                const snapshot = buildBindingsBackupSnapshot(config);
+                fsSync.writeFileSync(path.join(tmpDataDir, BINDINGS_SNAPSHOT_FILE), JSON.stringify(snapshot, null, 2), 'utf8');
+            }
+
             res.setHeader('Content-Type', 'application/gzip');
             res.setHeader('Content-Disposition', `attachment; filename="${archiveName}"`);
             const gzip = createGzip();
@@ -1791,6 +1837,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                         fsSync.existsSync(path.join(dataDir, REGEX_RULES_SNAPSHOT_FILE))
                         || fsSync.existsSync(path.join(dataDir, '_regex_imports'))
                     )) found.push(cat);
+                    if (!sub && cat === 'bindings' && fsSync.existsSync(path.join(dataDir, BINDINGS_SNAPSHOT_FILE))) found.push(cat);
                 }
             }
             // 如果 config.json 存在, presets 也包含在内
@@ -1810,6 +1857,17 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     if (hasConfigRegexData(backupConfig)) found.push('regex');
                 } catch (configInspectErr) {
                     logger.warn('[备份检测] config.json 正则检测失败:', configInspectErr.message);
+                }
+            }
+            if (!found.includes('bindings') && fsSync.existsSync(dataDir) && fsSync.existsSync(path.join(dataDir, BINDINGS_SNAPSHOT_FILE))) {
+                found.push('bindings');
+            }
+            if (!found.includes('bindings') && fsSync.existsSync(backupConfigPath)) {
+                try {
+                    const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+                    if (hasConfigBindingData(backupConfig)) found.push('bindings');
+                } catch (configInspectErr) {
+                    logger.warn('[备份检测] config.json 绑定关系检测失败:', configInspectErr.message);
                 }
             }
             // memory 永远单独显示
@@ -1980,6 +2038,34 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             }
 
+            // 独立恢复绑定关系：只恢复 config.bindings 和 chat.defaultCharacter。
+            if (categories.has('bindings')) {
+                try {
+                    const bindingsSnapshotPath = path.join(tmpDir, 'data', BINDINGS_SNAPSHOT_FILE);
+                    if (fsSync.existsSync(bindingsSnapshotPath)) {
+                        const snapshot = JSON.parse(fsSync.readFileSync(bindingsSnapshotPath, 'utf8'));
+                        applyBindingsBackupSnapshot(snapshot, changes);
+                        saveConfig(config);
+                    } else {
+                        const backupConfigPath = path.join(tmpDir, 'config.json');
+                        if (fsSync.existsSync(backupConfigPath)) {
+                            const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+                            if (hasConfigBindingData(backupConfig)) {
+                                applyBindingsBackupSnapshot(buildBindingsBackupSnapshot(backupConfig), changes);
+                                saveConfig(config);
+                            } else {
+                                changes.skipped.push('绑定关系 (config.json 中无绑定数据)');
+                            }
+                        } else {
+                            changes.skipped.push('绑定关系 (无快照文件)');
+                        }
+                    }
+                } catch (bindingRestoreErr) {
+                    logger.error('[恢复] 绑定关系恢复失败:', bindingRestoreErr.message);
+                    changes.skipped.push(`绑定关系 (恢复失败: ${bindingRestoreErr.message})`);
+                }
+            }
+
             // 清理
             await new Promise(r => autoStream.on('finish', r));
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
@@ -1994,7 +2080,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 } catch {}
             }
             // 正则恢复后重新应用配置
-            if (categories.has('regex')) {
+            if (categories.has('regex') || categories.has('bindings')) {
                 applyRuntimeConfig();
             }
 
