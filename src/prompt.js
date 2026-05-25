@@ -1200,7 +1200,7 @@ export class PromptBuilder {
     }
 
     static importPreset(payload = {}) {
-        const source = payload.preset || payload;
+        const source = payload.preset || payload.importedPreset || payload;
 
         if (Array.isArray(source.prompts) && source.prompts.length > 0) {
             return PromptBuilder.normalizePreset({
@@ -1361,7 +1361,7 @@ export class PromptBuilder {
     }
 
     static diagnosePresetImport(payload = {}) {
-        const source = payload.preset || payload;
+        const source = payload.preset || payload.importedPreset || payload;
         const promptItems = Array.isArray(source.prompts) ? source.prompts : [];
         const enabledPrompts = promptItems.filter((item) => item && item.enabled !== false);
         const markerPrompts = enabledPrompts.filter((item) => item.marker === true);
