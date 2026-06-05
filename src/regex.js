@@ -27,6 +27,16 @@ export class RegexProcessor {
             ? [...presetRules, ...globalRules, ...presetRulesBound, ...characterRules]
             : [...globalRules, ...characterRules];
         mergedRules.push({
+            name: '【内置】移除当前消息焦点泄漏',
+            pattern: '^[ \\t]*事件:\\s*[^\\r\\n]*(?:\\r?\\n[ \\t]*(?:发言人|意图|回复目标|触发|低信息|最新输入|策略):[^\\r\\n]*){1,7}(?:\\r?\\n)?|\\r?\\n[ \\t]*事件:\\s*[^\\r\\n]*(?:\\r?\\n[ \\t]*(?:发言人|意图|回复目标|触发|低信息|最新输入|策略):[^\\r\\n]*){1,7}',
+            flags: 'g',
+            replacement: '',
+            enabled: true,
+            stage: 'output',
+            source: 'built-in',
+            markdownOnly: false
+        });
+        mergedRules.push({
             name: '【内置】去除思考链标签',
             pattern: '<thinking>[\\s\\S]*?</thinking>',
             flags: 'g',
