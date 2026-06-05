@@ -16,6 +16,7 @@ data/restore-backups/
 data/range-corpus.json
 data/range-prefs.json
 data/range-embeddings.json
+data/range-sync-history.json
 data/range-snapshots/
 data/presets/
 data/kb_*.json
@@ -42,6 +43,7 @@ npm-debug.log*
 # Local workspaces and temporary artifacts
 .worktrees/
 tmp/
+goal-*/
 compare-ui/
 claude-script-check.js
 todo.txt
