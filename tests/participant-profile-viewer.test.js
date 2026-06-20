@@ -1577,6 +1577,18 @@ test('admin UI exposes mention sender reply toggle in config hooks', () => {
     assert.ok(html.includes("mentionSenderOnReply: document.getElementById('config-chat-mention-sender').checked"));
 });
 
+test('admin UI exposes log retention config hooks', () => {
+    const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    assert.ok(html.includes('id="config-server-log-retention-days"'));
+    assert.ok(html.includes('id="config-server-log-cleanup-interval-minutes"'));
+    assert.ok(html.includes("document.getElementById('config-server-log-retention-days').value = currentConfig.server?.logRetentionDays ?? 14;"));
+    assert.ok(html.includes("document.getElementById('config-server-log-cleanup-interval-minutes').value = Math.max(1, Math.round((currentConfig.server?.logCleanupIntervalMs ?? 3600000) / 60000));"));
+    assert.ok(html.includes('logRetentionDays: (() => {'));
+    assert.ok(html.includes('logCleanupIntervalMs: (() => {'));
+    assert.ok(html.includes('日志保留天数必须是大于等于 0 的数字'));
+    assert.ok(html.includes('日志清理检查间隔必须在 1 到 1440 分钟之间'));
+});
+
 test('admin UI includes variable management tab and panel hooks', () => {
     const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
     assert.ok(html.includes('data-panel="variables"'));

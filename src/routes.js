@@ -1234,6 +1234,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
         );
         promptBuilder.updateConfig(config);
         runtime?.updateConfig(config);
+        logger?.updateConfig?.({
+            logRetentionDays: config.server?.logRetentionDays,
+            logCleanupIntervalMs: config.server?.logCleanupIntervalMs
+        });
         clearParticipantProfileTimers?.();
     };
 

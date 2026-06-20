@@ -7791,6 +7791,21 @@
                         <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="inspectRestoreFile(event)">
                     </div>
                     <div class="config-subsection">
+                        <div class="config-subsection-title">日志自动清理</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label>日志保留天数</label>
+                                <input type="number" id="config-server-log-retention-days" placeholder="14" min="0" max="3650" step="1">
+                                <p class="hint-text">到期的历史 .log 文件会由服务端自动删除；0 表示关闭自动删除。当前正在写入的日志不会被删除。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>日志清理检查间隔（分钟）</label>
+                                <input type="number" id="config-server-log-cleanup-interval-minutes" placeholder="60" min="1" max="1440" step="1">
+                                <p class="hint-text">服务端按此间隔检查过期日志；过小会增加磁盘扫描频率，建议保持 60 分钟。</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
                         <div class="config-subsection-title">危险操作</div>
                         <p class="hint-text" style="margin-bottom:8px;">清空所有会话、消息、变量、档案、知识库。不可撤销。</p>
                         <button class="danger" onclick="clearAllData()">🗑 清空所有数据</button>
@@ -14833,6 +14848,13 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 warnings.push('AI 超时低于 10 秒，复杂角色或联网工具调用可能更容易失败');
             }
 
+            if (!Number.isFinite(draft.server?.logRetentionDays) || draft.server.logRetentionDays < 0) {
+                errors.push('日志保留天数必须是大于等于 0 的数字');
+            }
+            if (!Number.isFinite(draft.server?.logCleanupIntervalMs) || draft.server.logCleanupIntervalMs < 60000 || draft.server.logCleanupIntervalMs > 86400000) {
+                errors.push('日志清理检查间隔必须在 1 到 1440 分钟之间');
+            }
+
             if (draft.chat.historyLimit > draft.chat.maxGlobalMessages) {
                 errors.push('上下文历史条数不能大于全屢时间线容量上限');
             }
@@ -15393,6 +15415,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
                 document.getElementById('config-mcp-enabled').checked = currentConfig.mcp?.enabled !== false;
                 document.getElementById('config-mcp-path').value = currentConfig.mcp?.path || '/mcp';
+                document.getElementById('config-server-log-retention-days').value = currentConfig.server?.logRetentionDays ?? 14;
+                document.getElementById('config-server-log-cleanup-interval-minutes').value = Math.max(1, Math.round((currentConfig.server?.logCleanupIntervalMs ?? 3600000) / 60000));
                 presetDraft = normalizePresetDraft(currentConfig.preset || {});
                 selectedPresetPromptIndex = 0;
                 renderPresetEditor();
@@ -15608,6 +15632,18 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         return value && value !== '******' ? value : '******';
                     })(),
                     tokenMode: document.getElementById('config-onebot-token-mode').value
+                },
+                server: {
+                    ...(currentConfig.server || {}),
+                    logRetentionDays: (() => {
+                        const value = parseInt(document.getElementById('config-server-log-retention-days').value);
+                        return Number.isFinite(value) ? Math.min(Math.max(value, 0), 3650) : 14;
+                    })(),
+                    logCleanupIntervalMs: (() => {
+                        const value = parseInt(document.getElementById('config-server-log-cleanup-interval-minutes').value);
+                        const minutes = Number.isFinite(value) ? Math.min(Math.max(value, 1), 1440) : 60;
+                        return minutes * 60000;
+                    })()
                 },
                 ai: {
                     provider: resolvedAIConfig.provider,

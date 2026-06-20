@@ -386,6 +386,21 @@ function clampInteger(value, minimum, maximum, fallback) {
     return Math.min(maximum, Math.max(minimum, normalized));
 }
 
+function clampIntegerAllowZero(value, minimum, maximum, fallback) {
+    const normalized = Number(value);
+    if (!Number.isFinite(normalized)) {
+        return fallback;
+    }
+
+    return Math.min(maximum, Math.max(minimum, Math.floor(normalized)));
+}
+
+function normalizeServerConfig(config) {
+    config.server = config.server || {};
+    config.server.logRetentionDays = clampIntegerAllowZero(config.server.logRetentionDays, 0, 3650, 14);
+    config.server.logCleanupIntervalMs = clampInteger(config.server.logCleanupIntervalMs, 60000, 86400000, 3600000);
+}
+
 function ensureCommandAndToolConfig(config) {
     config.chat = config.chat || {};
     config.chat.commands = config.chat.commands || {};
@@ -437,6 +452,7 @@ function ensureCommandAndToolConfig(config) {
 }
 
 function normalizeConfig(config) {
+    normalizeServerConfig(config);
     config.chat = config.chat || {};
     config.bindings = config.bindings || {};
     config.bindings.global = config.bindings.global || {};
@@ -1433,7 +1449,10 @@ ensureBindingConfig(config);
 stripLegacyPresetMetadata(config);
 // 从 data/presets/ 同步预设文件到 config（支持备份独立恢复）
 syncPresetFiles(config);
-const logger = new Logger();
+const logger = new Logger({
+    logRetentionDays: config.server?.logRetentionDays,
+    logCleanupIntervalMs: config.server?.logCleanupIntervalMs
+});
 const DATA_DIR = config.chat?.dataDir || join(ROOT_DIR, 'data');
 
 const characterManager = new CharacterManager(DATA_DIR);
