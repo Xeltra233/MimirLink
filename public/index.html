@@ -7209,6 +7209,18 @@
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-group-repeat-enabled">
+                                    启用群聊复读直发
+                                </label>
+                                <p class="hint-text">群聊连续两条同文触发后直接发送同一句话，不经过 LLM；触发消息仍会进入记忆库。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>复读冷却（分钟）</label>
+                                <input type="number" id="config-chat-group-repeat-cooldown-minutes" placeholder="3" min="1" max="60">
+                                <p class="hint-text">触发后，同一群内同一句话会在冷却期内被临时拉黑，避免重复复读。</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-send-reasoning-to-qq">
                                     调试：发送思维链到 QQ
                                 </label>
@@ -15075,6 +15087,11 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             setConfigInputDisabledState('config-chat-thinking-notify-message', !enabled);
         }
 
+        function updateGroupRepeatFields() {
+            const enabled = document.getElementById('config-chat-group-repeat-enabled')?.checked === true;
+            setConfigInputDisabledState('config-chat-group-repeat-cooldown-minutes', !enabled);
+        }
+
         function updateContextInjectionFields() {
             const enabled = document.getElementById('config-context-enabled')?.checked === true;
             setConfigInputDisabledState('config-context-session-facts', !enabled);
@@ -15379,6 +15396,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
                 document.getElementById('config-chat-human-control').checked = currentConfig.chat?.humanChatControlEnabled !== false;
                 document.getElementById('config-chat-send-reasoning-to-qq').checked = currentConfig.chat?.sendReasoningToQQ === true;
+                document.getElementById('config-chat-group-repeat-enabled').checked = currentConfig.chat?.groupRepeat?.enabled === true;
+                document.getElementById('config-chat-group-repeat-cooldown-minutes').value = Math.max(1, Math.round((currentConfig.chat?.groupRepeat?.cooldownMs ?? 180000) / 60000));
+                updateGroupRepeatFields();
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
@@ -15754,6 +15774,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
                     humanChatControlEnabled: document.getElementById('config-chat-human-control').checked,
                     sendReasoningToQQ: document.getElementById('config-chat-send-reasoning-to-qq').checked,
+                    groupRepeat: {
+                        enabled: document.getElementById('config-chat-group-repeat-enabled').checked,
+                        triggerCount: 2,
+                        cooldownMs: (parseInt(document.getElementById('config-chat-group-repeat-cooldown-minutes').value) || 3) * 60000
+                    },
                     emptyReplyRetry: {
                         enabled: document.getElementById('config-chat-empty-retry-enabled').checked,
                         maxRetries: parseInt(document.getElementById('config-chat-empty-retry-max').value) || 2,
@@ -16734,6 +16759,9 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
 
             const thinkingNotifyToggle = document.getElementById('config-chat-thinking-notify-enabled');
             thinkingNotifyToggle?.addEventListener('change', updateThinkingNotifyFields);
+
+            const groupRepeatToggle = document.getElementById('config-chat-group-repeat-enabled');
+            groupRepeatToggle?.addEventListener('change', updateGroupRepeatFields);
 
             const contextToggle = document.getElementById('config-context-enabled');
             contextToggle?.addEventListener('change', updateContextInjectionFields);
