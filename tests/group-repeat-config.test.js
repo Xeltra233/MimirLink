@@ -275,6 +275,93 @@ test('group repeat detector observes buffered batches in order', () => {
     assert.equal(result.event.user_id, 20003);
 });
 
+test('group repeat detector suppresses same text during cooldown and restores after expiry', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 1000 } } };
+    const baseEvent = { message_type: 'group', group_id: 10001 };
+
+    assert.equal(detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20001 },
+        text: '别复读了',
+        now: 1000
+    }).shouldRepeat, false);
+    const firstTrigger = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20002 },
+        text: '别复读了',
+        now: 1001
+    });
+    assert.equal(firstTrigger.shouldRepeat, true);
+    assert.equal(firstTrigger.cooldownExpiresAt, 2001);
+
+    const suppressedOne = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20003 },
+        text: '别复读了',
+        now: 1500
+    });
+    const suppressedTwo = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20004 },
+        text: '别复读了',
+        now: 1501
+    });
+    assert.equal(suppressedOne.shouldRepeat, false);
+    assert.equal(suppressedOne.reason, 'cooldown');
+    assert.equal(suppressedTwo.shouldRepeat, false);
+    assert.equal(suppressedTwo.reason, 'cooldown');
+
+    const afterCooldownOne = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20005 },
+        text: '别复读了',
+        now: 2002
+    });
+    const afterCooldownTwo = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20006 },
+        text: '别复读了',
+        now: 2003
+    });
+    assert.equal(afterCooldownOne.shouldRepeat, false);
+    assert.equal(afterCooldownOne.count, 1);
+    assert.equal(afterCooldownTwo.shouldRepeat, true);
+    assert.equal(afterCooldownTwo.cooldownExpiresAt, 3003);
+});
+
+test('group repeat cooldown is scoped per group', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 1000 } } };
+
+    assert.equal(detector.observeBatch({
+        config,
+        now: 1000,
+        items: [
+            { plainText: '同一句', event: { message_type: 'group', group_id: 10001, user_id: 20001 } },
+            { plainText: '同一句', event: { message_type: 'group', group_id: 10001, user_id: 20002 } }
+        ]
+    }).shouldRepeat, true);
+    assert.equal(detector.observeBatch({
+        config,
+        now: 1001,
+        items: [
+            { plainText: '同一句', event: { message_type: 'group', group_id: 10002, user_id: 30001 } },
+            { plainText: '同一句', event: { message_type: 'group', group_id: 10002, user_id: 30002 } }
+        ]
+    }).shouldRepeat, true);
+    const suppressedInFirstGroup = detector.observeBatch({
+        config,
+        now: 1002,
+        items: [
+            { plainText: '同一句', event: { message_type: 'group', group_id: 10001, user_id: 20003 } },
+            { plainText: '同一句', event: { message_type: 'group', group_id: 10001, user_id: 20004 } }
+        ]
+    });
+    assert.equal(suppressedInFirstGroup.shouldRepeat, false);
+    assert.equal(suppressedInFirstGroup.reason, 'cooldown');
+});
+
 test('real chat path stores group repeat input before direct send and skips LLM', async () => {
     const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
     const addMessageIndex = source.indexOf("const userRecord = sessionManager.addMessage(sessionId, 'user', processedInput");

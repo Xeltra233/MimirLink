@@ -53,10 +53,32 @@ export function shouldObserveGroupRepeatMessage({ config = {}, event = {}, text 
 export class GroupRepeatDetector {
     constructor() {
         this.groupState = new Map();
+        this.cooldowns = new Map();
     }
 
     reset() {
         this.groupState.clear();
+        this.cooldowns.clear();
+    }
+
+    getGroupCooldowns(groupId) {
+        if (!this.cooldowns.has(groupId)) {
+            this.cooldowns.set(groupId, new Map());
+        }
+        return this.cooldowns.get(groupId);
+    }
+
+    cleanupCooldowns(now = Date.now()) {
+        for (const [groupId, entries] of this.cooldowns.entries()) {
+            for (const [normalizedText, expiresAt] of entries.entries()) {
+                if (expiresAt <= now) {
+                    entries.delete(normalizedText);
+                }
+            }
+            if (entries.size === 0) {
+                this.cooldowns.delete(groupId);
+            }
+        }
     }
 
     observeMessage({ config = {}, event = {}, text = '', botSelfId = '', now = Date.now(), item = null } = {}) {
@@ -71,6 +93,22 @@ export class GroupRepeatDetector {
         }
 
         const normalizedText = normalizeRepeatText(text);
+        this.cleanupCooldowns(now);
+        const groupCooldowns = this.getGroupCooldowns(groupId);
+        const cooldownExpiresAt = groupCooldowns.get(normalizedText) || 0;
+        if (cooldownExpiresAt > now) {
+            return {
+                shouldRepeat: false,
+                reason: 'cooldown',
+                groupId,
+                normalizedText,
+                repeatText: normalizedText,
+                cooldownExpiresAt,
+                event,
+                item
+            };
+        }
+
         const previous = this.groupState.get(groupId);
         const count = previous?.normalizedText === normalizedText
             ? previous.count + 1
@@ -84,6 +122,8 @@ export class GroupRepeatDetector {
         };
 
         if (count >= repeatConfig.triggerCount) {
+            const cooldownExpiresAt = now + repeatConfig.cooldownMs;
+            groupCooldowns.set(normalizedText, cooldownExpiresAt);
             this.groupState.set(groupId, {
                 ...nextState,
                 count: 0
@@ -96,6 +136,7 @@ export class GroupRepeatDetector {
                 repeatText,
                 count,
                 triggerCount: repeatConfig.triggerCount,
+                cooldownExpiresAt,
                 event,
                 item
             };
@@ -117,6 +158,7 @@ export class GroupRepeatDetector {
 
     observeBatch({ config = {}, items = [], botSelfId = '', now = Date.now() } = {}) {
         let matched = null;
+        let lastResult = null;
         for (const item of Array.isArray(items) ? items : []) {
             const result = this.observeMessage({
                 config,
@@ -126,10 +168,11 @@ export class GroupRepeatDetector {
                 now,
                 item
             });
+            lastResult = result;
             if (result.shouldRepeat) {
                 matched = result;
             }
         }
-        return matched || { shouldRepeat: false, reason: 'no_match' };
+        return matched || lastResult || { shouldRepeat: false, reason: 'no_match' };
     }
 }
