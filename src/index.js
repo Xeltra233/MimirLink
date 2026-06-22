@@ -2867,12 +2867,12 @@ async function processBatch(batch) {
                 sourceType: adminUser ? 'admin_user_message' : 'user_message',
                 trusted: adminUser
             });
-            if (injectionRisk.level === 'high') {
+            if (shouldRunLlm && injectionRisk.level === 'high') {
                 logger.warn(`[安全] 高风险注入已拦截 [${sessionId}] 规则:${injectionRisk.matchedRules.join(',')} 分数:${injectionRisk.score}`, { userId: event.user_id, groupId: event.group_id, preview: processedInput.slice(0, 80) });
                 await dispatchReply(event, '⚠️ 检测到提示注入攻击，已拦截。');
                 return;
             }
-            if (injectionRisk.level !== 'none') {
+            if (shouldRunLlm && injectionRisk.level !== 'none') {
                 logger.warn(`[安全] 疑似注入 (${injectionRisk.level}) [${sessionId}] 规则:${injectionRisk.matchedRules.join(',')}`, injectionRisk);
             }
             runtimeContext = {

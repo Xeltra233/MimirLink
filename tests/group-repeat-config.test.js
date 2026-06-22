@@ -291,5 +291,6 @@ test('real chat path stores group repeat input before direct send and skips LLM'
     assert.ok(source.includes('await bot.sendGroupMessage(groupRepeatEvent.group_id, groupRepeatResult.repeatText);'));
     assert.ok(source.includes("logger.info('[复读] 群聊复读已直发，跳过 LLM'"));
     assert.ok(source.includes('if (!shouldRunLlm)'));
+    assert.ok(source.includes("if (shouldRunLlm && injectionRisk.level === 'high')"));
     assert.ok(source.includes("'group_repeat_watch'"));
 });
