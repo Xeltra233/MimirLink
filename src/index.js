@@ -756,7 +756,6 @@ async function generateReplyWithRetry({ aiClient, messages, toolContext, chatAIO
             const chainLeak = detectChainLeak({
                 rawReply: reply,
                 visibleReply: reply,
-                reasoningContent: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent : '',
                 userInput
             });
 

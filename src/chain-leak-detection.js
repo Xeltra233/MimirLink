@@ -43,15 +43,15 @@ function englishRatio(text) {
     return asciiLetters / Math.max(asciiLetters + cjkChars, 1);
 }
 
-function collectCandidateText({ rawReply, visibleReply, processedReply, reasoningContent } = {}) {
-    return [rawReply, visibleReply, processedReply, reasoningContent]
+function collectCandidateText({ rawReply, visibleReply, processedReply } = {}) {
+    return [rawReply, visibleReply, processedReply]
         .map(normalizeText)
         .filter(Boolean)
         .join('\n\n');
 }
 
-export function detectChainLeak({ rawReply, visibleReply, processedReply, reasoningContent, userInput } = {}) {
-    const candidate = collectCandidateText({ rawReply, visibleReply, processedReply, reasoningContent });
+export function detectChainLeak({ rawReply, visibleReply, processedReply, userInput } = {}) {
+    const candidate = collectCandidateText({ rawReply, visibleReply, processedReply });
     if (!candidate) {
         return { leaked: false, reason: 'empty' };
     }
