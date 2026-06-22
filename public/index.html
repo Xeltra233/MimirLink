@@ -7237,6 +7237,26 @@
                         </div>
                     </div>
                     <div class="config-subsection">
+                        <div class="config-subsection-title">爆思维链自动重试</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-chain-leak-retry-enabled" checked>
+                                    启用爆思维链自动重试
+                                </label>
+                                <p class="hint-text">检测到英文模型工作日志或分析标题泄露到回复时，发送前自动丢弃并重试；英文任务、prompt、代码块不会触发。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>最大重试次数</label>
+                                <input type="number" id="config-chat-chain-leak-retry-max" placeholder="1" min="0" max="5">
+                            </div>
+                            <div class="form-group">
+                                <label>重试间隔（毫秒）</label>
+                                <input type="number" id="config-chat-chain-leak-retry-delay" placeholder="500" min="0" max="10000" step="100">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
                         <div class="config-subsection-title">思考中提示</div>
                         <div class="config-subgrid">
                             <div class="form-group">
@@ -15043,6 +15063,12 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             setConfigInputDisabledState('config-chat-empty-retry-delay', !enabled);
         }
 
+        function updateChainLeakRetryFields() {
+            const enabled = document.getElementById('config-chat-chain-leak-retry-enabled')?.checked === true;
+            setConfigInputDisabledState('config-chat-chain-leak-retry-max', !enabled);
+            setConfigInputDisabledState('config-chat-chain-leak-retry-delay', !enabled);
+        }
+
         function updateThinkingNotifyFields() {
             const enabled = document.getElementById('config-chat-thinking-notify-enabled')?.checked === true;
             setConfigInputDisabledState('config-chat-thinking-notify-delay', !enabled);
@@ -15356,6 +15382,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
+                document.getElementById('config-chat-chain-leak-retry-enabled').checked = currentConfig.chat?.chainLeakRetry?.enabled !== false;
+                document.getElementById('config-chat-chain-leak-retry-max').value = currentConfig.chat?.chainLeakRetry?.maxRetries ?? 1;
+                document.getElementById('config-chat-chain-leak-retry-delay').value = currentConfig.chat?.chainLeakRetry?.delayMs ?? 500;
                 document.getElementById('config-chat-thinking-notify-enabled').checked = currentConfig.chat?.thinkingNotify?.enabled !== false;
                 document.getElementById('config-chat-thinking-notify-delay').value = currentConfig.chat?.thinkingNotify?.delaySec ?? 60;
                 document.getElementById('config-chat-thinking-notify-message').value = currentConfig.chat?.thinkingNotify?.message || '';
@@ -15381,6 +15410,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 updateTextToolFallbackFields();
                 updateWebSearchProviderFields();
                 updateEmptyRetryFields();
+                updateChainLeakRetryFields();
                 updateThinkingNotifyFields();
                 updateContextInjectionFields();
 
@@ -15610,6 +15640,10 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             // 读取超时配置（转换为毫秒保存
             const timeoutSeconds = Math.min(Math.max(parseInt(document.getElementById('config-ai-timeout').value) || 60, 1), 3600);
             const timeoutMs = timeoutSeconds * 1000;
+            const readIntegerInput = (id, fallback) => {
+                const value = parseInt(document.getElementById(id)?.value, 10);
+                return Number.isFinite(value) ? value : fallback;
+            };
             const providerEntriesForSave = getAIProviderEntriesForSave();
             const activeProviderForSave = providerEntriesForSave.find((entry) => entry.id === activeAIProviderId) || providerEntriesForSave[0] || {};
             const resolvedAIConfig = buildResolvedAIConfig({
@@ -15724,6 +15758,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         enabled: document.getElementById('config-chat-empty-retry-enabled').checked,
                         maxRetries: parseInt(document.getElementById('config-chat-empty-retry-max').value) || 2,
                         delayMs: parseInt(document.getElementById('config-chat-empty-retry-delay').value) || 800
+                    },
+                    chainLeakRetry: {
+                        enabled: document.getElementById('config-chat-chain-leak-retry-enabled').checked,
+                        maxRetries: readIntegerInput('config-chat-chain-leak-retry-max', 1),
+                        delayMs: readIntegerInput('config-chat-chain-leak-retry-delay', 500)
                     },
                     thinkingNotify: {
                         enabled: document.getElementById('config-chat-thinking-notify-enabled').checked,
@@ -16689,6 +16728,9 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
 
             const emptyRetryToggle = document.getElementById('config-chat-empty-retry-enabled');
             emptyRetryToggle?.addEventListener('change', updateEmptyRetryFields);
+
+            const chainLeakRetryToggle = document.getElementById('config-chat-chain-leak-retry-enabled');
+            chainLeakRetryToggle?.addEventListener('change', updateChainLeakRetryFields);
 
             const thinkingNotifyToggle = document.getElementById('config-chat-thinking-notify-enabled');
             thinkingNotifyToggle?.addEventListener('change', updateThinkingNotifyFields);

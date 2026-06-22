@@ -44,6 +44,7 @@ import { TTSManager, VOICE_TYPES, parseVoiceTags } from './tts.js';
 import { MessageRuntime } from './runtime.js';
 import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.js';
 import { buildStandardEvent, updateStandardEventRouting } from './standard-event.js';
+import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 import {
     getParticipantProfileTimerKey,
@@ -506,6 +507,13 @@ function normalizeConfig(config) {
         delayMs: clampInteger(emptyReplyRetry.delayMs, 0, 10000, 800)
     };
 
+    const chainLeakRetry = config.chat.chainLeakRetry || {};
+    config.chat.chainLeakRetry = {
+        enabled: chainLeakRetry.enabled !== false,
+        maxRetries: clampInteger(chainLeakRetry.maxRetries, 0, 5, 1),
+        delayMs: clampInteger(chainLeakRetry.delayMs, 0, 10000, 500)
+    };
+
     const thinkingNotify = config.chat.thinkingNotify || {};
     config.chat.thinkingNotify = {
         enabled: thinkingNotify.enabled !== false,
@@ -716,37 +724,87 @@ function isEmptyLikeReply(text) {
     return /^[.。…·\s]+$/.test(normalized);
 }
 
-async function generateReplyWithRetry({ aiClient, messages, toolContext, chatAIOverrides, timeoutMs, logger, sessionId, retryConfig }) {
-    const maxAttempts = (retryConfig?.enabled === false ? 0 : Number(retryConfig?.maxRetries) || 0) + 1;
-    const delayMs = Number(retryConfig?.delayMs) || 0;
+async function generateReplyWithRetry({ aiClient, messages, toolContext, chatAIOverrides, timeoutMs, logger, sessionId, retryConfig, chainLeakRetryConfig, userInput }) {
+    const emptyMaxRetries = retryConfig?.enabled === false ? 0 : Number(retryConfig?.maxRetries) || 0;
+    const emptyDelayMs = Number(retryConfig?.delayMs) || 0;
+    const chainLeakEnabled = chainLeakRetryConfig?.enabled !== false;
+    const chainLeakMaxRetries = chainLeakEnabled ? Number(chainLeakRetryConfig?.maxRetries) || 0 : 0;
+    const chainLeakDelayMs = Number(chainLeakRetryConfig?.delayMs) || 0;
     let lastReplyResult = null;
     let lastReply = '';
+    let attempts = 0;
+    let emptyRetriesUsed = 0;
+    let chainLeakRetriesUsed = 0;
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-        const replyResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext, chatAIOverrides), timeoutMs);
+    while (true) {
+        attempts += 1;
+        const attemptMessages = chainLeakRetriesUsed > 0
+            ? [
+                ...messages,
+                {
+                    role: 'system',
+                    content: buildChainLeakRetryMessage('previous-attempt')
+                }
+            ]
+            : messages;
+        const replyResult = await callWithTimeout(() => aiClient.chatWithTools(attemptMessages, toolContext, chatAIOverrides), timeoutMs);
         const reply = aiClient.getVisibleResponseContent(replyResult);
         lastReplyResult = replyResult;
         lastReply = reply;
 
         if (!isEmptyLikeReply(reply)) {
-            return { replyResult, reply, attempts: attempt };
+            const chainLeak = detectChainLeak({
+                rawReply: reply,
+                visibleReply: reply,
+                reasoningContent: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent : '',
+                userInput
+            });
+
+            if (chainLeakEnabled && chainLeak.leaked) {
+                logger.warn(`[执行] AI 回复疑似泄露思维链，准备重试 ${chainLeakRetriesUsed + 1}/${chainLeakMaxRetries}`, {
+                    sessionId,
+                    reason: chainLeak.reason,
+                    replyPreview: String(reply || '').slice(0, 160)
+                });
+
+                if (chainLeakRetriesUsed < chainLeakMaxRetries) {
+                    chainLeakRetriesUsed += 1;
+                    if (chainLeakDelayMs > 0) {
+                        await sleep(chainLeakDelayMs);
+                    }
+                    continue;
+                }
+
+                const error = new Error('CHAIN_LEAK_AFTER_RETRY');
+                error.replyResult = lastReplyResult;
+                error.lastReply = lastReply;
+                error.retryAttempts = attempts;
+                error.chainLeakReason = chainLeak.reason;
+                throw error;
+            }
+
+            return { replyResult, reply, attempts, emptyRetriesUsed, chainLeakRetriesUsed };
         }
 
-        logger.warn(`[执行] AI 返回空回复，准备重试 ${attempt}/${maxAttempts}`, {
+        logger.warn(`[执行] AI 返回空回复，准备重试 ${emptyRetriesUsed + 1}/${emptyMaxRetries}`, {
             sessionId,
             replyPreview: String(reply || '').slice(0, 80)
         });
 
-        if (attempt < maxAttempts && delayMs > 0) {
-            await sleep(delayMs);
+        if (emptyRetriesUsed < emptyMaxRetries) {
+            emptyRetriesUsed += 1;
+            if (emptyDelayMs > 0) {
+                await sleep(emptyDelayMs);
+            }
+            continue;
         }
-    }
 
-    const error = new Error('EMPTY_REPLY_AFTER_RETRY');
-    error.replyResult = lastReplyResult;
-    error.lastReply = lastReply;
-    error.retryAttempts = maxAttempts;
-    throw error;
+        const error = new Error('EMPTY_REPLY_AFTER_RETRY');
+        error.replyResult = lastReplyResult;
+        error.lastReply = lastReply;
+        error.retryAttempts = attempts;
+        throw error;
+    }
 }
 
 function buildDebugReplyWithReasoning(reasoningContent, visibleReply) {
@@ -779,6 +837,10 @@ function buildAIServiceFailureMessage(error, config = {}) {
     if (message === 'EMPTY_REPLY_AFTER_RETRY') {
         const retryAttempts = Number(error.retryAttempts) || ((config.chat?.emptyReplyRetry?.maxRetries || 0) + 1);
         return `空回复，已自动重试 ${retryAttempts} 次仍失败，请稍后再试`;
+    }
+    if (message === 'CHAIN_LEAK_AFTER_RETRY') {
+        const retryAttempts = Number(error.retryAttempts) || ((config.chat?.chainLeakRetry?.maxRetries || 0) + 1);
+        return `AI 回复疑似泄露思维链，已自动重试 ${retryAttempts} 次仍失败，本轮已拦截`;
     }
     if (message.includes('500') || message.includes('502')) {
         return 'AI 服务暂时不可用，请稍后重试';
@@ -3109,6 +3171,7 @@ async function processBatch(batch) {
             recordDashboardMetric('chat');
 
             const emptyReplyRetryConfig = config.chat?.emptyReplyRetry || {};
+            const chainLeakRetryConfig = config.chat?.chainLeakRetry || {};
             const thinkingPreview = userMessagePreview;
 
             // 思考中提示：超过指定秒数还没回复就先发一条提示
@@ -3135,7 +3198,9 @@ async function processBatch(batch) {
                 timeoutMs,
                 logger,
                 sessionId,
-                retryConfig: emptyReplyRetryConfig
+                retryConfig: emptyReplyRetryConfig,
+                chainLeakRetryConfig,
+                userInput: processedInput
             });
             if (thinkingTimer) clearTimeout(thinkingTimer);
             logger.info('[执行] AI 调用完成', {
