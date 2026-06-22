@@ -62,6 +62,14 @@ docker compose up -d
 
 完整配置参考 `config.example.json`。
 
+常用聊天行为配置：
+
+| 字段 | 说明 |
+|------|------|
+| `chat.groupRepeat.enabled` | 群聊复读直发开关，默认关闭；也可在 Web 面板“配置 -> 聊天 -> 聊天行为”中切换 |
+| `chat.groupRepeat.triggerCount` | 连续相同文本触发次数，默认 `2` |
+| `chat.groupRepeat.cooldownMs` | 触发后同群同文冷却时间，默认 `180000`（3 分钟） |
+
 ### Linux / Windows
 ```bash
 npm install
@@ -187,6 +195,13 @@ Claude Code 挂载（`.claude/settings.json`）：
 - WebSocket 正向连接，支持 HTTP 模式
 - ping/pong 心跳保活（默认 30 秒），防止空闲断连
 - 指数退避自动重连，最大 60 秒
+
+### 群聊复读直发
+- 开启 `chat.groupRepeat.enabled` 后，群聊里连续两条相同纯文本会让 bot 直接发送同一句话，不经过 LLM。
+- 参与复读判断的群聊消息仍会先写入消息记录和记忆库；命中复读后也会写入 assistant 侧记录，方便后续上下文感知。
+- 触发后会按“群号 + 标准化文本”进入运行时冷却，默认 3 分钟内同一群同一句话不会再次触发，避免群友继续复读或 bot 自消息回流导致循环。
+- Web 面板入口：`配置 -> 聊天 -> 聊天行为 -> 启用群聊复读直发`，可同时调整“复读冷却（分钟）”。
+- 回滚或临时停用：关闭 UI 开关，或把 `chat.groupRepeat.enabled` 设为 `false` 后保存配置；冷却表是进程内临时状态，服务重启会清空。
 
 ### 备份恢复
 - 配置页分类勾选导出 tar.gz（配置/角色/世界书/记忆/预设/语料/知识/正则）
