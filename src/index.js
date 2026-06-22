@@ -46,7 +46,7 @@ import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.
 import { buildStandardEvent, updateStandardEventRouting } from './standard-event.js';
 import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
-import { normalizeGroupRepeatConfig } from './group-repeat.js';
+import { GroupRepeatDetector, normalizeGroupRepeatConfig, shouldObserveGroupRepeatMessage } from './group-repeat.js';
 import {
     getParticipantProfileTimerKey,
     trackParticipantProfileTarget,
@@ -1526,6 +1526,7 @@ const regexProcessor = new RegexProcessor(config.regex, logger);
 const aiClient = new AIClient({ ...config.ai, chat: config.chat }, logger);
 const promptBuilder = new PromptBuilder(characterManager, worldBookManager, config, logger);
 const ttsManager = new TTSManager(logger);
+const groupRepeatDetector = new GroupRepeatDetector();
 
 if (config.tts) {
     ttsManager.updateConfig(config.tts);
@@ -2798,9 +2799,18 @@ async function handleAdminMentionCommand(event, plainText) {
 }
 
 async function processBatch(batch) {
-    const primary = batch.items[batch.items.length - 1];
+    const responseItem = [...batch.items].reverse().find((item) => item.routingDecision?.shouldRespond) || null;
+    const primary = responseItem || batch.items[batch.items.length - 1];
     const event = primary.event;
     const sessionId = batch.sessionKey;
+    const shouldRunLlm = Boolean(responseItem);
+    const hasGroupRepeatObservable = batch.items.some((item) => shouldObserveGroupRepeatMessage({
+        config,
+        event: item?.event || {},
+        text: item?.plainText || '',
+        routingDecision: item?.routingDecision || {},
+        botSelfId: bot.selfId
+    }));
     lastProcessedBatchAt = Date.now();
     const mergedPlainText = batch.items
         .map((item) => item.plainText)
@@ -2840,12 +2850,14 @@ async function processBatch(batch) {
             }
 
             const summaryModel = config.memory?.summary?.model || null;
-            await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
-                logger.info(`[摘要] 开始生成 (${messages.length}条消息) 模型:${summaryModel||'默认'}`);
-                const result = await aiClient.summarize(messages, lockedSessionId, summaryModel);
-                logger.info(`[摘要] 完成 (${result?.length||0}字)`);
-                return result;
-            });
+            if (shouldRunLlm && !hasGroupRepeatObservable) {
+                await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
+                    logger.info(`[摘要] 开始生成 (${messages.length}条消息) 模型:${summaryModel||'默认'}`);
+                    const result = await aiClient.summarize(messages, lockedSessionId, summaryModel);
+                    logger.info(`[摘要] 完成 (${result?.length||0}字)`);
+                    return result;
+                });
+            }
 
             const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
             const stickyKeys = sessionManager.getStickyEntryKeys(sessionId);
@@ -2958,6 +2970,48 @@ async function processBatch(batch) {
                 sourceSessionId: sessionId,
                 sourceMessageId: userRecord.id
             });
+
+            const groupRepeatResult = groupRepeatDetector.observeBatch({
+                config,
+                items: batch.items,
+                botSelfId: bot.selfId
+            });
+            if (groupRepeatResult.shouldRepeat) {
+                const groupRepeatEvent = groupRepeatResult.event || event;
+                logger.info('[复读] 命中群聊复读直发', {
+                    sessionId,
+                    groupId: groupRepeatResult.groupId,
+                    repeatText: groupRepeatResult.repeatText,
+                    count: groupRepeatResult.count,
+                    triggerCount: groupRepeatResult.triggerCount
+                });
+                sessionManager.addMessage(sessionId, 'assistant', groupRepeatResult.repeatText, {
+                    replyTo: groupRepeatEvent.user_id,
+                    messageType: groupRepeatEvent.message_type,
+                    groupId: groupRepeatEvent.group_id,
+                    generatedBy: 'group_repeat'
+                });
+                sessionManager.upsertConversationMemory(runtimeContext.recallNamespace, {
+                    userMessage: processedInput,
+                    assistantMessage: groupRepeatResult.repeatText,
+                    sourceSessionId: sessionId,
+                    sourceMessageId: userRecord.id
+                });
+                await bot.sendGroupMessage(groupRepeatEvent.group_id, groupRepeatResult.repeatText);
+                logger.info('[复读] 群聊复读已直发，跳过 LLM', {
+                    sessionId,
+                    groupId: groupRepeatResult.groupId
+                });
+                return;
+            }
+
+            if (!shouldRunLlm) {
+                logger.debug('[复读] 群聊消息已入库但未触发复读，跳过 LLM', {
+                    sessionId,
+                    itemCount: batch.items.length
+                });
+                return;
+            }
 
             const summaryBeforeReply = await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
                 return aiClient.summarize(messages, lockedSessionId, summaryModel);
@@ -3568,7 +3622,8 @@ async function handleMessage(event) {
     if (!event || event.post_type !== 'message') {
         return;
     }
-    if (String(event.user_id) === String(bot.selfId)) {
+    const eventSelfId = event.self_id || bot.selfId;
+    if (eventSelfId && String(event.user_id) === String(eventSelfId)) {
         return;
     }
 
@@ -3603,7 +3658,14 @@ async function handleMessage(event) {
     if (standardEvent) {
         updateStandardEventRouting(standardEvent, routingDecision);
     }
-    if (!routingDecision.shouldRespond) {
+    const groupRepeatWatch = shouldObserveGroupRepeatMessage({
+        config,
+        event,
+        text: plainText,
+        routingDecision,
+        botSelfId: bot.selfId
+    });
+    if (!routingDecision.shouldRespond && !groupRepeatWatch) {
         lastRoutingSnapshot = {
             at: Date.now(),
             sessionKey: event.message_type === 'group' ? `group:${event.group_id || ''}` : `private:${event.user_id || ''}`,
@@ -3628,7 +3690,7 @@ async function handleMessage(event) {
     }
 
     // 表情回应：收到消息后自动加表情，表示已收到
-    if (config.chat?.emojiReaction !== false && event.message_id && bot?.setMsgEmojiLike) {
+    if (routingDecision.shouldRespond && config.chat?.emojiReaction !== false && event.message_id && bot?.setMsgEmojiLike) {
         bot.setMsgEmojiLike(event.message_id).catch(() => {});
     }
 
@@ -3636,7 +3698,9 @@ async function handleMessage(event) {
 
     const memoryScope = buildMemoryScope(config, event);
     const sessionKey = memoryScope.sessionKey;
-    const triggerReason = routingDecision.triggerReason || getTriggerReason(config, event, plainText, isAtMe, messageInfo);
+    const triggerReason = routingDecision.shouldRespond
+        ? (routingDecision.triggerReason || getTriggerReason(config, event, plainText, isAtMe, messageInfo))
+        : 'group_repeat_watch';
     lastRoutingSnapshot = {
         at: Date.now(),
         sessionKey,
@@ -3647,8 +3711,8 @@ async function handleMessage(event) {
         userId: event.user_id,
         groupId: event.group_id || null,
         triggerReason,
-        skipReason: '',
-        shouldRespond: true,
+        skipReason: routingDecision.shouldRespond ? '' : routingDecision.skipReason,
+        shouldRespond: routingDecision.shouldRespond,
         routingDecision,
         dbPath: sessionManager.getDbPath()
     };

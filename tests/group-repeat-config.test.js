@@ -3,7 +3,13 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import express from 'express';
 
-import { getDefaultGroupRepeatConfig, normalizeGroupRepeatConfig } from '../src/group-repeat.js';
+import {
+    GroupRepeatDetector,
+    getDefaultGroupRepeatConfig,
+    normalizeGroupRepeatConfig,
+    normalizeRepeatText,
+    shouldObserveGroupRepeatMessage
+} from '../src/group-repeat.js';
 import { setupRoutes } from '../src/routes.js';
 
 let testPortOffset = 0;
@@ -179,4 +185,111 @@ test('/api/config reads and saves group repeat settings', async () => {
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
+});
+
+test('group repeat detector triggers on two consecutive same group messages', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
+    const first = detector.observeMessage({
+        config,
+        event: { message_type: 'group', group_id: 10001, user_id: 20001 },
+        text: '  复读   一下  ',
+        botSelfId: '99999'
+    });
+    const second = detector.observeMessage({
+        config,
+        event: { message_type: 'group', group_id: 10001, user_id: 20002 },
+        text: '复读 一下',
+        botSelfId: '99999'
+    });
+
+    assert.equal(first.shouldRepeat, false);
+    assert.equal(first.count, 1);
+    assert.equal(second.shouldRepeat, true);
+    assert.equal(second.repeatText, '复读 一下');
+    assert.equal(second.groupId, '10001');
+});
+
+test('group repeat detector ignores private messages, empty text, disabled config and bot self messages', () => {
+    const detector = new GroupRepeatDetector();
+    const enabledConfig = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
+    const disabledConfig = { chat: { groupRepeat: { enabled: false, triggerCount: 2, cooldownMs: 180000 } } };
+
+    assert.equal(normalizeRepeatText('  a \n\t b  '), 'a b');
+    assert.equal(shouldObserveGroupRepeatMessage({
+        config: enabledConfig,
+        event: { message_type: 'group', group_id: 10001, user_id: 99999 },
+        text: '复读',
+        botSelfId: '99999'
+    }), false);
+    assert.equal(shouldObserveGroupRepeatMessage({
+        config: enabledConfig,
+        event: { message_type: 'group', group_id: 10001, user_id: 99999, self_id: 99999 },
+        text: '复读'
+    }), false);
+    assert.equal(shouldObserveGroupRepeatMessage({
+        config: enabledConfig,
+        event: { message_type: 'group', group_id: 10001, user_id: 20001 },
+        text: '复读',
+        routingDecision: { checks: { allowed: false } },
+        botSelfId: '99999'
+    }), false);
+    assert.equal(detector.observeMessage({
+        config: disabledConfig,
+        event: { message_type: 'group', group_id: 10001, user_id: 20001 },
+        text: '复读'
+    }).shouldRepeat, false);
+    assert.equal(detector.observeMessage({
+        config: enabledConfig,
+        event: { message_type: 'private', user_id: 20001 },
+        text: '复读'
+    }).shouldRepeat, false);
+    assert.equal(detector.observeMessage({
+        config: enabledConfig,
+        event: { message_type: 'group', group_id: 10001, user_id: 20001 },
+        text: '   '
+    }).shouldRepeat, false);
+    assert.equal(detector.observeMessage({
+        config: enabledConfig,
+        event: { message_type: 'group', group_id: 10001, user_id: 99999 },
+        text: '复读',
+        botSelfId: '99999'
+    }).shouldRepeat, false);
+});
+
+test('group repeat detector observes buffered batches in order', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
+    const result = detector.observeBatch({
+        config,
+        botSelfId: '99999',
+        items: [
+            { plainText: '第一句', event: { message_type: 'group', group_id: 10001, user_id: 20001 } },
+            { plainText: '复读', event: { message_type: 'group', group_id: 10001, user_id: 20002 } },
+            { plainText: '复读', event: { message_type: 'group', group_id: 10001, user_id: 20003 } }
+        ]
+    });
+
+    assert.equal(result.shouldRepeat, true);
+    assert.equal(result.repeatText, '复读');
+    assert.equal(result.event.user_id, 20003);
+});
+
+test('real chat path stores group repeat input before direct send and skips LLM', async () => {
+    const source = await readFile(new URL('../src/index.js', import.meta.url), 'utf8');
+    const addMessageIndex = source.indexOf("const userRecord = sessionManager.addMessage(sessionId, 'user', processedInput");
+    const repeatIndex = source.indexOf('const groupRepeatResult = groupRepeatDetector.observeBatch');
+    const promptIndex = source.indexOf('const { messages, worldBookCount, worldBookEntries } = await promptBuilder.build', repeatIndex);
+    const repeatObservableIndex = source.indexOf('const hasGroupRepeatObservable = batch.items.some');
+    const guardedSummaryIndex = source.indexOf('if (shouldRunLlm && !hasGroupRepeatObservable)');
+
+    assert.ok(repeatObservableIndex > 0);
+    assert.ok(guardedSummaryIndex > repeatObservableIndex);
+    assert.ok(addMessageIndex > 0);
+    assert.ok(repeatIndex > addMessageIndex);
+    assert.ok(promptIndex > repeatIndex);
+    assert.ok(source.includes('await bot.sendGroupMessage(groupRepeatEvent.group_id, groupRepeatResult.repeatText);'));
+    assert.ok(source.includes("logger.info('[复读] 群聊复读已直发，跳过 LLM'"));
+    assert.ok(source.includes('if (!shouldRunLlm)'));
+    assert.ok(source.includes("'group_repeat_watch'"));
 });
