@@ -46,6 +46,7 @@ import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.
 import { buildStandardEvent, updateStandardEventRouting } from './standard-event.js';
 import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
+import { normalizeGroupRepeatConfig } from './group-repeat.js';
 import {
     getParticipantProfileTimerKey,
     trackParticipantProfileTarget,
@@ -499,6 +500,8 @@ function normalizeConfig(config) {
     if (!('mentionSenderOnReply' in config.chat)) {
         config.chat.mentionSenderOnReply = true;
     }
+
+    config.chat.groupRepeat = normalizeGroupRepeatConfig(config.chat.groupRepeat);
 
     const emptyReplyRetry = config.chat.emptyReplyRetry || {};
     config.chat.emptyReplyRetry = {

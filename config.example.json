@@ -102,6 +102,11 @@
     "humanChatControlEnabled": true,
     "sendReasoningToQQ": false,
     "splitMessage": true,
+    "groupRepeat": {
+      "enabled": false,
+      "triggerCount": 2,
+      "cooldownMs": 180000
+    },
     "defaultCharacter": "你的角色名",
     "commands": {
       "adminMention": {
