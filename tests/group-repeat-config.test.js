@@ -6,6 +6,7 @@ import express from 'express';
 import {
     GroupRepeatDetector,
     getDefaultGroupRepeatConfig,
+    getRepeatableMessageText,
     normalizeGroupRepeatConfig,
     normalizeRepeatText,
     shouldObserveGroupRepeatMessage
@@ -255,6 +256,101 @@ test('group repeat detector ignores private messages, empty text, disabled confi
         text: '复读',
         botSelfId: '99999'
     }).shouldRepeat, false);
+});
+
+test('group repeat detector only observes pure text messages', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
+    const baseEvent = { message_type: 'group', group_id: 10001 };
+
+    assert.equal(getRepeatableMessageText({
+        ...baseEvent,
+        user_id: 20001,
+        message: [{ type: 'text', data: { text: ' repeat ' } }]
+    }, '[image]'), 'repeat');
+    assert.equal(getRepeatableMessageText({
+        ...baseEvent,
+        user_id: 20001,
+        message: [{ type: 'image', data: { summary: 'animation' } }]
+    }, '[image:animation]'), '');
+    assert.equal(getRepeatableMessageText({
+        ...baseEvent,
+        user_id: 20001,
+        raw_message: '[CQ:image,file=a.png]'
+    }, '[image]'), '');
+
+    const imageOne = detector.observeMessage({
+        config,
+        event: {
+            ...baseEvent,
+            user_id: 20001,
+            message: [{ type: 'image', data: { file: 'a.png' } }]
+        },
+        text: '[image]'
+    });
+    const imageTwo = detector.observeMessage({
+        config,
+        event: {
+            ...baseEvent,
+            user_id: 20002,
+            message: [{ type: 'image', data: { file: 'b.png' } }]
+        },
+        text: '[image]'
+    });
+    const face = detector.observeMessage({
+        config,
+        event: {
+            ...baseEvent,
+            user_id: 20003,
+            message: [{ type: 'mface', data: { summary: 'animation' } }]
+        },
+        text: '[image:[animation face]]'
+    });
+    const mixedTextAndImage = detector.observeMessage({
+        config,
+        event: {
+            ...baseEvent,
+            user_id: 20004,
+            message: [
+                { type: 'text', data: { text: 'repeat' } },
+                { type: 'image', data: { file: 'a.png' } }
+            ]
+        },
+        text: 'repeat[image]'
+    });
+
+    assert.equal(imageOne.shouldRepeat, false);
+    assert.equal(imageOne.reason, 'not_observable');
+    assert.equal(imageTwo.shouldRepeat, false);
+    assert.equal(imageTwo.reason, 'not_observable');
+    assert.equal(face.shouldRepeat, false);
+    assert.equal(face.reason, 'not_observable');
+    assert.equal(mixedTextAndImage.shouldRepeat, false);
+    assert.equal(mixedTextAndImage.reason, 'not_observable');
+
+    const textOne = detector.observeMessage({
+        config,
+        event: {
+            ...baseEvent,
+            user_id: 20005,
+            message: [{ type: 'text', data: { text: 'repeat' } }]
+        },
+        text: 'repeat'
+    });
+    const textTwo = detector.observeMessage({
+        config,
+        event: {
+            ...baseEvent,
+            user_id: 20006,
+            message: [{ type: 'text', data: { text: 'repeat' } }]
+        },
+        text: 'repeat'
+    });
+
+    assert.equal(textOne.shouldRepeat, false);
+    assert.equal(textOne.count, 1);
+    assert.equal(textTwo.shouldRepeat, true);
+    assert.equal(textTwo.repeatText, 'repeat');
 });
 
 test('group repeat detector observes buffered batches in order', () => {

@@ -31,6 +31,51 @@ export function normalizeRepeatText(text = '') {
         .trim();
 }
 
+function getSegmentType(segment) {
+    return String(segment?.type || '').trim();
+}
+
+function getTextSegmentContent(segment) {
+    if (!segment || typeof segment !== 'object') {
+        return '';
+    }
+    const data = segment.data && typeof segment.data === 'object' ? segment.data : {};
+    return String(data.text || '');
+}
+
+function containsNonTextCqCode(text = '') {
+    return /\[CQ:(?!text\b)[^\]]+\]/i.test(String(text || ''));
+}
+
+export function getRepeatableMessageText(event = {}, fallbackText = '') {
+    if (Array.isArray(event.message) && event.message.length > 0) {
+        const textParts = [];
+        for (const segment of event.message) {
+            const type = getSegmentType(segment);
+            if (type === 'reply') {
+                continue;
+            }
+            if (type !== 'text') {
+                return '';
+            }
+            textParts.push(getTextSegmentContent(segment));
+        }
+        return normalizeRepeatText(textParts.join(''));
+    }
+
+    const rawCandidate = typeof event.message === 'string'
+        ? event.message
+        : (event.raw_message || '');
+    if (containsNonTextCqCode(rawCandidate)) {
+        return '';
+    }
+    const candidate = rawCandidate || fallbackText || '';
+    if (containsNonTextCqCode(candidate)) {
+        return '';
+    }
+    return normalizeRepeatText(candidate);
+}
+
 export function shouldObserveGroupRepeatMessage({ config = {}, event = {}, text = '', routingDecision = {}, botSelfId = '' } = {}) {
     const repeatConfig = normalizeGroupRepeatConfig(config.chat?.groupRepeat || config.groupRepeat || {});
     if (!repeatConfig.enabled) {
@@ -47,7 +92,7 @@ export function shouldObserveGroupRepeatMessage({ config = {}, event = {}, text 
     if (routingDecision?.checks && routingDecision.checks.allowed === false) {
         return false;
     }
-    return Boolean(normalizeRepeatText(text));
+    return Boolean(getRepeatableMessageText(event, text));
 }
 
 export class GroupRepeatDetector {
@@ -92,7 +137,7 @@ export class GroupRepeatDetector {
             return { shouldRepeat: false, reason: 'missing_group_id' };
         }
 
-        const normalizedText = normalizeRepeatText(text);
+        const normalizedText = getRepeatableMessageText(event, text);
         this.cleanupCooldowns(now);
         const groupCooldowns = this.getGroupCooldowns(groupId);
         const cooldownExpiresAt = groupCooldowns.get(normalizedText) || 0;
