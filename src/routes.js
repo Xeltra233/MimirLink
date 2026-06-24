@@ -16,6 +16,7 @@ import { buildChatRuntimePreview } from './runtime/chat-preview.js';
 import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
 import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, generateRealtimeAnswer, runConfiguredWebSearch } from './tools.js';
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
+import { syncPresetFiles } from './preset-sync.js';
 
 function estimateTokenCount(text) {
     if (!text) return 0;
@@ -1562,6 +1563,56 @@ export function setupRoutes(app, config, saveConfig, managers) {
     const REGEX_RULES_SNAPSHOT_FILE = '_regex_rules_snapshot.json';
     const BINDINGS_SNAPSHOT_FILE = '_bindings_snapshot.json';
 
+    function isSqliteSharedMemoryFile(filename) {
+        return /\.sqlite-shm$/i.test(filename);
+    }
+
+    function listPresetBackupIds(presetsDir) {
+        if (!fsSync.existsSync(presetsDir)) return [];
+        return fsSync.readdirSync(presetsDir, { withFileTypes: true })
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+            .map((entry) => entry.name.replace(/\.json$/, ''))
+            .filter(Boolean)
+            .sort();
+    }
+
+    function readBackupPresetImportRecords(tmpDir) {
+        const backupConfigPath = path.join(tmpDir, 'config.json');
+        if (!fsSync.existsSync(backupConfigPath)) return null;
+        try {
+            const backupConfig = JSON.parse(fsSync.readFileSync(backupConfigPath, 'utf8'));
+            return Array.isArray(backupConfig.imports?.presetFiles)
+                ? cloneImportSnapshot(backupConfig.imports.presetFiles)
+                : null;
+        } catch (error) {
+            logger.warn('[恢复] 读取预设导入记录失败:', error.message);
+            return null;
+        }
+    }
+
+    function archivePresetFilesNotInBackup(backupPresetsDir, targetPresetsDir, dataDir, changes) {
+        if (!fsSync.existsSync(backupPresetsDir) || !fsSync.existsSync(targetPresetsDir)) return 0;
+        const backupNames = new Set(fsSync.readdirSync(backupPresetsDir));
+        const staleEntries = fsSync.readdirSync(targetPresetsDir, { withFileTypes: true })
+            .filter((entry) => entry.isFile() && entry.name.endsWith('.json') && !backupNames.has(entry.name));
+        if (staleEntries.length === 0) return 0;
+
+        const archiveDir = path.join(dataDir, 'restore-backups', `preset-files-${new Date().toISOString().replace(/[:.]/g, '-')}`);
+        fsSync.mkdirSync(archiveDir, { recursive: true });
+        for (const entry of staleEntries) {
+            const src = path.join(targetPresetsDir, entry.name);
+            const dst = path.join(archiveDir, entry.name);
+            try {
+                fsSync.renameSync(src, dst);
+            } catch {
+                fsSync.copyFileSync(src, dst);
+                fsSync.unlinkSync(src);
+            }
+        }
+        changes.replaced.push(`data/presets (旧文件已归档 ${staleEntries.length} 个)`);
+        return staleEntries.length;
+    }
+
     function buildBindingsBackupSnapshot(configLike = {}) {
         return {
             version: 1,
@@ -1943,6 +1994,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
             // 复制备份中的 data 目录内容（按分类过滤）
             const backupDataDir = path.join(tmpDir, 'data');
+            let restoredPresetIds = null;
+            let presetImportsSeededFromBackup = false;
             if (fsSync.existsSync(backupDataDir)) {
                 const currentDataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
                 const skipSubdirs = new Set(['_backup_tmp', '_restore_tmp', 'restore-backups']);
@@ -1955,6 +2008,18 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     const src = path.join(backupDataDir, sub);
                     const dst = path.join(currentDataDir, sub);
                     if (fsSync.existsSync(src)) {
+                        if (cat === 'presets') {
+                            restoredPresetIds = listPresetBackupIds(src);
+                            archivePresetFilesNotInBackup(src, dst, currentDataDir, changes);
+                        }
+                        if (cat === 'memory') {
+                            try {
+                                sessionManager.checkpoint?.();
+                                sessionManager.close?.();
+                            } catch (memoryCloseErr) {
+                                logger.warn('[恢复] 关闭当前记忆库失败:', memoryCloseErr.message);
+                            }
+                        }
                         mergeDirSync(src, dst, new Set(), changes);
                         if (cat === 'memory') {
                             changes.replaced.push('data/chats (记忆库已恢复)');
@@ -2070,6 +2135,18 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             }
 
+            if (categories.has('presets')) {
+                ensureImportsConfig();
+                const backupPresetRecords = readBackupPresetImportRecords(tmpDir);
+                if (Array.isArray(backupPresetRecords)) {
+                    config.imports.presetFiles = backupPresetRecords;
+                    presetImportsSeededFromBackup = true;
+                } else if (Array.isArray(restoredPresetIds)) {
+                    config.imports.presetFiles = [];
+                    presetImportsSeededFromBackup = true;
+                }
+            }
+
             // 清理
             await new Promise(r => autoStream.on('finish', r));
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
@@ -2078,13 +2155,25 @@ export function setupRoutes(app, config, saveConfig, managers) {
             // 预设文件恢复后同步到 config.imports.presetFiles
             if (categories.has('presets')) {
                 try {
-                    const { syncPresetFiles } = await import('./index.js');
-                    syncPresetFiles(config);
+                    if (Array.isArray(restoredPresetIds)) {
+                        const presetSyncResult = syncPresetFiles(config, {
+                            diskFileIds: restoredPresetIds,
+                            importPosition: 'append'
+                        });
+                        if (presetImportsSeededFromBackup || presetSyncResult.imported.length > 0 || presetSyncResult.written.length > 0) {
+                            saveConfig(config);
+                        }
+                        changes.replaced.push(`预设导入记录 (${config.imports?.presetFiles?.length || 0} 条)`);
+                    } else {
+                        changes.skipped.push('预设导入记录 (备份中无 presets 目录)');
+                    }
                     applyRuntimeConfig();
-                } catch {}
+                } catch (presetRestoreErr) {
+                    changes.skipped.push(`预设导入记录 (恢复失败: ${presetRestoreErr.message})`);
+                }
             }
             // 正则恢复后重新应用配置
-            if (categories.has('regex') || categories.has('bindings')) {
+            if (categories.has('regex') || categories.has('bindings') || categories.has('memory')) {
                 applyRuntimeConfig();
             }
 
@@ -2123,6 +2212,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             if (entry.isDirectory()) {
                 copyDirSync(srcPath, destPath, skipNames);
             } else {
+                if (isSqliteSharedMemoryFile(entry.name)) continue;
                 fsSync.copyFileSync(srcPath, destPath);
             }
         }
@@ -2138,6 +2228,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             if (entry.isDirectory()) {
                 mergeDirSync(srcPath, destPath, skipNames, changes);
             } else {
+                if (isSqliteSharedMemoryFile(entry.name)) continue;
                 const existed = fsSync.existsSync(destPath);
                 fsSync.copyFileSync(srcPath, destPath);
                 const relPath = path.relative(path.dirname(dest), destPath);
@@ -2176,14 +2267,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 continue;
             }
             if (key === 'imports' && backup.imports && current.imports) {
-                // 预设文件合并：去重 + 备份优先
+                // 导入记录属于可恢复数据本体，恢复时以备份为准，避免目标环境旧记录污染。
                 merged.imports = { ...current.imports, ...backup.imports };
                 if (Array.isArray(backup.imports.presetFiles) && Array.isArray(current.imports.presetFiles)) {
-                    const bIds = new Set(backup.imports.presetFiles.map(p => p.id));
-                    merged.imports.presetFiles = [
-                        ...current.imports.presetFiles.filter(p => !bIds.has(p.id)),
-                        ...backup.imports.presetFiles
-                    ];
+                    merged.imports.presetFiles = cloneImportSnapshot(backup.imports.presetFiles);
                 }
                 continue;
             }

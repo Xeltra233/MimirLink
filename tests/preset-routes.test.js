@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
+import { existsSync, readdirSync } from 'node:fs';
 import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -1889,6 +1890,157 @@ test('config restore preserves current runtime server binding', async () => {
     }
 });
 
+test('config plus presets restore uses backup preset imports without stale target records', async () => {
+    const tmpRoot = await mkdtemp(join(tmpdir(), 'mimir-preset-restore-test-'));
+    const dataDir = join(tmpRoot, 'data');
+    const presetsDir = join(dataDir, 'presets');
+    await mkdir(presetsDir, { recursive: true });
+
+    const staleRecord = {
+        id: 'preset-stale-target',
+        type: 'preset',
+        filename: 'stale.json',
+        presetName: 'Stale Target Preset',
+        importedPreset: { prompts: [{ identifier: 'stale', name: 'Stale', content: 'stale' }] }
+    };
+    const backupRecord = {
+        id: 'preset-backup-main',
+        type: 'preset',
+        filename: 'backup.json',
+        presetName: 'Backup Imported Preset',
+        importedPreset: { prompts: [{ identifier: 'backup', name: 'Backup', content: 'backup' }] }
+    };
+    const rawRuntimePreset = {
+        enabled: true,
+        name: 'Backup Runtime Preset',
+        prompts: [{ identifier: 'runtime', name: 'Runtime', content: 'runtime' }]
+    };
+
+    await writeFile(join(presetsDir, `${staleRecord.id}.json`), JSON.stringify(staleRecord, null, 2), 'utf8');
+
+    const backupBody = await buildBackupWithFiles({
+        configJson: {
+            auth: { enabled: false },
+            chat: { dataDir },
+            preset: rawRuntimePreset,
+            imports: { presetFiles: [backupRecord], regexFiles: [] },
+            server: { port: 9999 }
+        },
+        files: {
+            [`data/presets/${backupRecord.id}.json`]: JSON.stringify(backupRecord, null, 2),
+            'data/presets/runtime.raw-preset.json': JSON.stringify(rawRuntimePreset, null, 2)
+        }
+    });
+
+    const app = express();
+    const config = {
+        auth: { enabled: false },
+        chat: { dataDir },
+        preset: { name: 'Current Preset', prompts: [] },
+        imports: { presetFiles: [staleRecord], regexFiles: [] },
+        bindings: { global: {}, characters: {} },
+        server: { port: 23456, host: '127.0.0.1' }
+    };
+    let savedConfig = null;
+    setupRoutes(app, config, (next) => { savedConfig = structuredClone(next); }, createManagers(config));
+
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const restoreResponse = await fetch(`http://127.0.0.1:${port}/api/config/restore?categories=config,presets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/gzip' },
+            body: backupBody
+        });
+        const restoreBody = await restoreResponse.json();
+
+        assert.equal(restoreResponse.status, 200, JSON.stringify(restoreBody));
+        assert.equal(restoreBody.success, true);
+        assert.deepEqual(config.imports.presetFiles.map((item) => item.id), [backupRecord.id]);
+        assert.deepEqual(savedConfig.imports.presetFiles.map((item) => item.id), [backupRecord.id]);
+        assert.equal(config.preset.name, 'Backup Runtime Preset');
+        assert.equal(config.server.port, 23456);
+        assert.equal(existsSync(join(presetsDir, `${backupRecord.id}.json`)), true);
+        assert.equal(existsSync(join(presetsDir, 'runtime.raw-preset.json')), true);
+        assert.equal(existsSync(join(presetsDir, `${staleRecord.id}.json`)), false);
+        assert.ok(restoreBody.changes.replaced.some((item) => item.includes('预设导入记录 (1 条)')));
+        assert.ok(restoreBody.changes.replaced.some((item) => item.includes('data/presets (旧文件已归档 1 个)')));
+        const archivedPresetFiles = readdirSync(join(dataDir, 'restore-backups'), { recursive: true })
+            .filter((item) => String(item).endsWith(`${staleRecord.id}.json`));
+        assert.equal(archivedPresetFiles.length, 1);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await rm(tmpRoot, { recursive: true, force: true });
+    }
+});
+
+test('presets-only restore rebuilds preset imports from backup files and ignores stale target files', async () => {
+    const tmpRoot = await mkdtemp(join(tmpdir(), 'mimir-preset-only-restore-test-'));
+    const dataDir = join(tmpRoot, 'data');
+    const presetsDir = join(dataDir, 'presets');
+    await mkdir(presetsDir, { recursive: true });
+
+    const staleRecord = {
+        id: 'preset-stale-only',
+        type: 'preset',
+        filename: 'stale-only.json',
+        presetName: 'Stale Only Preset',
+        importedPreset: { prompts: [{ identifier: 'stale', name: 'Stale', content: 'stale' }] }
+    };
+    const backupRecord = {
+        id: 'preset-backup-only',
+        type: 'preset',
+        filename: 'backup-only.json',
+        presetName: 'Backup Only Preset',
+        importedPreset: { prompts: [{ identifier: 'backup', name: 'Backup', content: 'backup' }] }
+    };
+
+    await writeFile(join(presetsDir, `${staleRecord.id}.json`), JSON.stringify(staleRecord, null, 2), 'utf8');
+
+    const backupBody = await buildBackupWithFiles({
+        files: {
+            [`data/presets/${backupRecord.id}.json`]: JSON.stringify(backupRecord, null, 2)
+        }
+    });
+
+    const app = express();
+    const config = {
+        auth: { enabled: false },
+        chat: { dataDir },
+        preset: { name: 'Current Preset', prompts: [] },
+        imports: { presetFiles: [staleRecord], regexFiles: [] },
+        bindings: { global: {}, characters: {} },
+        server: {}
+    };
+    let savedConfig = null;
+    setupRoutes(app, config, (next) => { savedConfig = structuredClone(next); }, createManagers(config));
+
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const restoreResponse = await fetch(`http://127.0.0.1:${port}/api/config/restore?categories=presets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/gzip' },
+            body: backupBody
+        });
+        const restoreBody = await restoreResponse.json();
+
+        assert.equal(restoreResponse.status, 200, JSON.stringify(restoreBody));
+        assert.equal(restoreBody.success, true);
+        assert.equal(config.preset.name, 'Current Preset');
+        assert.deepEqual(config.imports.presetFiles.map((item) => item.id), [backupRecord.id]);
+        assert.deepEqual(savedConfig.imports.presetFiles.map((item) => item.id), [backupRecord.id]);
+        assert.equal(existsSync(join(presetsDir, `${backupRecord.id}.json`)), true);
+        assert.equal(existsSync(join(presetsDir, `${staleRecord.id}.json`)), false);
+        assert.ok(restoreBody.changes.replaced.some((item) => item.includes('预设导入记录 (1 条)')));
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await rm(tmpRoot, { recursive: true, force: true });
+    }
+});
+
 test('memory-only restore writes chat database files and reports restored memory', async () => {
     const tmpRoot = await mkdtemp(join(tmpdir(), 'mimir-memory-restore-test-'));
     const app = express();
@@ -1896,7 +2048,9 @@ test('memory-only restore writes chat database files and reports restored memory
     const backupBody = await buildBackupWithFiles({
         files: {
             'data/chats/memory-store.sqlite': 'backup-memory',
-            'data/chats/characters/test.sqlite': 'character-memory'
+            'data/chats/characters/test.sqlite': 'character-memory',
+            'data/chats/characters/test.sqlite-shm': 'runtime-shared-memory',
+            'data/chats/characters/test.sqlite-wal': 'wal-memory'
         }
     });
 
@@ -1906,7 +2060,14 @@ test('memory-only restore writes chat database files and reports restored memory
         memory: { storage: { path: join(tmpRoot, 'data', 'chats', 'memory-store.sqlite') } },
         server: {}
     };
-    setupRoutes(app, config, () => {}, createManagers(config));
+    const managers = createManagers(config);
+    let checkpointCount = 0;
+    let closeCount = 0;
+    let setConfigCount = 0;
+    managers.sessionManager.checkpoint = () => { checkpointCount += 1; };
+    managers.sessionManager.close = () => { closeCount += 1; };
+    managers.sessionManager.setConfig = () => { setConfigCount += 1; };
+    setupRoutes(app, config, () => {}, managers);
 
     const server = await listenTestApp(app);
     const { port } = server.address();
@@ -1931,6 +2092,14 @@ test('memory-only restore writes chat database files and reports restored memory
             await readFile(join(tmpRoot, 'data', 'chats', 'characters', 'test.sqlite'), 'utf8'),
             'character-memory'
         );
+        assert.equal(
+            await readFile(join(tmpRoot, 'data', 'chats', 'characters', 'test.sqlite-wal'), 'utf8'),
+            'wal-memory'
+        );
+        assert.equal(existsSync(join(tmpRoot, 'data', 'chats', 'characters', 'test.sqlite-shm')), false);
+        assert.equal(checkpointCount, 1);
+        assert.equal(closeCount, 1);
+        assert.equal(setConfigCount, 1);
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         await rm(tmpRoot, { recursive: true, force: true });

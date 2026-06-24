@@ -39,6 +39,7 @@ import { AIClient } from './ai.js';
 import { SessionManager } from './session.js';
 import { RegexProcessor } from './regex.js';
 import { setupRoutes } from './routes.js';
+import { syncPresetFiles } from './preset-sync.js';
 import { Logger } from './logger.js';
 import { TTSManager, VOICE_TYPES, parseVoiceTags } from './tts.js';
 import { MessageRuntime } from './runtime.js';
@@ -56,6 +57,8 @@ import {
     buildParticipantProfileAIOverrides,
     buildParticipantProfileTaskMeta
 } from './participant-profile-runtime.js';
+
+export { syncPresetFiles } from './preset-sync.js';
 
 if (process.stdout?.setDefaultEncoding) {
     process.stdout.setDefaultEncoding('utf8');
@@ -162,39 +165,6 @@ function stripLegacyPresetMetadata(config) {
         cleaned++;
     }
     if (cleaned > 0) saveConfig(config);
-}
-
-export function syncPresetFiles(config) {
-    const presetsDir = join(config.chat?.dataDir || join(ROOT_DIR, 'data'), 'presets');
-    fs.mkdirSync(presetsDir, { recursive: true });
-    try {
-        ensureBindingConfig(config);
-        config.imports = config.imports || {};
-        config.imports.presetFiles = config.imports.presetFiles || [];
-
-        // 文件 → config：把磁盘上有但 config 里没有的预设加载进去
-        const existingIds = new Set(config.imports.presetFiles.map(p => p.id));
-        const diskFiles = fs.readdirSync(presetsDir).filter(f => f.endsWith('.json'));
-        for (const file of diskFiles) {
-            const id = file.replace(/\.json$/, '');
-            if (existingIds.has(id)) continue;
-            try {
-                const record = JSON.parse(fs.readFileSync(join(presetsDir, file), 'utf8'));
-                if (record && record.type === 'preset') {
-                    config.imports.presetFiles.unshift(record);
-                }
-            } catch {}
-        }
-
-        // config → 文件：始终保持磁盘文件与 config 同步
-        for (const record of config.imports.presetFiles) {
-            if (!record?.id) continue;
-            const filePath = join(presetsDir, `${record.id}.json`);
-            try {
-                fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8');
-            } catch {}
-        }
-    } catch {}
 }
 
 function getCharacterBinding(config, characterName) {

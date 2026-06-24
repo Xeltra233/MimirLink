@@ -305,6 +305,18 @@ export class SessionManager {
         }
     }
 
+    close() {
+        this.closeStatements();
+        if (this.db) {
+            try {
+                this.db.close();
+            } catch (e) {
+                this.logger.warn?.(`[记忆] 关闭 SQLite 连接失败: ${e.message}`);
+            }
+            this.db = null;
+        }
+    }
+
     prepareSchema() {
         this.db.exec(`
             CREATE TABLE IF NOT EXISTS sessions (
@@ -2174,7 +2186,11 @@ export class SessionManager {
     checkpoint() {
         try {
             if (this.db && this.db.open) {
-                this.db.pragma('wal_checkpoint(TRUNCATE)');
+                if (typeof this.db.pragma === 'function') {
+                    this.db.pragma('wal_checkpoint(TRUNCATE)');
+                } else {
+                    this.db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
+                }
             }
         } catch {}
     }
