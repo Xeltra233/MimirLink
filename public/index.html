@@ -17625,10 +17625,15 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             if (!listEl) return;
             if (!rangeBatchTasks.length) {
                 listEl.innerHTML = '';
+                listEl.style.display = 'none';
                 return;
             }
             const active = rangeBatchTasks[0];
-            summaryEl.textContent = `${active.mode} · ${active.progressPercent || 0}% · 完成 ${active.completedJobs || 0}/${active.totalJobs || 0}`;
+            const summaryEl = document.getElementById('range-batch-summary');
+            if (summaryEl) {
+                summaryEl.textContent = `${active.mode} · ${active.progressPercent || 0}% · 完成 ${active.completedJobs || 0}/${active.totalJobs || 0}`;
+            }
+            listEl.style.display = '';
             listEl.innerHTML = rangeBatchTasks.map((task) => {
                 const groups = new Map();
                 (task.jobs || []).forEach((job) => {
