@@ -4325,13 +4325,15 @@
 
         .preset-manager-select-row {
             display: flex;
+            flex-wrap: wrap;
             gap: 8px;
             align-items: stretch;
             margin-bottom: 12px;
         }
 
         .preset-manager-select-row select {
-            flex: 1;
+            flex: 1 0 100%;
+            min-width: 0;
         }
         .preset-import-row {
             display: grid;
@@ -11837,13 +11839,88 @@
             return getCurrentPresetImportRecords().find((record) => record?.id === selectedPresetImportRecordId) || null;
         }
 
+        const ACTIVE_PRESET_SELECT_VALUE = 'active';
+
+        function resolvePresetCandidate(candidate) {
+            if (candidate && typeof candidate === 'object') {
+                return { preset: candidate, label: candidate.name || '', fromImportId: '' };
+            }
+            if (typeof candidate === 'string' && candidate.trim()) {
+                const record = getCurrentPresetImportRecords().find((item) => item?.id === candidate);
+                if (record?.importedPreset) {
+                    return {
+                        preset: record.importedPreset,
+                        label: record.presetName || record.filename || record.importedPreset.name || '',
+                        fromImportId: record.id || ''
+                    };
+                }
+            }
+            return null;
+        }
+
+        function getActiveRuntimePresetSource() {
+            const defaultCharacter = currentConfig?.chat?.defaultCharacter || '';
+            const characterBinding = defaultCharacter ? currentConfig?.bindings?.characters?.[defaultCharacter] : null;
+            const characterPreset = resolvePresetCandidate(characterBinding?.preset);
+            if (characterPreset) {
+                return {
+                    ...characterPreset,
+                    kind: 'character',
+                    characterName: defaultCharacter,
+                    label: characterPreset.label || characterPreset.preset?.name || defaultCharacter || ''
+                };
+            }
+
+            const globalPreset = resolvePresetCandidate(currentConfig?.bindings?.global?.preset);
+            if (globalPreset) {
+                return {
+                    ...globalPreset,
+                    kind: 'global-binding',
+                    characterName: '',
+                    label: globalPreset.label || globalPreset.preset?.name || ''
+                };
+            }
+
+            return {
+                preset: currentConfig?.preset || {},
+                label: currentConfig?.preset?.name || '',
+                fromImportId: '',
+                kind: 'config',
+                characterName: ''
+            };
+        }
+
+        function syncActivePresetDraftIntoRuntimeBinding(newConfig) {
+            if (selectedPresetImportRecordId) {
+                return;
+            }
+            const activeSource = getActiveRuntimePresetSource();
+            const savedPreset = structuredClone(newConfig.preset || {});
+            if (activeSource.kind === 'character' && activeSource.characterName && newConfig.bindings?.characters?.[activeSource.characterName]) {
+                newConfig.bindings.characters[activeSource.characterName] = {
+                    ...newConfig.bindings.characters[activeSource.characterName],
+                    preset: savedPreset
+                };
+            } else if (activeSource.kind === 'global-binding' && newConfig.bindings?.global) {
+                newConfig.bindings.global = {
+                    ...newConfig.bindings.global,
+                    preset: savedPreset
+                };
+            }
+        }
+
         function applySelectedPresetSource() {
             const record = getSelectedPresetImportRecord();
-            presetDraft = normalizePresetDraft(record?.importedPreset || currentConfig?.preset || {});
+            const activeSource = getActiveRuntimePresetSource();
+            presetDraft = normalizePresetDraft(record?.importedPreset || activeSource.preset || currentConfig?.preset || {});
             selectedPresetPromptIndex = 0;
             const nameInput = document.getElementById('config-preset-name');
             if (nameInput) {
                 nameInput.value = presetDraft.name || '';
+            }
+            const enabledInput = document.getElementById('config-preset-enabled');
+            if (enabledInput) {
+                enabledInput.checked = presetDraft.enabled === true;
             }
         }
 
@@ -11888,20 +11965,20 @@
             }
             if (select) {
                 const label = (r) => r.presetName || r.filename || '未命名';
-                const options = records.map((record) => `<option value="import:${escapeHtml(record.id || '')}">${escapeHtml(label(record))}</option>`);
+                const activeSource = getActiveRuntimePresetSource();
+                const activeLabel = activeSource.label || activeSource.preset?.name || '当前生效预设';
+                const options = [
+                    `<option value="${ACTIVE_PRESET_SELECT_VALUE}">当前生效：${escapeHtml(activeLabel)}</option>`,
+                    ...records.map((record) => `<option value="import:${escapeHtml(record.id || '')}">${escapeHtml(label(record))}</option>`)
+                ];
                 if (options.length === 0) {
                     options.push('<option value="">没有已导入的预设文件</option>');
                 }
                 select.innerHTML = options.join('');
                 if (selectedPresetImportRecordId && records.some((record) => record?.id === selectedPresetImportRecordId)) {
                     select.value = `import:${selectedPresetImportRecordId}`;
-                } else if (records.length > 0) {
-                    const firstId = records[0].id;
-                    select.value = `import:${firstId}`;
-                    selectedPresetImportRecordId = firstId;
-                    applySelectedPresetSource();
-                    renderPresetEditor();
                 } else {
+                    select.value = ACTIVE_PRESET_SELECT_VALUE;
                     selectedPresetImportRecordId = '';
                 }
             }
@@ -15467,7 +15544,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-mcp-path').value = currentConfig.mcp?.path || '/mcp';
                 document.getElementById('config-server-log-retention-days').value = currentConfig.server?.logRetentionDays ?? 14;
                 document.getElementById('config-server-log-cleanup-interval-minutes').value = Math.max(1, Math.round((currentConfig.server?.logCleanupIntervalMs ?? 3600000) / 60000));
-                presetDraft = normalizePresetDraft(currentConfig.preset || {});
+                presetDraft = normalizePresetDraft(getActiveRuntimePresetSource().preset || currentConfig.preset || {});
                 selectedPresetPromptIndex = 0;
                 renderPresetEditor();
 
@@ -15872,6 +15949,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     characters: (currentConfig.bindings || {}).characters || {}
                 }
             };
+
+            syncActivePresetDraftIntoRuntimeBinding(newConfig);
 
             const validation = validateConfigDraft(newConfig);
             renderValidationResult(validation);

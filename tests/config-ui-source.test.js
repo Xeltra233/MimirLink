@@ -22,3 +22,13 @@ test('config UI disables cooldown input when group repeat is off', () => {
     assert.ok(source.includes("groupRepeatToggle?.addEventListener('change', updateGroupRepeatFields);"));
     assert.ok(source.includes('updateGroupRepeatFields();'));
 });
+
+test('preset selector defaults to active runtime preset instead of restored import records', () => {
+    assert.ok(source.includes("const ACTIVE_PRESET_SELECT_VALUE = 'active';"));
+    assert.ok(source.includes('function getActiveRuntimePresetSource()'));
+    assert.ok(source.includes('function syncActivePresetDraftIntoRuntimeBinding(newConfig)'));
+    assert.ok(source.includes('select.value = ACTIVE_PRESET_SELECT_VALUE;'));
+    assert.ok(source.includes('<option value="${ACTIVE_PRESET_SELECT_VALUE}">'));
+    assert.equal(source.includes('const firstId = records[0].id;'), false);
+    assert.equal(source.includes('select.value = `import:${firstId}`;'), false);
+});
