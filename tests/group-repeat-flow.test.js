@@ -103,7 +103,7 @@ function createHarness() {
         }
 
         llmCalls += 1;
-        throw new Error('LLM should not run for group repeat watch messages');
+        return { action: 'llm', result: groupRepeatResult };
     }
 
     return {
@@ -129,6 +129,30 @@ function makeRepeatItem(messageId, userId, text = 'repeat me') {
             user_id: userId,
             message_id: messageId,
             raw_message: text
+        }
+    };
+}
+
+function makePokeItem(userId) {
+    return {
+        plainText: '（戳了戳你）',
+        structuredText: '[群聊|QQ:' + userId + '|eventType:poke|triggerReason:poke|segments:戳一戳:' + userId + '->99999] （戳了戳你）',
+        triggerReason: 'poke',
+        messageSegments: [{ type: 'poke', userId: String(userId), targetId: '99999' }],
+        routingDecision: { shouldRespond: true, triggerReason: 'poke', skipReason: '' },
+        standardEvent: {
+            eventType: 'poke',
+            segments: [{ type: 'poke', readableText: `戳一戳:${userId}->99999` }],
+            routing: { shouldRespond: true, triggerReason: 'poke', skipReason: '' }
+        },
+        event: {
+            post_type: 'notice',
+            notice_type: 'notify',
+            sub_type: 'poke',
+            message_type: 'group',
+            group_id: 10001,
+            user_id: userId,
+            target_id: 99999
         }
     };
 }
@@ -159,6 +183,26 @@ test('group repeat simulated chain stores input, skips LLM and sends direct repe
     assert.equal(harness.records.memories[0].entry.userMessage, 'repeat me\nrepeat me');
     assert.equal(harness.records.memories[1].entry.userMessage, 'repeat me\nrepeat me');
     assert.equal(harness.records.memories[1].entry.assistantMessage, 'repeat me');
+});
+
+test('group repeat simulated chain does not direct-repeat two poke notices', async () => {
+    const harness = createHarness();
+
+    const result = await harness.processRepeatWatchBatch([
+        makePokeItem(20001),
+        makePokeItem(20002)
+    ], { now: 1000 });
+
+    assert.equal(result.action, 'llm');
+    assert.equal(result.result.shouldRepeat, false);
+    assert.equal(result.result.reason, 'not_observable');
+    assert.deepEqual(harness.records.sends, []);
+    assert.equal(harness.llmCalls, 1);
+    assert.equal(harness.records.messages.length, 1);
+    assert.equal(harness.records.messages[0].role, 'user');
+    assert.equal(harness.records.messages.filter((message) => message.role === 'assistant').length, 0);
+    assert.equal(harness.records.memories.length, 1);
+    assert.equal(harness.records.memories[0].entry.assistantMessage, undefined);
 });
 
 test('group repeat simulated chain stores cooldown messages without another send or LLM call', async () => {

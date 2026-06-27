@@ -35,6 +35,42 @@ function getSegmentType(segment) {
     return String(segment?.type || '').trim();
 }
 
+function normalizeSignal(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function getRepeatSignalSegments(item = null, messageSegments = []) {
+    if (Array.isArray(messageSegments) && messageSegments.length > 0) {
+        return messageSegments;
+    }
+    if (Array.isArray(item?.messageSegments) && item.messageSegments.length > 0) {
+        return item.messageSegments;
+    }
+    if (Array.isArray(item?.standardEvent?.segments) && item.standardEvent.segments.length > 0) {
+        return item.standardEvent.segments;
+    }
+    return [];
+}
+
+function isPokeInteraction({ event = {}, item = null, routingDecision = {}, messageSegments = [] } = {}) {
+    const eventType = normalizeSignal(item?.eventType || item?.standardEvent?.eventType || event.eventType || event.event_type);
+    if (eventType === 'poke') {
+        return true;
+    }
+
+    const triggerReason = normalizeSignal(
+        item?.triggerReason ||
+        item?.routingDecision?.triggerReason ||
+        item?.standardEvent?.routing?.triggerReason ||
+        routingDecision?.triggerReason
+    );
+    if (triggerReason === 'poke') {
+        return true;
+    }
+
+    return getRepeatSignalSegments(item, messageSegments).some((segment) => normalizeSignal(segment?.type) === 'poke');
+}
+
 function getTextSegmentContent(segment) {
     if (!segment || typeof segment !== 'object') {
         return '';
@@ -76,9 +112,16 @@ export function getRepeatableMessageText(event = {}, fallbackText = '') {
     return normalizeRepeatText(candidate);
 }
 
-export function shouldObserveGroupRepeatMessage({ config = {}, event = {}, text = '', routingDecision = {}, botSelfId = '' } = {}) {
+export function shouldObserveGroupRepeatMessage({ config = {}, event = {}, text = '', routingDecision = {}, botSelfId = '', item = null, messageSegments = [] } = {}) {
     const repeatConfig = normalizeGroupRepeatConfig(config.chat?.groupRepeat || config.groupRepeat || {});
     if (!repeatConfig.enabled) {
+        return false;
+    }
+    const postType = normalizeSignal(event.post_type);
+    if (postType && postType !== 'message') {
+        return false;
+    }
+    if (isPokeInteraction({ event, item, routingDecision, messageSegments })) {
         return false;
     }
     if (event.message_type !== 'group') {
@@ -126,9 +169,9 @@ export class GroupRepeatDetector {
         }
     }
 
-    observeMessage({ config = {}, event = {}, text = '', botSelfId = '', now = Date.now(), item = null } = {}) {
+    observeMessage({ config = {}, event = {}, text = '', botSelfId = '', now = Date.now(), item = null, routingDecision = item?.routingDecision || {} } = {}) {
         const repeatConfig = normalizeGroupRepeatConfig(config.chat?.groupRepeat || config.groupRepeat || {});
-        if (!shouldObserveGroupRepeatMessage({ config, event, text, botSelfId })) {
+        if (!shouldObserveGroupRepeatMessage({ config, event, text, botSelfId, item, routingDecision })) {
             return { shouldRepeat: false, reason: repeatConfig.enabled ? 'not_observable' : 'disabled' };
         }
 

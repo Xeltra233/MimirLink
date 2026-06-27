@@ -2779,7 +2779,9 @@ async function processBatch(batch) {
         event: item?.event || {},
         text: item?.plainText || '',
         routingDecision: item?.routingDecision || {},
-        botSelfId: bot.selfId
+        botSelfId: bot.selfId,
+        item,
+        messageSegments: item?.messageSegments || []
     }));
     lastProcessedBatchAt = Date.now();
     const mergedPlainText = batch.items

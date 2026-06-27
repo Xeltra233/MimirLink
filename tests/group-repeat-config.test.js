@@ -258,6 +258,52 @@ test('group repeat detector ignores private messages, empty text, disabled confi
     }).shouldRepeat, false);
 });
 
+test('group repeat detector ignores poke notice interactions even when poke text repeats', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
+    const baseEvent = {
+        post_type: 'notice',
+        notice_type: 'notify',
+        sub_type: 'poke',
+        message_type: 'group',
+        group_id: 10001,
+        target_id: 99999
+    };
+    const first = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20001 },
+        text: '（戳了戳你）',
+        item: {
+            triggerReason: 'poke',
+            messageSegments: [{ type: 'poke', userId: '20001', targetId: '99999' }]
+        },
+        botSelfId: '99999'
+    });
+    const second = detector.observeMessage({
+        config,
+        event: { ...baseEvent, user_id: 20002 },
+        text: '（戳了戳你）',
+        item: {
+            routingDecision: { shouldRespond: true, triggerReason: 'poke' },
+            standardEvent: {
+                eventType: 'poke',
+                segments: [{ type: 'poke', readableText: '戳一戳:20002->99999' }]
+            }
+        },
+        botSelfId: '99999'
+    });
+
+    assert.equal(shouldObserveGroupRepeatMessage({
+        config,
+        event: { ...baseEvent, user_id: 20001 },
+        text: '（戳了戳你）'
+    }), false);
+    assert.equal(first.shouldRepeat, false);
+    assert.equal(first.reason, 'not_observable');
+    assert.equal(second.shouldRepeat, false);
+    assert.equal(second.reason, 'not_observable');
+});
+
 test('group repeat detector only observes pure text messages', () => {
     const detector = new GroupRepeatDetector();
     const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
