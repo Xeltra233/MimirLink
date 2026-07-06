@@ -11466,9 +11466,9 @@
                 const data = await res.json();
                     if (data.success) {
                     const applied = Array.isArray(data.appliedActions) && data.appliedActions.length > 0
-                        ? `{data.appliedActions.join('')}`
+                        ? `（${data.appliedActions.join('、')}）`
                         : '';
-                    showToast(`角色已择${applied}`);
+                    showToast(`角色已选择${applied}`);
                     await loadStatus();
                     await loadMemoryDatabases();
                     loadWorldBooks();

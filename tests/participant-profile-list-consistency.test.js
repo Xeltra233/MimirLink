@@ -276,6 +276,10 @@ test('admin UI can search and select participant profile details', () => {
     assert.ok(html.includes('请检查是否切到了其他角色专属数据库'));
     assert.ok(html.includes('复用同名角色专属数据库'));
     assert.ok(html.includes("reuseExisting: selectedMode === 'character'"));
+    assert.ok(html.includes("data.appliedActions.join('、')"));
+    assert.ok(html.includes('角色已选择'));
+    assert.equal(html.includes("{data.appliedActions.join('')}"), false);
+    assert.equal(html.includes('角色已择'), false);
     assert.ok(html.includes('正在加载详情...'));
     assert.ok(html.includes('renderParticipantProfileDetail(data.item || null);'));
 });
