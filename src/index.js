@@ -1812,6 +1812,16 @@ function updateParticipantProfileProgress(patch = {}) {
     return participantProfileProgress;
 }
 
+function getParticipantProfileSavedCount() {
+    if (typeof sessionManager?.countParticipantProfiles === 'function') {
+        return sessionManager.countParticipantProfiles();
+    }
+    if (typeof sessionManager?.listParticipantProfiles === 'function') {
+        return sessionManager.listParticipantProfiles(500).length;
+    }
+    return 0;
+}
+
 function setParticipantProfileTask(taskPatch = {}) {
     const taskKey = String(taskPatch.taskKey || 'participant-profile-default');
     const taskList = Array.isArray(participantProfileProgress.tasks) ? [...participantProfileProgress.tasks] : [];
@@ -1834,7 +1844,7 @@ function setParticipantProfileTask(taskPatch = {}) {
         taskList.push(nextTask);
     }
     participantProfileProgress.tasks = taskList;
-    participantProfileProgress.savedCount = taskList.filter((item) => item.stage === 'completed').length;
+    participantProfileProgress.savedCount = getParticipantProfileSavedCount();
     participantProfileProgress.progressPercent = taskList.length > 0
         ? Math.round(taskList.reduce((sum, item) => sum + (Number(item.progressPercent) || 0), 0) / taskList.length)
         : (participantProfileProgress.progressPercent || 0);
@@ -1845,6 +1855,7 @@ function setParticipantProfileTask(taskPatch = {}) {
 function getParticipantProfileProgressSnapshot() {
     return {
         ...participantProfileProgress,
+        savedCount: getParticipantProfileSavedCount(),
         tasks: Array.isArray(participantProfileProgress.tasks) ? participantProfileProgress.tasks.map((item) => ({ ...item })) : []
     };
 }
@@ -2213,10 +2224,13 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
         });
 
         if (!options.force && !source.hasEnoughNewInfo) {
+            const skippedMessage = source.existing
+                ? '新信息不足，沿用现有人物档案'
+                : '新信息不足，尚未生成档案';
             updateParticipantProfileProgress({
                 running: false,
                 stage: 'completed',
-                currentMessage: '新信息不足，沿用现有人物档案',
+                currentMessage: skippedMessage,
                 progressPercent: 100,
                 lastCompletedAt: Date.now(),
                 lastSuccessAt: Date.now(),
@@ -2235,7 +2249,7 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                 analysisMode: participantProfileConfig.analysisMode,
                 sourceMessageCount: Array.isArray(source.messages) ? source.messages.length : 0,
                 hasEnoughNewInfo: !!source.hasEnoughNewInfo,
-                currentMessage: '新信息不足，沿用现有人物档案',
+                currentMessage: skippedMessage,
                 progressPercent: 100,
                 lastCompletedAt: Date.now(),
                 lastSuccessAt: Date.now(),

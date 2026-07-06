@@ -596,6 +596,59 @@ export class SessionManager {
                 ORDER BY me.updated_at DESC, me.rowid DESC
                 LIMIT ?
             `),
+            listParticipantProfilesFiltered: this.db.prepare(`
+                SELECT
+                    me.id,
+                    me.namespace_id,
+                    me.title,
+                    me.content,
+                    me.tags_json,
+                    me.metadata_json,
+                    me.source_session_id,
+                    me.source_message_id,
+                    me.created_at,
+                    me.updated_at,
+                    ns.scope_type,
+                    ns.scope_key,
+                    ns.character_name,
+                    ns.preset_name
+                FROM memory_entries me
+                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                WHERE me.entry_type = 'participant_profile'
+                  AND (
+                    ? IS NULL
+                    OR IFNULL(me.title, '') LIKE ?
+                    OR IFNULL(me.content, '') LIKE ?
+                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), '') LIKE ?
+                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantName') AS TEXT), '') LIKE ?
+                    OR IFNULL(ns.scope_key, '') LIKE ?
+                    OR IFNULL(ns.character_name, '') LIKE ?
+                    OR IFNULL(ns.preset_name, '') LIKE ?
+                  )
+                ORDER BY me.updated_at DESC, me.rowid DESC
+                LIMIT ?
+            `),
+            countParticipantProfiles: this.db.prepare(`
+                SELECT COUNT(*) AS count
+                FROM memory_entries
+                WHERE entry_type = 'participant_profile'
+            `),
+            countParticipantProfilesFiltered: this.db.prepare(`
+                SELECT COUNT(*) AS count
+                FROM memory_entries me
+                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                WHERE me.entry_type = 'participant_profile'
+                  AND (
+                    ? IS NULL
+                    OR IFNULL(me.title, '') LIKE ?
+                    OR IFNULL(me.content, '') LIKE ?
+                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), '') LIKE ?
+                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantName') AS TEXT), '') LIKE ?
+                    OR IFNULL(ns.scope_key, '') LIKE ?
+                    OR IFNULL(ns.character_name, '') LIKE ?
+                    OR IFNULL(ns.preset_name, '') LIKE ?
+                  )
+            `),
             getParticipantProfileByEntryId: this.db.prepare(`
                 SELECT
                     me.id,
@@ -1561,8 +1614,53 @@ export class SessionManager {
         return true;
     }
 
-    listParticipantProfiles(limit = 50) {
-        return this.statements.listParticipantProfiles.all(limit).map(mapParticipantProfileRow);
+    normalizeParticipantProfileListOptions(limitOrOptions = 50) {
+        const options = typeof limitOrOptions === 'object' && limitOrOptions !== null
+            ? limitOrOptions
+            : { limit: limitOrOptions };
+        const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 500);
+        const search = String(options.search || '').trim();
+        const searchPattern = search ? `%${search}%` : null;
+        return { limit, search, searchPattern };
+    }
+
+    listParticipantProfiles(limitOrOptions = 50) {
+        const { limit, searchPattern } = this.normalizeParticipantProfileListOptions(limitOrOptions);
+        if (!searchPattern) {
+            return this.statements.listParticipantProfiles.all(limit).map(mapParticipantProfileRow);
+        }
+
+        return this.statements.listParticipantProfilesFiltered.all(
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            limit
+        ).map(mapParticipantProfileRow);
+    }
+
+    countParticipantProfiles(filters = {}) {
+        const { searchPattern } = this.normalizeParticipantProfileListOptions(filters);
+        if (!searchPattern) {
+            const row = this.statements.countParticipantProfiles.get();
+            return Number(row?.count) || 0;
+        }
+
+        const row = this.statements.countParticipantProfilesFiltered.get(
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern,
+            searchPattern
+        );
+        return Number(row?.count) || 0;
     }
 
     getParticipantProfileByEntryId(entryId) {

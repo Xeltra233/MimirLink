@@ -504,6 +504,22 @@ export function setupRoutes(app, config, saveConfig, managers) {
         };
     };
 
+    const buildDefaultCharacterMemoryDbPath = (characterName) => {
+        const normalizedName = String(characterName || 'character').replace(/[\\/:*?"<>|]/g, '_');
+        return `./data/chats/characters/${normalizedName}.sqlite`;
+    };
+
+    const resolveCharacterMemoryDbPath = (characterName, binding, requestedPath, options = {}) => {
+        const explicitPath = String(requestedPath || '').trim();
+        if (explicitPath) {
+            return explicitPath;
+        }
+        if (options.reuseExisting !== false && binding?.memoryDbPath) {
+            return binding.memoryDbPath;
+        }
+        return buildDefaultCharacterMemoryDbPath(characterName);
+    };
+
     const buildCharacterMetadataPlan = (characterName) => {
         const { metadata } = characterManager.extractSillyTavernMetadata(characterName);
         const compatibleRegexScripts = (metadata?.regexScripts || []).filter(isBackendCompatibleRegexRule);
@@ -2353,8 +2369,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 if (memoryBinding.mode === 'inherit') {
                     binding.memoryDbPath = null;
                 } else if (memoryBinding.mode === 'character') {
-                    const normalizedName = characterName.replace(/[\\/:*?"<>|]/g, '_');
-                    binding.memoryDbPath = memoryBinding.dbPath || `./data/chats/characters/${normalizedName}.sqlite`;
+                    binding.memoryDbPath = resolveCharacterMemoryDbPath(characterName, binding, memoryBinding.dbPath, {
+                        reuseExisting: memoryBinding.reuseExisting !== false
+                    });
                 } else if (memoryBinding.mode === 'custom' && memoryBinding.dbPath) {
                     binding.memoryDbPath = memoryBinding.dbPath;
                 }
@@ -2488,7 +2505,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             }
 
-            delete config.bindings?.characters?.[characterName];
+            if (deleteMemoryDb === true || migrateMemoryToDefault === true) {
+                delete config.bindings?.characters?.[characterName];
+            } else if (boundDbPath) {
+                binding.memoryDbPath = boundDbPath;
+                binding.deletedCharacterCardAt = new Date().toISOString();
+            }
             if (config.chat.defaultCharacter === characterName) {
                 config.chat.defaultCharacter = '';
                 sessionManager.setConfig(config, { storagePath: config.bindings.global.memoryDbPath || config.memory?.storage?.path });
@@ -3025,8 +3047,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
                 binding.memoryDbPath = null;
             } else if (mode === 'character') {
-                const normalizedName = characterName.replace(/[\\/:*?"<>|]/g, '_');
-                binding.memoryDbPath = dbPath || `./data/chats/characters/${normalizedName}.sqlite`;
+                binding.memoryDbPath = resolveCharacterMemoryDbPath(characterName, binding, dbPath, {
+                    reuseExisting: true
+                });
             } else if (mode === 'custom') {
                 if (!dbPath) {
                     return res.status(400).json({ success: false, error: '自定义数据库路径不能为空' });
@@ -4051,8 +4074,15 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.get('/api/participant-profiles', requireAuth, (req, res) => {
         try {
             const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-            const items = sessionManager.listParticipantProfiles(limit);
-            res.json({ success: true, items });
+            const search = normalizeOptionalText(req.query.search);
+            const items = sessionManager.listParticipantProfiles({ limit, search });
+            const total = typeof sessionManager.countParticipantProfiles === 'function'
+                ? sessionManager.countParticipantProfiles()
+                : items.length;
+            const filteredTotal = search && typeof sessionManager.countParticipantProfiles === 'function'
+                ? sessionManager.countParticipantProfiles({ search })
+                : total;
+            res.json({ success: true, items, total, filteredTotal, search });
         } catch (error) {
             logger.error('获取人物档案列表失败', error);
             res.status(500).json({ success: false, error: error.message });

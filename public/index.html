@@ -3921,6 +3921,18 @@
             color: var(--text-muted);
         }
 
+        .participant-profile-toolbar {
+            display: grid;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .participant-profile-toolbar input[type="search"] {
+            width: 100%;
+            min-height: 38px;
+            border-radius: 8px;
+        }
+
         .participant-profile-item {
             padding: 12px 14px;
             border: 1px solid var(--border);
@@ -6507,6 +6519,9 @@
                             <button class="secondary" onclick="loadParticipantProfiles(true)">刷新列表</button>
                         </div>
                     </div>
+                    <div class="participant-profile-toolbar">
+                        <input type="search" id="participant-profile-search" placeholder="搜索昵称、QQ、标题、内容或作用域" oninput="onParticipantProfileSearchInput()" aria-label="搜索人物档案">
+                    </div>
                     <div id="participant-profile-list" class="list">
                         <div class="empty-state">加载中...</div>
                     </div>
@@ -8253,6 +8268,10 @@
         let pendingConfigNavigation = null;
         let lastConfigSavedAt = null;
         let participantProfiles = [];
+        let participantProfileTotal = 0;
+        let participantProfileFilteredTotal = 0;
+        let participantProfileSearchKeyword = '';
+        let participantProfileSearchTimer = null;
         let selectedParticipantProfileId = null;
         let participantProfilesLoaded = false;
         let participantProfileProgress = null;
@@ -9578,10 +9597,17 @@
                 return;
             }
 
-            count.textContent = `${participantProfiles.length} 条`;
+            const total = Number(participantProfileTotal) || participantProfiles.length;
+            const filteredTotal = Number(participantProfileFilteredTotal) || participantProfiles.length;
+            const hasSearch = Boolean(participantProfileSearchKeyword.trim());
+            count.textContent = hasSearch
+                ? `${filteredTotal}/${total} 条`
+                : `${total} 条`;
 
             if (participantProfiles.length === 0) {
-                list.innerHTML = '<div class="empty-state">暂无人物档案</div>';
+                list.innerHTML = hasSearch
+                    ? '<div class="empty-state">没有匹配的人物档案</div>'
+                    : `<div class="empty-state">${escapeHtml(getParticipantProfileEmptyStateText())}</div>`;
                 return;
             }
 
@@ -9593,6 +9619,33 @@
                     <div class="meta">${escapeHtml(formatParticipantProfileScope(item))}</div>
                 </div>
             `).join('');
+        }
+
+        function getParticipantProfileEmptyStateText() {
+            const progress = participantProfileProgress || {};
+            const savedCount = Number(progress.savedCount) || 0;
+            if (savedCount > 0) {
+                return `当前任务中心记录有 ${savedCount} 份人物档案，但当前数据库列表为空，请检查是否切到了其他角色专属数据库。`;
+            }
+            if (progress.lastError) {
+                return `暂无人物档案\n最近建档失败: ${progress.lastError}`;
+            }
+            if (progress.currentMessage && progress.currentMessage !== '暂无人物档案任务') {
+                return `暂无人物档案\n当前建档说明: ${progress.currentMessage}`;
+            }
+            return '暂无人物档案';
+        }
+
+        function onParticipantProfileSearchInput() {
+            const input = document.getElementById('participant-profile-search');
+            participantProfileSearchKeyword = input?.value?.trim() || '';
+            if (participantProfileSearchTimer) {
+                clearTimeout(participantProfileSearchTimer);
+            }
+            participantProfileSearchTimer = setTimeout(() => {
+                participantProfilesLoaded = false;
+                loadParticipantProfiles(true);
+            }, 250);
         }
 
         function renderParticipantProfileDetail(item) {
@@ -9683,15 +9736,24 @@
             }
 
             try {
-                const { res, data } = await fetchJsonSafe('/api/participant-profiles');
+                const params = new URLSearchParams();
+                if (participantProfileSearchKeyword) {
+                    params.set('search', participantProfileSearchKeyword);
+                }
+                const listUrl = params.toString()
+                    ? `/api/participant-profiles?${params.toString()}`
+                    : '/api/participant-profiles';
+                const { res, data } = await fetchJsonSafe(listUrl);
                 if (!res.ok || !data.success) {
                     throw new Error(data.error || '加载失败');
                 }
 
                 participantProfiles = Array.isArray(data.items) ? data.items : [];
+                participantProfileTotal = Number(data.total) || participantProfiles.length;
+                participantProfileFilteredTotal = Number(data.filteredTotal) || participantProfiles.length;
                 participantProfilesLoaded = true;
 
-                if (!selectedParticipantProfileId && participantProfiles.length > 0) {
+                if (participantProfiles.length > 0 && (!selectedParticipantProfileId || !participantProfiles.some((item) => item.id === selectedParticipantProfileId))) {
                     selectedParticipantProfileId = participantProfiles[0].id;
                     await selectParticipantProfile(selectedParticipantProfileId);
                     return;
@@ -9699,10 +9761,13 @@
 
                 renderParticipantProfileList();
                 if (participantProfiles.length === 0) {
+                    selectedParticipantProfileId = null;
                     renderParticipantProfileDetail(null);
                 }
             } catch (e) {
                 participantProfiles = [];
+                participantProfileTotal = 0;
+                participantProfileFilteredTotal = 0;
                 participantProfilesLoaded = false;
                 participantProfileProgress = null;
                 updateParticipantProfileProgressPanels();
@@ -11329,7 +11394,10 @@
                         </label>
                         <label class="option-row">
                             <input type="radio" name="memory-binding-mode" value="character" checked>
-                            <div>为这个角色创建独立数据库</div>
+                            <div>
+                                <div style="font-weight: 600;">复用同名角色专属数据库</div>
+                                <div style="color: var(--text-muted); font-size: 0.9rem; margin-top: 4px;">已有绑定或同名专属库时直接复用；不存在时再创建</div>
+                            </div>
                         </label>
                         <label class="option-row">
                             <input type="radio" name="memory-binding-mode" value="custom">
@@ -11363,12 +11431,13 @@
                 onConfirm(selected, {
                     mode: selectedMode,
                     dbPath: customPath,
+                    reuseExisting: selectedMode === 'character',
                     migrateFromCurrent
                 });
             });
         }
 
-        async function doSelectCharacter(filename, importOptions = {}, memoryBinding = { mode: 'character' }) {
+        async function doSelectCharacter(filename, importOptions = {}, memoryBinding = { mode: 'character', reuseExisting: true }) {
             try {
                 const res = await fetch('/api/characters/select', {
                     method: 'POST',
