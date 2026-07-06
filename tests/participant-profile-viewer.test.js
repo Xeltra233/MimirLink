@@ -43,6 +43,13 @@ async function startTestServer(sessionManager, options = {}) {
 
     const saveConfig = options.saveConfig || (() => {});
     const clearParticipantProfileTimers = options.clearParticipantProfileTimers || (() => {});
+    const defaultAiClient = {
+        updateConfig() {},
+        getVisibleResponseContent(result) {
+            if (typeof result === 'string') return result;
+            return result?.content || result?.text || '';
+        }
+    };
 
     setupRoutes(app, config, saveConfig, {
         characterManager: options.characterManager || {
@@ -53,7 +60,7 @@ async function startTestServer(sessionManager, options = {}) {
         worldBookManager: options.worldBookManager || { scanWorldBooks: async () => {}, readWorldBook() { return null; }, getCurrentWorldBook() { return null; } },
         sessionManager,
         regexProcessor: { updateConfig() {} },
-        aiClient: options.aiClient || { updateConfig() {} },
+        aiClient: { ...defaultAiClient, ...(options.aiClient || {}) },
         promptBuilder: { updateConfig() {} },
         logger: { info() {}, warn() {}, error() {}, debug() {} },
         bot: options.bot || { isConnected() { return false; } },
@@ -65,6 +72,8 @@ async function startTestServer(sessionManager, options = {}) {
         getLastInjectionObservation: options.getLastInjectionObservation || (() => null),
         getRecentInjectionObservations: options.getRecentInjectionObservations || (() => []),
         getLastRecallSnapshot: options.getLastRecallSnapshot || (() => null),
+        getLlmEnabled: options.getLlmEnabled || (() => true),
+        setLlmEnabled: options.setLlmEnabled || ((value) => value),
         clearParticipantProfileTimers,
         analyzeParticipantProfile: options.analyzeParticipantProfile
     });
@@ -1379,8 +1388,8 @@ test('admin UI includes provider-first AI config hooks and defaults', () => {
     assert.ok(html.includes('预设层正则'));
     assert.ok(html.includes('function getSelectedPresetImportRecord()'));
     assert.ok(html.includes('function applySelectedPresetSource()'));
-    assert.ok(html.includes('record?.importedPreset || currentConfig?.preset || {}'));
-    assert.ok(html.includes('未命名预设文件'));
+    assert.ok(html.includes('record?.importedPreset || activeSource.preset || currentConfig?.preset || {}'));
+    assert.ok(html.includes("const label = (r) => r.presetName || r.filename || '未命名';"));
     assert.ok(html.includes('动态知识'));
     assert.ok(html.includes('配置校验未通过，请先修正错误'));
     assert.ok(html.includes('function sortAIModelsForQuickList(models = [])'));
@@ -1460,12 +1469,15 @@ test('admin UI includes participant profile config field hooks', () => {
     assert.ok(html.includes('id="config-memory-participant-profile-source"'));
     assert.ok(html.includes('id="config-memory-participant-profile-analysis-mode"'));
     assert.ok(html.includes('id="config-memory-participant-profile-model"'));
-    assert.ok(html.includes('id="config-memory-participant-profile-baseurl"'));
-    assert.ok(html.includes('id="config-memory-participant-profile-apikey"'));
+    assert.ok(html.includes('id="config-memory-participant-profile-provider-id"'));
+    assert.ok(html.includes('applyParticipantProfileModelSelection()'));
+    assert.ok(html.includes('Base URL &#x548C;&#x5BC6;&#x94A5;&#x81EA;&#x52A8;&#x7EE7;&#x627F;'));
     assert.ok(html.includes("document.getElementById('config-memory-participant-profile-enabled').checked = currentConfig.memory?.participantProfile?.enabled === true;"));
     assert.ok(html.includes("document.getElementById('config-memory-participant-profile-inject-enabled').checked = currentConfig.memory?.participantProfile?.injectEnabled !== false;"));
     assert.ok(html.includes("document.getElementById('config-memory-participant-profile-blacklist').value = (currentConfig.memory?.participantProfile?.blacklistParticipantIds || []).join(',');"));
     assert.ok(html.includes("document.getElementById('config-memory-participant-profile-manual-command').value = currentConfig.chat?.commands?.participantProfileManual?.command || currentConfig.memory?.participantProfile?.manualCommand ||"));
+    assert.ok(html.includes("document.getElementById('config-memory-participant-profile-analysis-mode').value = currentConfig.memory?.participantProfile?.analysisMode || 'bot_only_profile';"));
+    assert.ok(html.includes("document.getElementById('config-memory-participant-profile-provider-id').value = participantProfileProviderId;"));
     assert.ok(html.includes("enabled: document.getElementById('config-memory-participant-profile-enabled').checked"));
     assert.ok(html.includes("injectEnabled: document.getElementById('config-memory-participant-profile-inject-enabled').checked"));
     assert.ok(html.includes("blacklistParticipantIds: document.getElementById('config-memory-participant-profile-blacklist').value.split(',').map((item) => item.trim()).filter(Boolean)"));
@@ -1473,7 +1485,9 @@ test('admin UI includes participant profile config field hooks', () => {
     assert.ok(html.includes("triggerMode: document.getElementById('config-memory-participant-profile-trigger-mode').value || 'idle'"));
     assert.ok(html.includes("intervalMs: parseInt(document.getElementById('config-memory-participant-profile-interval').value) || 300000"));
     assert.ok(html.includes("maxSourceMessages: parseInt(document.getElementById('config-memory-participant-profile-source').value) || 50"));
-    assert.ok(html.includes("analysisMode: document.getElementById('config-memory-participant-profile-analysis-mode').value || 'profile_plus_messages'"));
+    assert.ok(html.includes("analysisMode: document.getElementById('config-memory-participant-profile-analysis-mode').value || 'bot_only_profile'"));
+    assert.ok(html.includes('providerId: participantProfileModelSelection.providerId'));
+    assert.ok(html.includes('model: participantProfileModelSelection.model'));
 });
 
 test('admin UI validates participant profile config fields', () => {
@@ -1484,7 +1498,8 @@ test('admin UI validates participant profile config fields', () => {
     assert.ok(html.includes("if (draft.memory.participantProfile.triggerMode !== 'idle' && draft.memory.participantProfile.triggerMode !== 'interval' && draft.memory.participantProfile.triggerMode !== 'both') {"));
     assert.ok(html.includes("if (draft.memory.participantProfile.intervalMs < 1000) {"));
     assert.ok(html.includes("if (draft.memory.participantProfile.maxSourceMessages < 1) {"));
-    assert.ok(html.includes("if (draft.memory.participantProfile.analysisMode !== 'messages_only' && draft.memory.participantProfile.analysisMode !== 'profile_plus_messages') {"));
+    assert.ok(html.includes("const validModes = ['messages_only', 'profile_plus_messages', 'bot_only_messages', 'bot_only_profile'];"));
+    assert.ok(html.includes("if (!validModes.includes(draft.memory.participantProfile.analysisMode)) {"));
 });
 
 test('admin UI includes participant profile management actions', () => {
@@ -1569,7 +1584,10 @@ test('message dispatch adds configurable CQ mention and skips quote reply for sp
     assert.ok(source.includes("const mentionSenderOnReply = config.chat.mentionSenderOnReply !== false;"));
     assert.ok(source.includes("const mentionPrefix = event.message_type === 'group' && mentionSenderOnReply ? buildGroupMentionPrefix(event.user_id) : '';"));
     assert.ok(source.includes("const message = !hasSentPrimary && mentionPrefix ? `${mentionPrefix}${content}` : content;"));
-    assert.ok(source.includes("if (quoteReplyEnabled && !splitMessage && !hasSentPrimary && event.message_id) {"));
+    assert.ok(source.includes("if (quoteReplyEnabled && event.message_id) {"));
+    assert.ok(source.includes('const segments = ['));
+    assert.ok(source.includes("{ type: 'reply', data: { id: String(event.message_id) } },"));
+    assert.ok(source.includes("{ type: 'at', data: { qq: String(event.user_id) } },"));
     assert.ok(source.includes("await bot.sendGroupMessage(event.group_id, message);"));
 });
 

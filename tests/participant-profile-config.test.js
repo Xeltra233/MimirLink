@@ -16,10 +16,11 @@ test('participant profile config falls back to default threshold and idle time',
         intervalMs: 5 * 60 * 1000,
         sourceMessageLimit: 50,
         triggerMode: 'idle',
-        analysisMode: 'profile_plus_messages',
+        analysisMode: 'bot_only_profile',
         model: '',
         baseUrl: '',
-        apiKey: ''
+        apiKey: '',
+        retryOnError: true
     });
 });
 
@@ -39,7 +40,8 @@ test('participant profile config prefers configured values', () => {
                 analysisMode: 'messages_only',
                 model: 'profile-model',
                 baseUrl: ' https://example.test/v1 ',
-                apiKey: ' secret-key '
+                apiKey: ' secret-key ',
+                retryOnError: false
             }
         }
     };
@@ -57,7 +59,8 @@ test('participant profile config prefers configured values', () => {
         analysisMode: 'messages_only',
         model: 'profile-model',
         baseUrl: 'https://example.test/v1',
-        apiKey: 'secret-key'
+        apiKey: 'secret-key',
+        retryOnError: false
     });
 });
 
@@ -77,7 +80,8 @@ test('participant profile config ignores invalid values and keeps defaults', () 
                 analysisMode: 'full',
                 model: 123,
                 baseUrl: null,
-                apiKey: false
+                apiKey: false,
+                retryOnError: 'no'
             }
         }
     };
@@ -92,10 +96,11 @@ test('participant profile config ignores invalid values and keeps defaults', () 
         intervalMs: 5 * 60 * 1000,
         sourceMessageLimit: 50,
         triggerMode: 'idle',
-        analysisMode: 'profile_plus_messages',
+        analysisMode: 'bot_only_profile',
         model: '',
         baseUrl: '',
-        apiKey: ''
+        apiKey: '',
+        retryOnError: true
     });
 });
 
@@ -115,7 +120,8 @@ test('normalize participant profile config writes normalized values back to conf
                 analysisMode: 'messages_only',
                 model: ' profile-model ',
                 baseUrl: ' https://example.test/v1 ',
-                apiKey: ' token '
+                apiKey: ' token ',
+                retryOnError: false
             }
         }
     };
@@ -135,7 +141,8 @@ test('normalize participant profile config writes normalized values back to conf
         analysisMode: 'messages_only',
         model: 'profile-model',
         baseUrl: 'https://example.test/v1',
-        apiKey: 'token'
+        apiKey: 'token',
+        retryOnError: false
     });
 
     assert.deepEqual(config.memory.participantProfile, {
@@ -151,6 +158,7 @@ test('normalize participant profile config writes normalized values back to conf
         analysisMode: 'messages_only',
         model: 'profile-model',
         baseUrl: 'https://example.test/v1',
-        apiKey: 'token'
+        apiKey: 'token',
+        retryOnError: false
     });
 });

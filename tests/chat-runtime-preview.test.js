@@ -20,6 +20,14 @@ import {
     generateMentionTextFromPrompt
 } from '../src/tools.js';
 
+function jsonResponse(payload, init = {}) {
+    return new Response(JSON.stringify(payload), {
+        status: init.status || 200,
+        statusText: init.statusText || 'OK',
+        headers: { 'Content-Type': 'application/json', ...(init.headers || {}) }
+    });
+}
+
 function createServices(config = {}) {
     const characterManager = {
         readFromPng(name) {
@@ -79,29 +87,46 @@ test('message runtime forwards batch memoryScope to processor', async () => {
         calls.push(batch);
     });
 
-    runtime.enqueue({
-        sessionKey: 'global_shared_memory',
-        memoryScope: {
+    try {
+        runtime.enqueue({
+            sessionKey: 'global_shared_memory',
+            memoryScope: {
+                sessionKey: 'global_shared_memory',
+                scopeType: 'global_shared',
+                scopeLabel: '全局共享记忆'
+            },
+            dedupeKey: 'global_shared_memory:1',
+            event: { message_id: 1 },
+            plainText: '1',
+            structuredText: '[群聊] 1',
+            triggerReason: 'keyword'
+        });
+
+        await new Promise((resolve, reject) => {
+            const startedAt = Date.now();
+            const timer = setInterval(() => {
+                if (calls.length > 0) {
+                    clearInterval(timer);
+                    resolve();
+                    return;
+                }
+                if (Date.now() - startedAt > 1000) {
+                    clearInterval(timer);
+                    reject(new Error('runtime batch was not processed'));
+                }
+            }, 5);
+        });
+
+        assert.equal(calls.length, 1);
+        assert.equal(calls[0].sessionKey, 'global_shared_memory');
+        assert.deepEqual(calls[0].memoryScope, {
             sessionKey: 'global_shared_memory',
             scopeType: 'global_shared',
             scopeLabel: '全局共享记忆'
-        },
-        dedupeKey: 'global_shared_memory:1',
-        event: { message_id: 1 },
-        plainText: '1',
-        structuredText: '[群聊] 1',
-        triggerReason: 'keyword'
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, 30));
-
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].sessionKey, 'global_shared_memory');
-    assert.deepEqual(calls[0].memoryScope, {
-        sessionKey: 'global_shared_memory',
-        scopeType: 'global_shared',
-        scopeLabel: '全局共享记忆'
-    });
+        });
+    } finally {
+        runtime.destroy();
+    }
 });
 
 test('participant profile prompt uses only new messages in messages_only mode', () => {
@@ -198,6 +223,9 @@ test('generateMentionTextFromPrompt uses injected prompt messages and preserves 
         async chat(messages, aiOptions) {
             calls.push({ messages, aiOptions });
             return '  角色化的主动@回复  ';
+        },
+        getVisibleResponseContent(result) {
+            return typeof result === 'string' ? result : (result?.content || '');
         }
     };
 
@@ -350,16 +378,13 @@ test('AI client applies per-call participant profile overrides to payload and he
             headers: options.headers,
             body: JSON.parse(options.body)
         });
-        return {
-            ok: true,
-            json: async () => ({
+        return jsonResponse({
                 choices: [{
                     message: {
                         content: 'override ok'
                     }
                 }]
-            })
-        };
+            });
     };
 
     const client = new AIClient({
@@ -381,7 +406,8 @@ test('AI client applies per-call participant profile overrides to payload and he
         }
     );
 
-    assert.equal(result, 'override ok');
+    assert.equal(result.content, 'override ok');
+    assert.equal(result.rawContent, 'override ok');
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, 'https://profile.example.com/v1/chat/completions');
     assert.equal(requests[0].headers.Authorization, 'Bearer profile-key');
@@ -479,16 +505,13 @@ test('AI client chatWithTools falls back to chat when no tools are exposed', asy
     const requests = [];
     globalThis.fetch = async (url, options) => {
         requests.push({ url, body: JSON.parse(options.body) });
-        return {
-            ok: true,
-            json: async () => ({
+        return jsonResponse({
                 choices: [{
                     message: {
                         content: '普通回复'
                     }
                 }]
-            })
-        };
+            });
     };
 
     const client = new AIClient({
@@ -506,7 +529,7 @@ test('AI client chatWithTools falls back to chat when no tools are exposed', asy
         handlers: {}
     });
 
-    assert.equal(result, '普通回复');
+    assert.equal(result.content, '普通回复');
     assert.equal(requests.length, 1);
     assert.equal(Array.isArray(requests[0].body.tools), false);
     assert.equal(requests[0].body.model, 'global-model');
@@ -515,10 +538,7 @@ test('AI client chatWithTools falls back to chat when no tools are exposed', asy
 });
 
 test('AI client falls back to reasoning_content when content is null', async () => {
-    const warnings = [];
-    globalThis.fetch = async () => ({
-        ok: true,
-        json: async () => ({
+    globalThis.fetch = async () => jsonResponse({
             choices: [{
                 finish_reason: 'stop',
                 message: {
@@ -528,7 +548,6 @@ test('AI client falls back to reasoning_content when content is null', async () 
                     tool_calls: []
                 }
             }]
-        })
     });
 
     const client = new AIClient({
@@ -537,25 +556,19 @@ test('AI client falls back to reasoning_content when content is null', async () 
         model: 'test-model',
         maxTokens: 1024,
         temperature: 0.7
-    }, {
-        warn(message) {
-            warnings.push(message);
-        }
     });
 
     const result = await client.chat([{ role: 'user', content: '你好' }]);
-    assert.equal(result, '基于上下文的正常回复');
-    assert.deepEqual(warnings, ['[AI] 标准 content 为空，已回退使用 reasoning_content']);
+    assert.equal(result.content, '基于上下文的正常回复');
+    assert.equal(result.reasoningContent, '基于上下文的正常回复');
+    assert.equal(result.rawReasoningContent, '基于上下文的正常回复');
 });
 
 test('AI client falls back to retry without trailing assistant prefill on empty response', async () => {
     const requests = [];
     const responses = [
         {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => ({
+            response: jsonResponse({
                 model: 'prefill-sensitive-model',
                 choices: [{
                     finish_reason: 'stop',
@@ -569,10 +582,7 @@ test('AI client falls back to retry without trailing assistant prefill on empty 
             })
         },
         {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            json: async () => ({
+            response: jsonResponse({
                 model: 'prefill-sensitive-model',
                 choices: [{
                     finish_reason: 'stop',
@@ -588,7 +598,7 @@ test('AI client falls back to retry without trailing assistant prefill on empty 
     const infoLogs = [];
     globalThis.fetch = async (_url, options) => {
         requests.push(JSON.parse(options.body));
-        return responses.shift();
+        return responses.shift().response;
     };
 
     const client = new AIClient({
@@ -609,7 +619,7 @@ test('AI client falls back to retry without trailing assistant prefill on empty 
         { role: 'assistant', content: '助手预填充', meta: { source: 'assistant_prefill', sourceId: 'assistant-prefill' } }
     ]);
 
-    assert.equal(result, '移除 prefill 后恢复正常');
+    assert.equal(result.content, '移除 prefill 后恢复正常');
     assert.equal(requests.length, 2);
     assert.equal(requests[0].messages.length, 3);
     assert.equal(requests[0].messages.at(-1).role, 'assistant');
@@ -625,9 +635,7 @@ test('AI client throws when response message content is null', async () => {
     globalThis.fetch = async () => {
         callCount += 1;
         if (callCount === 1) {
-            return {
-                ok: true,
-                json: async () => ({
+            return jsonResponse({
                     choices: [{
                         finish_reason: 'stop',
                         message: {
@@ -636,8 +644,7 @@ test('AI client throws when response message content is null', async () => {
                             refusal: 'blocked'
                         }
                     }]
-                })
-            };
+                });
         }
 
         return {
@@ -698,9 +705,7 @@ test('AI client diagnostic includes requested and response model names', async (
     globalThis.fetch = async () => {
         callCount += 1;
         if (callCount === 1) {
-            return {
-                ok: true,
-                json: async () => ({
+            return jsonResponse({
                     model: 'mapped-response-model',
                     choices: [{
                         finish_reason: 'stop',
@@ -711,8 +716,7 @@ test('AI client diagnostic includes requested and response model names', async (
                             tool_calls: null
                         }
                     }]
-                })
-            };
+                });
         }
 
         return {
@@ -753,11 +757,7 @@ test('AI client diagnostic includes requested and response model names', async (
 
 test('AI client emits execution stage logs during chat', async () => {
     const infoLogs = [];
-    globalThis.fetch = async () => ({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-        json: async () => ({
+    globalThis.fetch = async () => jsonResponse({
             model: 'logged-model',
             choices: [{
                 finish_reason: 'stop',
@@ -767,7 +767,6 @@ test('AI client emits execution stage logs during chat', async () => {
                     tool_calls: []
                 }
             }]
-        })
     });
 
     const client = new AIClient({
@@ -788,7 +787,7 @@ test('AI client emits execution stage logs during chat', async () => {
         { role: 'assistant', content: '', meta: { source: 'assistant_prefill', sourceId: 'assistant-prefill' } }
     ]);
 
-    assert.equal(result, '正常回复');
+    assert.equal(result.content, '正常回复');
     assert.ok(infoLogs.some((entry) => entry.message === '[AI执行] 开始执行 chat'));
     assert.ok(infoLogs.some((entry) => entry.message === '[AI执行] 已构建主请求 payload'));
     assert.ok(infoLogs.some((entry) => entry.message === '[AI执行] 准备发送 chat/completions'));
@@ -1089,7 +1088,7 @@ test('buildChatRuntimePreview respects Tavern-style string worldbook positions',
 });
 
 test('worldbook matcher supports string keys and string secondary keys from tavern payloads', () => {
-    const manager = new WorldBookManager('D:/project/test/QQ-Tavern/MimirLink/data');
+    const manager = new WorldBookManager(process.env.TMPDIR || process.env.TEMP || process.env.TMP || process.cwd());
     const matched = manager.matchEntries({
         entries: [
             {
@@ -1120,7 +1119,7 @@ test('worldbook matcher supports string keys and string secondary keys from tave
 });
 
 test('worldbook matcher treats Tavern-style string and numeric flags as runtime booleans', () => {
-    const manager = new WorldBookManager('D:/project/test/QQ-Tavern/MimirLink/data');
+    const manager = new WorldBookManager(process.env.TMPDIR || process.env.TEMP || process.env.TMP || process.cwd());
     const matched = manager.matchEntries({
         entries: [
             {
@@ -1169,7 +1168,7 @@ test('worldbook matcher treats Tavern-style string and numeric flags as runtime 
 });
 
 test('worldbook matcher normalizes Tavern-style string positions and numeric fields', () => {
-    const manager = new WorldBookManager('D:/project/test/QQ-Tavern/MimirLink/data');
+    const manager = new WorldBookManager(process.env.TMPDIR || process.env.TEMP || process.env.TMP || process.cwd());
     const matched = manager.matchEntries({
         entries: [
             {

@@ -2208,7 +2208,8 @@ test('prompt range test uses chat provider base url and api key by default', asy
         assert.equal(body.rawReply, body.aiResponse.rawReply);
         assert.equal(body.cleanedReply, '配置页 Provider 调用成功');
         assert.equal(body.finalReply, '配置页 Provider 调用成功');
-        assert.equal(body.reasoningContent, '模型推理摘要');
+        assert.equal(body.reasoningContent, '内部草稿');
+        assert.equal(body.aiResponse.rawReasoningContent, '模型推理摘要');
         assert.equal(body.inputHeader.includes('群号:818554756'), true);
         assert.equal(body.fakeHistoryCount, 0);
         assert.equal(Array.isArray(body.messages), true);

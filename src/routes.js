@@ -3395,6 +3395,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     knowledgeType: payload.knowledgeType
                 });
                 recordDashboardMetric?.('knowledgeImport');
+                const aiResponse = await aiClient.chat(messages);
                 const aiResponseText = aiClient.getVisibleResponseContent(aiResponse);
                 const generatedEntries = parseKnowledgeImportAIResponse(aiResponseText);
 

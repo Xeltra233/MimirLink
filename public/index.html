@@ -11217,7 +11217,8 @@
                     ? ` | 并发:${data.runtime.maxConcurrentSessions} 缓冲:${data.runtime.bufferWindowMs}ms`
                     : '';
                 const storageInfo = data.globalMemory?.storage?.type ? ` | 存储:${data.globalMemory.storage.type}` : '';
-                document.getElementById('dash-sessions').textContent = `${data.sessions}${runtimeInfo}${storageInfo}`;
+                const sessionCount = data.sessions ?? '-';
+                document.getElementById('dash-sessions').textContent = `${sessionCount}${runtimeInfo}${storageInfo}`;
                 // Token 统计
                 const ts = data.tokenStats;
                 if (ts) {
