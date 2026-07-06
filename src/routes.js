@@ -14,7 +14,7 @@ import { PromptBuilder } from './prompt.js';
 import { inspectMemoryDatabase } from './session.js';
 import { buildChatRuntimePreview } from './runtime/chat-preview.js';
 import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
-import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, generateRealtimeAnswer, runConfiguredWebSearch } from './tools.js';
+import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, runConfiguredWebSearch } from './tools.js';
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 import { syncPresetFiles } from './preset-sync.js';
 
@@ -3852,33 +3852,6 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 defaultTargetUserId: targetUserId,
                 defaultTargetName: targetName
             });
-            if (toolContext.isRealtimeQuery?.(normalizedMessage)) {
-                const realtimeIntentMatch = toolContext.matchRealtimeIntent?.(normalizedMessage) || null;
-                const realtimeAnswer = await callWithTimeout(() => generateRealtimeAnswer({
-                    aiClient,
-                    config,
-                    query: normalizedMessage,
-                    logger
-                }), timeoutMs);
-                if (realtimeAnswer?.reply) {
-                    logger.info(`[API ${req.requestId || 'no-id'}] AI 测试走实时轻量旁路`, {
-                        query: summarizeText(normalizedMessage),
-                        groundingSource: realtimeAnswer.grounding?.source || '',
-                        groundingProvider: realtimeAnswer.grounding?.provider || '',
-                        groundingResultCount: realtimeAnswer.grounding?.resultCount || 0,
-                        realtimeIntent: realtimeIntentMatch?.intent || '',
-                        realtimeMatchReason: realtimeIntentMatch?.reason || '',
-                        realtimeMatchScore: Number(realtimeIntentMatch?.score || 0).toFixed(3),
-                        realtimeMatchPrototype: realtimeIntentMatch?.matchedPrototype || ''
-                    });
-                    return res.json({
-                        success: true,
-                        response: realtimeAnswer.reply,
-                        toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean),
-                        mode: 'realtime_bypass'
-                    });
-                }
-            }
             const messages = [
                 ...(Array.isArray(toolContext.toolHints) && toolContext.toolHints.length > 0
                     ? [{ role: 'system', content: `【工具使用说明】\n${toolContext.toolHints.join('\n\n')}` }]
@@ -3910,7 +3883,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 success: true,
                 response,
                 reasoningContent: typeof responseResult?.reasoningContent === 'string' ? responseResult.reasoningContent : null,
-                toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean)
+                toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean),
+                mode: toolContext.isRealtimeQuery?.(normalizedMessage) ? 'ai_with_realtime_grounding' : 'ai_with_tools'
             });
         } catch (error) {
             logger.error('测试 AI 调用失败', error);

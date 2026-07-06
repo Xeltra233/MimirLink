@@ -396,35 +396,37 @@ test('AI client chatWithTools executes one tool call and follows up with tool re
         const body = JSON.parse(options.body);
         requests.push({ url, body });
         if (requests.length === 1) {
+            const payload = {
+                choices: [{
+                    message: {
+                        content: null,
+                        tool_calls: [{
+                            id: 'tool-1',
+                            type: 'function',
+                            function: {
+                                name: 'web_search',
+                                arguments: '{"query":"最新 AI 新闻","limit":2}'
+                            }
+                        }]
+                    }
+                }]
+            };
             return {
                 ok: true,
-                json: async () => ({
-                    choices: [{
-                        message: {
-                            content: null,
-                            tool_calls: [{
-                                id: 'tool-1',
-                                type: 'function',
-                                function: {
-                                    name: 'web_search',
-                                    arguments: '{"query":"最新 AI 新闻","limit":2}'
-                                }
-                            }]
-                        }
-                    }]
-                })
+                text: async () => JSON.stringify(payload)
             };
         }
 
+        const payload = {
+            choices: [{
+                message: {
+                    content: '这是整合后的最终回复'
+                }
+            }]
+        };
         return {
             ok: true,
-            json: async () => ({
-                choices: [{
-                    message: {
-                        content: '这是整合后的最终回复'
-                    }
-                }]
-            })
+            text: async () => JSON.stringify(payload)
         };
     };
 
@@ -460,7 +462,7 @@ test('AI client chatWithTools executes one tool call and follows up with tool re
         }
     );
 
-    assert.equal(result, '这是整合后的最终回复');
+    assert.equal(result.content, '这是整合后的最终回复');
     assert.equal(requests.length, 2);
     assert.equal(requests[0].body.tools[0].function.name, 'web_search');
     assert.equal(requests[1].body.messages.at(-2).role, 'assistant');

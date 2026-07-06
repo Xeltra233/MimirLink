@@ -418,6 +418,9 @@ test('AI test route uses tool context and forwards default mention target info',
                 chatWithToolsCalls.push({ messages, toolContext });
                 return '工具调用回复';
             },
+            getVisibleResponseContent(result) {
+                return typeof result === 'string' ? result : (result?.content || '');
+            },
             async chat(messages) {
                 return messages?.[1]?.content?.includes('提醒他看一下搜索结果')
                     ? '好的，记得看一下搜索结果。'

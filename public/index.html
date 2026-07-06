@@ -7232,6 +7232,11 @@
                                 <p class="hint-text">开启后，普通聊天和管理员命令收到后会调用 set_msg_emoji_like；关闭时两者都不会发送 QQ 表情回应。</p>
                             </div>
                             <div class="form-group">
+                                <label>QQ 表情回应 ID/别名</label>
+                                <input type="text" id="config-chat-emoji-reaction-id" placeholder="289 或 点赞 / 狗头">
+                                <p class="hint-text">支持 QQ 原生表情 ID，也支持默认、收到、点赞、爱心、狗头等别名；仍然只有启用 QQ 表情回应时才会发送。</p>
+                            </div>
+                            <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-group-repeat-enabled">
                                     启用群聊复读直发
@@ -7372,6 +7377,22 @@
                             <div class="form-group">
                                 <label>AI 主动 @ 指令文本</label>
                                 <input type="text" id="config-chat-command-admin-mention-command" placeholder="/at">
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-command-admin-poke-enabled" checked>
+                                    启用戳一戳指令
+                                </label>
+                                <p class="hint-text">输入 <code>/戳一戳 @某人</code>，bot 会对目标连续戳一戳；仅管理员可用。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>戳一戳指令文本</label>
+                                <input type="text" id="config-chat-command-admin-poke-command" placeholder="/戳一戳">
+                            </div>
+                            <div class="form-group">
+                                <label>戳一戳次数</label>
+                                <input type="number" id="config-chat-command-admin-poke-repeat" placeholder="5" min="1" max="10">
+                                <p class="hint-text">默认 5 下；过高会造成打扰，服务端限制为 1 - 10。</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
@@ -8809,9 +8830,7 @@
             const toolsEnabled = Array.isArray(data.toolsEnabled) ? data.toolsEnabled.filter(Boolean) : [];
             const lines = [];
 
-            if (mode === 'realtime_bypass') {
-                lines.push('模式: 实时旁路');
-            } else if (mode) {
+            if (mode) {
                 lines.push(`模式: ${mode}`);
             }
 
@@ -15549,6 +15568,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
                 document.getElementById('config-chat-human-control').checked = currentConfig.chat?.humanChatControlEnabled !== false;
                 document.getElementById('config-chat-emoji-reaction').checked = currentConfig.chat?.emojiReaction === true;
+                document.getElementById('config-chat-emoji-reaction-id').value = currentConfig.chat?.emojiReactionId || '289';
                 document.getElementById('config-chat-send-reasoning-to-qq').checked = currentConfig.chat?.sendReasoningToQQ === true;
                 document.getElementById('config-chat-group-repeat-enabled').checked = currentConfig.chat?.groupRepeat?.enabled === true;
                 document.getElementById('config-chat-group-repeat-cooldown-minutes').value = Math.max(1, Math.round((currentConfig.chat?.groupRepeat?.cooldownMs ?? 180000) / 60000));
@@ -15564,6 +15584,9 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-thinking-notify-message').value = currentConfig.chat?.thinkingNotify?.message || '';
                 document.getElementById('config-chat-command-admin-mention-enabled').checked = currentConfig.chat?.commands?.adminMention?.enabled !== false;
                 document.getElementById('config-chat-command-admin-mention-command').value = currentConfig.chat?.commands?.adminMention?.command || '/at';
+                document.getElementById('config-chat-command-admin-poke-enabled').checked = currentConfig.chat?.commands?.adminPoke?.enabled !== false;
+                document.getElementById('config-chat-command-admin-poke-command').value = currentConfig.chat?.commands?.adminPoke?.command || '/戳一戳';
+                document.getElementById('config-chat-command-admin-poke-repeat').value = currentConfig.chat?.commands?.adminPoke?.repeatCount ?? 5;
                 document.getElementById('config-chat-command-participant-profile-enabled').checked = currentConfig.chat?.commands?.participantProfileManual?.enabled !== false;
                 document.getElementById('config-chat-command-participant-profile-command').value = currentConfig.chat?.commands?.participantProfileManual?.command || currentConfig.memory?.participantProfile?.manualCommand || '/人物档案';
                 document.getElementById('config-ai-tool-web-search-enabled').checked = currentConfig.ai?.tools?.webSearch?.enabled === true;
@@ -15928,6 +15951,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
                     humanChatControlEnabled: document.getElementById('config-chat-human-control').checked,
                     emojiReaction: document.getElementById('config-chat-emoji-reaction').checked,
+                    emojiReactionId: document.getElementById('config-chat-emoji-reaction-id').value.trim() || '289',
                     sendReasoningToQQ: document.getElementById('config-chat-send-reasoning-to-qq').checked,
                     groupRepeat: {
                         enabled: document.getElementById('config-chat-group-repeat-enabled').checked,
@@ -15954,6 +15978,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         adminMention: {
                             enabled: document.getElementById('config-chat-command-admin-mention-enabled').checked,
                             command: document.getElementById('config-chat-command-admin-mention-command').value.trim() || '/at'
+                        },
+                        adminPoke: {
+                            enabled: document.getElementById('config-chat-command-admin-poke-enabled').checked,
+                            command: document.getElementById('config-chat-command-admin-poke-command').value.trim() || '/戳一戳',
+                            repeatCount: Math.min(Math.max(parseInt(document.getElementById('config-chat-command-admin-poke-repeat').value) || 5, 1), 10)
                         },
                         participantProfileManual: {
                             enabled: document.getElementById('config-chat-command-participant-profile-enabled').checked,

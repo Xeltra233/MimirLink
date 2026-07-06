@@ -89,6 +89,7 @@
     "allowedUsers": [],
     "blockedUsers": [],
     "emojiReaction": false,
+    "emojiReactionId": "289",
     "pokeReaction": true,
     "bufferWindowMs": 1200,
     "replyDelayMs": 800,
@@ -112,6 +113,11 @@
       "adminMention": {
         "enabled": true,
         "command": "/at"
+      },
+      "adminPoke": {
+        "enabled": true,
+        "command": "/戳一戳",
+        "repeatCount": 5
       },
       "participantProfileManual": {
         "enabled": true,

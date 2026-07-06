@@ -20,10 +20,12 @@ test('emoji reaction requires explicit config true and uses a shared sender', ()
     const handleMessage = source.slice(handleMessageStart, handleMessageEnd);
 
     assert.ok(source.includes('config.chat.emojiReaction = config.chat.emojiReaction === true;'));
+    assert.ok(source.includes('config.chat.emojiReactionId = normalizeEmojiReactionId'));
     assert.ok(source.includes('function shouldSendEmojiReaction(config) {'));
     assert.ok(source.includes('return config.chat?.emojiReaction === true;'));
     assert.ok(source.includes('function sendEmojiReactionForEvent(event) {'));
-    assert.ok(source.includes('bot.setMsgEmojiLike(event.message_id).catch(() => {});'));
+    assert.ok(source.includes('const emojiId = resolveEmojiReactionId(config);'));
+    assert.ok(source.includes('bot.setMsgEmojiLike(event.message_id, emojiId)'));
     assert.ok(participantHandler.includes('sendEmojiReactionForEvent(event);'));
     assert.ok(mentionHandler.includes('sendEmojiReactionForEvent(event);'));
     assert.ok(handleMessage.includes("plainText.trim() === '/llm'"));
@@ -34,12 +36,16 @@ test('emoji reaction requires explicit config true and uses a shared sender', ()
 test('admin config UI exposes and persists emoji reaction switch', () => {
     const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
     assert.ok(html.includes('id="config-chat-emoji-reaction"'));
+    assert.ok(html.includes('id="config-chat-emoji-reaction-id"'));
     assert.ok(html.includes("currentConfig.chat?.emojiReaction === true"));
+    assert.ok(html.includes("currentConfig.chat?.emojiReactionId || '289'"));
     assert.ok(html.includes("emojiReaction: document.getElementById('config-chat-emoji-reaction').checked"));
+    assert.ok(html.includes("emojiReactionId: document.getElementById('config-chat-emoji-reaction-id').value.trim() || '289'"));
     assert.ok(html.includes('set_msg_emoji_like'));
 });
 
 test('example config keeps emoji reaction off unless enabled', () => {
     const config = JSON.parse(fs.readFileSync(new URL('../config.example.json', import.meta.url), 'utf8'));
     assert.equal(config.chat.emojiReaction, false);
+    assert.equal(config.chat.emojiReactionId, '289');
 });

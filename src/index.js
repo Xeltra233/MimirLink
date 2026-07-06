@@ -31,7 +31,7 @@ import { dirname, join } from 'path';
 import fs from 'fs';
 
 import { OneBotClient, buildMentionMessage } from './onebot.js';
-import { buildAIToolContext, buildRealtimeGroundingMessage, buildVoicePrefaceText, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt, generateRealtimeAnswer } from './tools.js';
+import { buildAIToolContext, buildRealtimeGroundingMessage, buildVoicePrefaceText, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt } from './tools.js';
 import { CharacterManager } from './character.js';
 import { WorldBookManager } from './worldbook.js';
 import { PromptBuilder } from './prompt.js';
@@ -48,6 +48,7 @@ import { buildStandardEvent, updateStandardEventRouting } from './standard-event
 import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 import { GroupRepeatDetector, normalizeGroupRepeatConfig, shouldObserveGroupRepeatMessage } from './group-repeat.js';
+import { DEFAULT_QQ_EMOJI_REACTION_ID, executeAdminPokeCommand, normalizeEmojiReactionId, resolveEmojiReactionId } from './qq-interactions.js';
 import {
     getParticipantProfileTimerKey,
     trackParticipantProfileTarget,
@@ -381,6 +382,7 @@ function ensureCommandAndToolConfig(config) {
 
     const participantProfileConfig = getParticipantProfileConfig(config);
     const adminMention = config.chat.commands.adminMention || {};
+    const adminPoke = config.chat.commands.adminPoke || {};
     const participantProfileManual = config.chat.commands.participantProfileManual || {};
     const webSearch = config.ai.tools.webSearch || {};
     const sendMention = config.ai.tools.sendMention || {};
@@ -388,6 +390,12 @@ function ensureCommandAndToolConfig(config) {
     config.chat.commands.adminMention = {
         enabled: typeof adminMention.enabled === 'boolean' ? adminMention.enabled : true,
         command: normalizeCommandText(adminMention.command, '/at')
+    };
+
+    config.chat.commands.adminPoke = {
+        enabled: typeof adminPoke.enabled === 'boolean' ? adminPoke.enabled : true,
+        command: normalizeCommandText(adminPoke.command, '/戳一戳'),
+        repeatCount: clampInteger(adminPoke.repeatCount, 1, 10, 5)
     };
 
     config.chat.commands.participantProfileManual = {
@@ -471,6 +479,7 @@ function normalizeConfig(config) {
         config.chat.mentionSenderOnReply = true;
     }
     config.chat.emojiReaction = config.chat.emojiReaction === true;
+    config.chat.emojiReactionId = normalizeEmojiReactionId(config.chat.emojiReactionId, DEFAULT_QQ_EMOJI_REACTION_ID);
 
     config.chat.groupRepeat = normalizeGroupRepeatConfig(config.chat.groupRepeat);
 
@@ -1966,7 +1975,10 @@ function sendEmojiReactionForEvent(event) {
         return;
     }
 
-    bot.setMsgEmojiLike(event.message_id).catch(() => {});
+    const emojiId = resolveEmojiReactionId(config);
+    bot.setMsgEmojiLike(event.message_id, emojiId).catch((error) => {
+        logger?.debug?.(`[表情] QQ 表情回应失败: ${error.message}`);
+    });
 }
 
 async function dispatchReply(event, processedReply, options = {}) {
@@ -2773,6 +2785,7 @@ async function handleAdminMentionCommand(event, plainText) {
     sendEmojiReactionForEvent(event);
 
     if (!isAdminUser(config, event.user_id)) {
+        await sendFailureMessage(event, '只有管理员可以使用主动 @ 指令');
         return true;
     }
 
@@ -2812,6 +2825,25 @@ async function handleAdminMentionCommand(event, plainText) {
         await sendFailureMessage(event, `主动 @ 生成失败: ${error.message}`);
     }
     return true;
+}
+
+async function handleAdminPokeCommand(event, plainText) {
+    const commandConfig = config.chat?.commands?.adminPoke || {};
+    const result = await executeAdminPokeCommand({
+        event,
+        plainText,
+        command: commandConfig.command || '/戳一戳',
+        enabled: commandConfig.enabled !== false,
+        repeatCount: commandConfig.repeatCount ?? 5,
+        isAdmin: isAdminUser(config, event.user_id),
+        bot,
+        onCommandAccepted: () => sendEmojiReactionForEvent(event),
+        sendFailureMessage: (message) => sendFailureMessage(event, message),
+        sendStatusMessage: (message) => sendQuotedStatusMessage(event, message),
+        logger
+    });
+
+    return result.handled === true;
 }
 
 async function processBatch(batch) {
@@ -3148,55 +3180,6 @@ async function processBatch(batch) {
                     });
                 }
             });
-            const shouldUseRealtimeBypass = toolContext.isRealtimeQuery?.(processedInput);
-            const realtimeIntentMatch = toolContext.matchRealtimeIntent?.(processedInput) || null;
-            if (shouldUseRealtimeBypass) {
-                const realtimeAnswer = await generateRealtimeAnswer({
-                    aiClient,
-                    config,
-                    query: processedInput,
-                    logger
-                });
-                if (realtimeAnswer?.reply) {
-                    const processedReply = regexProcessor.processOutput(realtimeAnswer.reply);
-                    logger.info('[执行] 实时问题走轻量回答旁路', {
-                        sessionId,
-                        query: processedInput.slice(0, 120),
-                        groundingSource: realtimeAnswer.grounding?.source || '',
-                        groundingProvider: realtimeAnswer.grounding?.provider || '',
-                        groundingResultCount: realtimeAnswer.grounding?.resultCount || 0,
-                        realtimeIntent: realtimeIntentMatch?.intent || '',
-                        realtimeMatchReason: realtimeIntentMatch?.reason || '',
-                        realtimeMatchScore: Number(realtimeIntentMatch?.score || 0).toFixed(3),
-                        realtimeMatchPrototype: realtimeIntentMatch?.matchedPrototype || '',
-                        processedReplyPreview: processedReply.slice(0, 200)
-                    });
-
-                    sessionManager.addMessage(sessionId, 'assistant', processedReply, {
-                        replyTo: event.user_id,
-                        messageType: event.message_type
-                    });
-                    sessionManager.upsertConversationMemory(runtimeContext.recallNamespace, {
-                        userMessage: processedInput,
-                        assistantMessage: processedReply,
-                        sourceSessionId: sessionId,
-                        sourceMessageId: userRecord.id
-                    });
-                    sessionManager.updateStickyEntries(sessionId, worldBookEntries);
-                    await dispatchReply(event, processedReply);
-
-                    if (runtimeContext.currentSpeaker) {
-                        scheduleParticipantProfileUpdate(
-                            sessionManager,
-                            aiClient,
-                            runtimeContext.recallNamespace,
-                            runtimeContext.currentSpeaker,
-                            logger
-                        );
-                    }
-                    return;
-                }
-            }
             if (Array.isArray(toolContext.toolHints) && toolContext.toolHints.length > 0) {
                 messages.unshift({
                     role: 'system',
@@ -3668,6 +3651,9 @@ async function handleMessage(event) {
     }
 
     if (await handleParticipantProfileManualCommand(event, plainText)) {
+        return;
+    }
+    if (await handleAdminPokeCommand(event, plainText)) {
         return;
     }
     if (await handleAdminMentionCommand(event, plainText)) {

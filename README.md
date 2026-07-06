@@ -213,8 +213,10 @@ Claude Code 挂载（`.claude/settings.json`）：
 
 ### 表情回应与戳一戳
 - 仅在 `chat.emojiReaction` 开启时，普通聊天和管理员命令会加 QQ 表情回应（`set_msg_emoji_like`），表示已读
+- `chat.emojiReactionId` 支持 QQ 原生表情 ID，也支持 `默认`、`收到`、`点赞`、`爱心`、`狗头` 等别名；关闭 `chat.emojiReaction` 时不会发送
 - 支持戳一戳通知，注入对话流让角色自然感知
-- 配置开关：`chat.emojiReaction` / `chat.pokeReaction`
+- 管理员可使用 `/戳一戳 @某人` 让 bot 对目标连续戳一戳 5 下，命令文本和次数可在 `chat.commands.adminPoke` 中配置
+- 配置开关：`chat.emojiReaction` / `chat.pokeReaction` / `chat.commands.adminPoke.enabled`
 
 ### 靶场伪造记忆
 - 工具面板粘贴对话历史，模拟继承记忆测试
