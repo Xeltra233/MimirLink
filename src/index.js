@@ -1936,6 +1936,15 @@ async function sendQuotedStatusMessage(event, message) {
     await bot.sendPrivateMessage(event.user_id, normalizedMessage);
 }
 
+async function sendFailureMessage(event, message) {
+    const normalizedMessage = sanitizeContent(message);
+    if (!normalizedMessage) {
+        return;
+    }
+
+    await sendQuotedStatusMessage(event, `⚠️ ${normalizedMessage}`);
+}
+
 async function dispatchReply(event, processedReply, options = {}) {
     const ttsConfig = ttsManager.getConfig();
     const { textParts } = parseVoiceTags(processedReply);
@@ -2646,6 +2655,7 @@ async function handleParticipantProfileManualCommand(event, plainText) {
     }
 
     if (!isAdminUser(config, event.user_id)) {
+        await sendFailureMessage(event, '只有管理员可以手动分析人物档案');
         return true;
     }
 
@@ -2678,6 +2688,11 @@ async function handleParticipantProfileManualCommand(event, plainText) {
     const recallNamespace = buildRecallNamespace(config, memoryScope, config.chat.defaultCharacter);
 
     try {
+        await sendQuotedStatusMessage(
+            event,
+            `正在分析${speakerIdentity.participantName || `QQ ${speakerIdentity.participantId}`}的人物档案，请稍等`
+        );
+
         const profile = await maybeBuildParticipantProfile(
             sessionManager,
             aiClient,
