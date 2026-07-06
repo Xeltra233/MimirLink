@@ -470,6 +470,7 @@ function normalizeConfig(config) {
     if (!('mentionSenderOnReply' in config.chat)) {
         config.chat.mentionSenderOnReply = true;
     }
+    config.chat.emojiReaction = config.chat.emojiReaction === true;
 
     config.chat.groupRepeat = normalizeGroupRepeatConfig(config.chat.groupRepeat);
 
@@ -1945,6 +1946,18 @@ async function sendFailureMessage(event, message) {
     await sendQuotedStatusMessage(event, `⚠️ ${normalizedMessage}`);
 }
 
+function shouldSendEmojiReaction(config) {
+    return config.chat?.emojiReaction === true;
+}
+
+function sendEmojiReactionForEvent(event) {
+    if (!shouldSendEmojiReaction(config) || !event?.message_id || !bot?.setMsgEmojiLike) {
+        return;
+    }
+
+    bot.setMsgEmojiLike(event.message_id).catch(() => {});
+}
+
 async function dispatchReply(event, processedReply, options = {}) {
     const ttsConfig = ttsManager.getConfig();
     const { textParts } = parseVoiceTags(processedReply);
@@ -2654,6 +2667,8 @@ async function handleParticipantProfileManualCommand(event, plainText) {
         return false;
     }
 
+    sendEmojiReactionForEvent(event);
+
     if (!isAdminUser(config, event.user_id)) {
         await sendFailureMessage(event, '只有管理员可以手动分析人物档案');
         return true;
@@ -2740,6 +2755,8 @@ async function handleAdminMentionCommand(event, plainText) {
     if (commandConfig.enabled === false) {
         return false;
     }
+
+    sendEmojiReactionForEvent(event);
 
     if (!isAdminUser(config, event.user_id)) {
         return true;
@@ -3622,6 +3639,7 @@ async function handleMessage(event) {
         const newState = setLlmEnabled(!llmEnabled);
         const statusText = newState ? '✅ LLM 已开启' : '⛔ LLM 已关闭';
         logger.info(`[指令] 管理员 ${event.user_id} 切换 LLM 状态: ${newState}`);
+        sendEmojiReactionForEvent(event);
         if (event.message_type === 'group') {
             await bot.sendGroupMessage(event.group_id, statusText);
         } else {
@@ -3677,8 +3695,8 @@ async function handleMessage(event) {
     }
 
     // 表情回应：收到消息后自动加表情，表示已收到
-    if (routingDecision.shouldRespond && config.chat?.emojiReaction !== false && event.message_id && bot?.setMsgEmojiLike) {
-        bot.setMsgEmojiLike(event.message_id).catch(() => {});
+    if (routingDecision.shouldRespond) {
+        sendEmojiReactionForEvent(event);
     }
 
     lastInboundMessageAt = Date.now();

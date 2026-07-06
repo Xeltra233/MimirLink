@@ -7211,6 +7211,13 @@
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
+                                    <input type="checkbox" id="config-chat-emoji-reaction">
+                                    启用 QQ 表情回应
+                                </label>
+                                <p class="hint-text">开启后，普通聊天和管理员命令收到后会调用 set_msg_emoji_like；关闭时两者都不会发送 QQ 表情回应。</p>
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-group-repeat-enabled">
                                     启用群聊复读直发
                                 </label>
@@ -15472,6 +15479,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-mention-sender').checked = currentConfig.chat?.mentionSenderOnReply !== false;
                 document.getElementById('config-chat-attach-metadata').checked = currentConfig.chat?.attachMetadata !== false;
                 document.getElementById('config-chat-human-control').checked = currentConfig.chat?.humanChatControlEnabled !== false;
+                document.getElementById('config-chat-emoji-reaction').checked = currentConfig.chat?.emojiReaction === true;
                 document.getElementById('config-chat-send-reasoning-to-qq').checked = currentConfig.chat?.sendReasoningToQQ === true;
                 document.getElementById('config-chat-group-repeat-enabled').checked = currentConfig.chat?.groupRepeat?.enabled === true;
                 document.getElementById('config-chat-group-repeat-cooldown-minutes').value = Math.max(1, Math.round((currentConfig.chat?.groupRepeat?.cooldownMs ?? 180000) / 60000));
@@ -15850,6 +15858,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     mentionSenderOnReply: document.getElementById('config-chat-mention-sender').checked,
                     attachMetadata: document.getElementById('config-chat-attach-metadata').checked,
                     humanChatControlEnabled: document.getElementById('config-chat-human-control').checked,
+                    emojiReaction: document.getElementById('config-chat-emoji-reaction').checked,
                     sendReasoningToQQ: document.getElementById('config-chat-send-reasoning-to-qq').checked,
                     groupRepeat: {
                         enabled: document.getElementById('config-chat-group-repeat-enabled').checked,

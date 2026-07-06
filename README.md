@@ -212,7 +212,7 @@ Claude Code 挂载（`.claude/settings.json`）：
 - 恢复前自动备份当前状态
 
 ### 表情回应与戳一戳
-- 收到消息自动加 QQ 表情回应（`set_msg_emoji_like`），表示已读
+- 仅在 `chat.emojiReaction` 开启时，普通聊天和管理员命令会加 QQ 表情回应（`set_msg_emoji_like`），表示已读
 - 支持戳一戳通知，注入对话流让角色自然感知
 - 配置开关：`chat.emojiReaction` / `chat.pokeReaction`
 
