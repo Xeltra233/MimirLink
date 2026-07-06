@@ -32,6 +32,7 @@
             --success: #2d8a5e;
             --warning: #d6890e;
             --error: #d94040;
+            --info: #3178c6;
             --border: #e6e5e2;
             --border-strong: #d6d5d1;
             --shadow-sm: 0 2px 8px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
@@ -70,6 +71,7 @@
             --success: #4dab7a;
             --warning: #e5a010;
             --error: #e85656;
+            --info: #6ea8fe;
             --border: #2a2a26;
             --border-strong: #3c3c37;
             --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
@@ -95,6 +97,7 @@
             --success: #358562;
             --warning: #d6890e;
             --error: #d94050;
+            --info: #4b77bf;
             --border: #f0e0e5;
             --border-strong: #e2c8d0;
             --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
@@ -473,6 +476,31 @@
             }
         }
 
+        @media (min-width: 901px) and (max-height: 760px) {
+            header {
+                padding-top: 10px;
+                padding-bottom: 10px;
+            }
+
+            .shell-layout > .panel:not(#prompt-range) {
+                padding-top: 14px;
+                padding-bottom: 36px;
+            }
+
+            .card {
+                padding: 16px 18px;
+            }
+
+            #dashboard .dashboard-onboarding-card,
+            #dashboard .dashboard-stat-card {
+                padding: 14px 16px;
+            }
+
+            .task-card {
+                padding: 16px;
+            }
+        }
+
         .form-group label {
             display: block;
             margin-bottom: 4px;
@@ -497,6 +525,16 @@
             box-shadow: 0 0 0 3px var(--accent-soft);
         }
 
+        :where(button, a, input, select, textarea, .tab, [tabindex]):focus-visible {
+            outline: 2px solid color-mix(in srgb, var(--accent) 82%, var(--text) 18%);
+            outline-offset: 2px;
+            border-radius: var(--radius);
+        }
+
+        :where(button, a, input, select, textarea, .tab, [tabindex]):focus:not(:focus-visible) {
+            outline: none;
+        }
+
         textarea {
             min-height: 100px;
             resize: vertical;
@@ -516,6 +554,13 @@
 
         button:hover {
             background: var(--btn-primary-hover);
+        }
+
+        button:disabled,
+        button[aria-disabled='true'] {
+            cursor: not-allowed;
+            opacity: 0.58;
+            box-shadow: none;
         }
 
         button.secondary {
@@ -2594,6 +2639,7 @@
             color: var(--text-muted);
             line-height: 1.6;
             white-space: pre-wrap;
+            overflow-wrap: anywhere;
         }
 
         /* 任务页新设计 */
@@ -2685,12 +2731,13 @@
         }
 
         .task-card.is-done {
-            opacity: 0.5;
-            transform: scale(0.98);
+            opacity: 1;
+            transform: none;
+            background: color-mix(in srgb, var(--bg-elevated) 88%, var(--bg) 12%);
         }
 
         .task-card.is-done:hover {
-            opacity: 0.85;
+            border-color: var(--border-strong);
         }
 
         .task-card-icon {
@@ -2735,10 +2782,15 @@
         }
 
         .task-empty {
-            padding: 24px 0;
+            padding: 22px 14px;
             text-align: center;
             color: var(--text-muted);
             font-size: 0.88rem;
+            line-height: 1.55;
+            overflow-wrap: anywhere;
+            border: 1px dashed color-mix(in srgb, var(--border) 72%, transparent 28%);
+            border-radius: var(--radius);
+            background: color-mix(in srgb, var(--bg) 88%, var(--bg-elevated) 12%);
         }
 
         .task-progress-summary {
@@ -2785,6 +2837,7 @@
             border-radius: 10px;
             background: var(--bg);
             padding: 12px 14px;
+            min-width: 0;
         }
 
         .task-progress-item.is-running {
@@ -2814,12 +2867,24 @@
             font-size: 0.9rem;
             font-weight: 600;
             color: var(--text);
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .task-progress-meta {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 24px;
+            padding: 3px 8px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--bg-elevated) 70%, var(--bg) 30%);
             font-size: 0.8rem;
             color: var(--text-muted);
-            white-space: nowrap;
+            line-height: 1.35;
+            text-align: right;
+            overflow-wrap: anywhere;
         }
 
         .task-progress-bar {
@@ -2851,6 +2916,22 @@
             line-height: 1.55;
             color: var(--text-muted);
             white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .task-progress-item.is-running .task-progress-meta {
+            color: var(--accent);
+            border-color: color-mix(in srgb, var(--accent) 40%, var(--border) 60%);
+        }
+
+        .task-progress-item.is-completed .task-progress-meta {
+            color: var(--success);
+            border-color: color-mix(in srgb, var(--success) 36%, var(--border) 64%);
+        }
+
+        .task-progress-item.is-failed .task-progress-meta {
+            color: var(--error);
+            border-color: color-mix(in srgb, var(--error) 38%, var(--border) 62%);
         }
 
         .security-observation-list {
@@ -3863,26 +3944,40 @@
         }
 
         .empty-state {
+            display: grid;
+            place-items: center;
+            gap: 8px;
+            min-height: 92px;
             text-align: center;
-            padding: 40px 20px;
+            padding: 24px 18px;
             color: var(--text-muted);
             font-size: 0.9rem;
-            opacity: 0.7;
+            line-height: 1.55;
+            overflow-wrap: anywhere;
+            border: 1px dashed color-mix(in srgb, var(--border) 78%, transparent 22%);
+            border-radius: var(--radius);
+            background: color-mix(in srgb, var(--bg) 86%, var(--bg-elevated) 14%);
         }
 
         .badge {
-            display: inline-block;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 22px;
             padding: 3px 8px;
             background: var(--accent);
             color: #fff;
-            border-radius: 4px;
+            border-radius: 999px;
             font-size: 0.75rem;
             margin-left: 8px;
             font-weight: 600;
+            line-height: 1.2;
+            white-space: nowrap;
         }
 
         .badge.success { background: var(--success); }
         .badge.warning { background: var(--warning); color: #000; }
+        .badge.info { background: var(--info); }
 
         .config-advanced-section {
             grid-column: 1 / -1;
@@ -3905,7 +4000,14 @@
         }
 
         .participant-profile-grid {
-            grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+            grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+            gap: 20px;
+        }
+
+        .participant-profile-list-card .list {
+            max-height: min(640px, calc(100vh - 270px));
+            min-height: 260px;
+            padding-right: 4px;
         }
 
         .section-head {
@@ -3934,25 +4036,72 @@
         }
 
         .participant-profile-item {
+            display: grid;
+            gap: 6px;
             padding: 12px 14px;
             border: 1px solid var(--border);
             border-radius: 10px;
             background: var(--bg);
             cursor: pointer;
             transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+            min-width: 0;
+            overflow-wrap: anywhere;
         }
 
         .participant-profile-item:hover {
             transform: translateY(-1px);
+            border-color: color-mix(in srgb, var(--accent) 24%, var(--border) 76%);
         }
 
         .participant-profile-item.selected {
             border-color: var(--accent);
-            box-shadow: 0 0 0 1px rgba(106, 76, 47, 0.18);
+            background: color-mix(in srgb, var(--accent) 7%, var(--bg) 93%);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 28%, transparent 72%);
         }
 
         .participant-profile-item + .participant-profile-item {
             margin-top: 10px;
+        }
+
+        .participant-profile-item-header {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            align-items: start;
+            gap: 8px;
+        }
+
+        .participant-profile-item-name {
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.35;
+            min-width: 0;
+        }
+
+        .participant-profile-item-id {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 22px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--bg-elevated) 76%, var(--border) 24%);
+            color: var(--text-muted);
+            font-size: 0.76rem;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+
+        .participant-profile-item-meta,
+        .participant-profile-item-scope {
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        .participant-profile-item-scope {
+            padding-top: 4px;
+            border-top: 1px solid color-mix(in srgb, var(--border) 68%, transparent 32%);
         }
 
         .participant-profile-detail-card {
@@ -3975,6 +4124,15 @@
             flex-wrap: wrap;
             gap: 10px;
             margin-top: 4px;
+        }
+
+        .participant-profile-detail-card textarea#participant-profile-content {
+            min-height: clamp(180px, 28vh, 360px);
+            line-height: 1.6;
+        }
+
+        .participant-profile-detail-card .meta-box {
+            overflow-wrap: anywhere;
         }
 
         @media (max-width: 900px) {
@@ -9630,14 +9788,27 @@
                 return;
             }
 
-            list.innerHTML = participantProfiles.map((item) => `
-                <div class="participant-profile-item ${selectedParticipantProfileId === item.id ? 'selected' : ''}" onclick="selectParticipantProfile('${escapeInlineJsString(item.id)}')">
-                    <div class="name">${escapeHtml(item.participantName || item.title || item.participantId || '未命名人')}</div>
-                    <div class="meta">${escapeHtml(item.participantId || '-')}</div>
-                    <div class="meta">${escapeHtml(formatProfileTime(item.updatedAt))}</div>
-                    <div class="meta">${escapeHtml(formatParticipantProfileScope(item))}</div>
+            list.innerHTML = participantProfiles.map((item) => {
+                const displayName = item.participantName || item.title || item.participantId || '未命名人';
+                const itemId = String(item.id || '');
+                const isSelected = selectedParticipantProfileId === item.id;
+                return `
+                <div class="participant-profile-item ${isSelected ? 'selected' : ''}"
+                     role="button"
+                     tabindex="0"
+                     aria-selected="${isSelected ? 'true' : 'false'}"
+                     aria-label="查看人物档案 ${escapeHtml(displayName)}"
+                     onclick="selectParticipantProfile('${escapeInlineJsString(itemId)}')"
+                     onkeydown="if(event.key === 'Enter' || event.key === ' '){ event.preventDefault(); selectParticipantProfile('${escapeInlineJsString(itemId)}'); }">
+                    <div class="participant-profile-item-header">
+                        <div class="participant-profile-item-name name">${escapeHtml(displayName)}</div>
+                        <div class="participant-profile-item-id meta">${escapeHtml(item.participantId || '-')}</div>
+                    </div>
+                    <div class="participant-profile-item-meta meta">${escapeHtml(formatProfileTime(item.updatedAt))}</div>
+                    <div class="participant-profile-item-scope meta">${escapeHtml(formatParticipantProfileScope(item))}</div>
                 </div>
-            `).join('');
+            `;
+            }).join('');
         }
 
         function getParticipantProfileEmptyStateText() {
