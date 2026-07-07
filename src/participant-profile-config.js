@@ -61,7 +61,9 @@ function normalizeAnalysisMode(value) {
 
 export function getParticipantProfileConfig(config = {}) {
     const participantProfile = config.memory?.participantProfile || {};
-    const providerId = toOptionalString(participantProfile.providerId);
+    const providerId = toOptionalString(participantProfile.providerId)
+        || toOptionalString(config.chat?.modelProviderId)
+        || toOptionalString(config.ai?.activeProviderId);
     const selectedProvider = providerId && Array.isArray(config.ai?.providers)
         ? config.ai.providers.find((provider) => provider?.id === providerId)
         : null;

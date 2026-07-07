@@ -11,7 +11,8 @@ import {
     buildParticipantProfileAIOverrides,
     shouldUseIdleParticipantProfileTrigger,
     shouldUseIntervalParticipantProfileTrigger,
-    getParticipantProfileTimerKey
+    getParticipantProfileTimerKey,
+    buildParticipantProfileMergePrompt
 } from '../src/participant-profile-runtime.js';
 import {
     appendMentionTaskToPromptMessages,
@@ -160,6 +161,22 @@ test('participant profile prompt includes prior profile in profile_plus_messages
     assert.match(prompt, /已有档案如下：\n稳定画像: 旧档案/);
     assert.match(prompt, /\[s3\] user: 第三句/);
     assert.match(prompt, /增量更新人物档案/);
+});
+
+test('participant profile merge prompt keeps one profile and prefers new version on conflicts', () => {
+    const prompt = buildParticipantProfileMergePrompt({
+        participantId: '2661097662',
+        participantName: 'NewJanZ',
+        oldProfile: '旧档案: 稳定画像 A',
+        newProfile: '新版本: 当前状态 B'
+    });
+
+    assert.match(prompt, /2661097662/);
+    assert.match(prompt, /NewJanZ/);
+    assert.match(prompt, /旧档案: 稳定画像 A/);
+    assert.match(prompt, /新版本: 当前状态 B/);
+    assert.match(prompt, /只保留一个最终档案/);
+    assert.match(prompt, /新版本 > 旧档案/);
 });
 
 test('participant profile AI overrides only include configured fields', () => {

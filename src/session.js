@@ -150,6 +150,31 @@ function normalizeKnowledgeType(value) {
     return value === 'fixed' ? 'fixed' : 'dynamic';
 }
 
+function normalizeParticipantId(value) {
+    return String(value ?? '').trim();
+}
+
+function normalizeParticipantName(value, fallback = '') {
+    return String(value || fallback || '').trim();
+}
+
+function normalizeParticipantProfileIdPart(value) {
+    return normalizeParticipantId(value).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 96) || 'unknown';
+}
+
+function buildParticipantProfileEntryId(namespaceId, participantId) {
+    const participantKey = normalizeParticipantProfileIdPart(participantId);
+    const namespaceKey = Buffer.from(String(namespaceId || '')).toString('base64url').slice(0, 48) || 'global';
+    return `participant_profile_${participantKey}_${namespaceKey}`;
+}
+
+function normalizeParticipantProfileNamespaceOptions(namespaceOptions = {}) {
+    return {
+        ...namespaceOptions,
+        presetName: null
+    };
+}
+
 function mapVariableRow(row) {
     const metadata = parseJson(row.metadata_json, {});
     const valueType = normalizeVariableType(metadata.valueType || 'string');
@@ -179,8 +204,8 @@ function mapParticipantProfileRow(row) {
     return {
         id: row.id,
         namespaceId: row.namespace_id,
-        participantId: String(metadata.participantId || ''),
-        participantName: metadata.participantName || row.title || '',
+        participantId: normalizeParticipantId(metadata.participantId),
+        participantName: normalizeParticipantName(metadata.participantName, row.title),
         title: row.title || metadata.participantName || '',
         contentPreview: truncate(row.content, 160),
         content: row.content,
@@ -575,79 +600,173 @@ export class SessionManager {
                 LIMIT ?
             `),
             listParticipantProfiles: this.db.prepare(`
+                WITH profiles AS (
+                    SELECT
+                        me.id,
+                        me.namespace_id,
+                        me.title,
+                        me.content,
+                        me.tags_json,
+                        me.metadata_json,
+                        me.source_session_id,
+                        me.source_message_id,
+                        me.created_at,
+                        me.updated_at,
+                        me.rowid AS entry_rowid,
+                        ns.scope_type,
+                        ns.scope_key,
+                        ns.character_name,
+                        ns.preset_name,
+                        COALESCE(NULLIF(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), ''), me.id) AS participant_key,
+                        IFNULL(ns.character_name, '') AS character_key,
+                        IFNULL(ns.preset_name, '') AS preset_key
+                    FROM memory_entries me
+                    INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                    WHERE me.entry_type = 'participant_profile'
+                ),
+                ranked AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY participant_key, scope_type, scope_key, character_key
+                            ORDER BY updated_at DESC, entry_rowid DESC
+                        ) AS profile_rank
+                    FROM profiles
+                )
                 SELECT
-                    me.id,
-                    me.namespace_id,
-                    me.title,
-                    me.content,
-                    me.tags_json,
-                    me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
-                    me.created_at,
-                    me.updated_at,
-                    ns.scope_type,
-                    ns.scope_key,
-                    ns.character_name,
-                    ns.preset_name
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.entry_type = 'participant_profile'
-                ORDER BY me.updated_at DESC, me.rowid DESC
+                    id,
+                    namespace_id,
+                    title,
+                    content,
+                    tags_json,
+                    metadata_json,
+                    source_session_id,
+                    source_message_id,
+                    created_at,
+                    updated_at,
+                    scope_type,
+                    scope_key,
+                    character_name,
+                    preset_name
+                FROM ranked
+                WHERE profile_rank = 1
+                ORDER BY updated_at DESC, entry_rowid DESC
                 LIMIT ?
             `),
             listParticipantProfilesFiltered: this.db.prepare(`
+                WITH profiles AS (
+                    SELECT
+                        me.id,
+                        me.namespace_id,
+                        me.title,
+                        me.content,
+                        me.tags_json,
+                        me.metadata_json,
+                        me.source_session_id,
+                        me.source_message_id,
+                        me.created_at,
+                        me.updated_at,
+                        me.rowid AS entry_rowid,
+                        ns.scope_type,
+                        ns.scope_key,
+                        ns.character_name,
+                        ns.preset_name,
+                        COALESCE(NULLIF(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), ''), me.id) AS participant_key,
+                        IFNULL(ns.character_name, '') AS character_key,
+                        IFNULL(ns.preset_name, '') AS preset_key
+                    FROM memory_entries me
+                    INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                    WHERE me.entry_type = 'participant_profile'
+                ),
+                ranked AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY participant_key, scope_type, scope_key, character_key
+                            ORDER BY updated_at DESC, entry_rowid DESC
+                        ) AS profile_rank,
+                        MAX(CASE WHEN (
+                            IFNULL(title, '') LIKE ?
+                            OR IFNULL(content, '') LIKE ?
+                            OR IFNULL(participant_key, '') LIKE ?
+                            OR IFNULL(CAST(json_extract(metadata_json, '$.participantName') AS TEXT), '') LIKE ?
+                            OR IFNULL(scope_key, '') LIKE ?
+                            OR IFNULL(character_name, '') LIKE ?
+                            OR IFNULL(preset_name, '') LIKE ?
+                        ) THEN 1 ELSE 0 END) OVER (
+                            PARTITION BY participant_key, scope_type, scope_key, character_key
+                        ) AS group_matches
+                    FROM profiles
+                )
                 SELECT
-                    me.id,
-                    me.namespace_id,
-                    me.title,
-                    me.content,
-                    me.tags_json,
-                    me.metadata_json,
-                    me.source_session_id,
-                    me.source_message_id,
-                    me.created_at,
-                    me.updated_at,
-                    ns.scope_type,
-                    ns.scope_key,
-                    ns.character_name,
-                    ns.preset_name
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.entry_type = 'participant_profile'
-                  AND (
-                    ? IS NULL
-                    OR IFNULL(me.title, '') LIKE ?
-                    OR IFNULL(me.content, '') LIKE ?
-                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), '') LIKE ?
-                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantName') AS TEXT), '') LIKE ?
-                    OR IFNULL(ns.scope_key, '') LIKE ?
-                    OR IFNULL(ns.character_name, '') LIKE ?
-                    OR IFNULL(ns.preset_name, '') LIKE ?
-                  )
-                ORDER BY me.updated_at DESC, me.rowid DESC
+                    id,
+                    namespace_id,
+                    title,
+                    content,
+                    tags_json,
+                    metadata_json,
+                    source_session_id,
+                    source_message_id,
+                    created_at,
+                    updated_at,
+                    scope_type,
+                    scope_key,
+                    character_name,
+                    preset_name
+                FROM ranked
+                WHERE profile_rank = 1 AND group_matches = 1
+                ORDER BY updated_at DESC, entry_rowid DESC
                 LIMIT ?
             `),
             countParticipantProfiles: this.db.prepare(`
+                WITH profiles AS (
+                    SELECT
+                        COALESCE(NULLIF(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), ''), me.id) AS participant_key,
+                        ns.scope_type,
+                        ns.scope_key,
+                        IFNULL(ns.character_name, '') AS character_key,
+                        IFNULL(ns.preset_name, '') AS preset_key
+                    FROM memory_entries me
+                    INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                    WHERE me.entry_type = 'participant_profile'
+                )
                 SELECT COUNT(*) AS count
-                FROM memory_entries
-                WHERE entry_type = 'participant_profile'
+                FROM (
+                    SELECT 1
+                    FROM profiles
+                    GROUP BY participant_key, scope_type, scope_key, character_key
+                )
             `),
             countParticipantProfilesFiltered: this.db.prepare(`
+                WITH profiles AS (
+                    SELECT
+                        me.title,
+                        me.content,
+                        me.metadata_json,
+                        ns.scope_type,
+                        ns.scope_key,
+                        ns.character_name,
+                        ns.preset_name,
+                        COALESCE(NULLIF(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), ''), me.id) AS participant_key,
+                        IFNULL(ns.character_name, '') AS character_key,
+                        IFNULL(ns.preset_name, '') AS preset_key
+                    FROM memory_entries me
+                    INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+                    WHERE me.entry_type = 'participant_profile'
+                )
                 SELECT COUNT(*) AS count
-                FROM memory_entries me
-                INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-                WHERE me.entry_type = 'participant_profile'
-                  AND (
-                    ? IS NULL
-                    OR IFNULL(me.title, '') LIKE ?
-                    OR IFNULL(me.content, '') LIKE ?
-                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT), '') LIKE ?
-                    OR IFNULL(CAST(json_extract(me.metadata_json, '$.participantName') AS TEXT), '') LIKE ?
-                    OR IFNULL(ns.scope_key, '') LIKE ?
-                    OR IFNULL(ns.character_name, '') LIKE ?
-                    OR IFNULL(ns.preset_name, '') LIKE ?
-                  )
+                FROM (
+                    SELECT 1
+                    FROM profiles
+                    WHERE IFNULL(title, '') LIKE ?
+                       OR IFNULL(content, '') LIKE ?
+                       OR IFNULL(participant_key, '') LIKE ?
+                       OR IFNULL(CAST(json_extract(metadata_json, '$.participantName') AS TEXT), '') LIKE ?
+                       OR IFNULL(scope_key, '') LIKE ?
+                       OR IFNULL(character_name, '') LIKE ?
+                       OR IFNULL(preset_name, '') LIKE ?
+                    GROUP BY participant_key, scope_type, scope_key, character_key
+                )
             `),
             getParticipantProfileByEntryId: this.db.prepare(`
                 SELECT
@@ -1317,20 +1436,65 @@ export class SessionManager {
     }
 
     getParticipantProfile(namespaceOptions, participantId) {
-        const namespace = this.ensureMemoryNamespace(namespaceOptions);
         const row = this.db.prepare(`
             SELECT me.id, me.namespace_id, me.entry_type, me.title, me.content, me.tags_json, me.metadata_json,
                    me.source_session_id, me.source_message_id, me.created_at, me.updated_at,
                    ns.scope_type, ns.scope_key, ns.character_name, ns.preset_name
             FROM memory_entries me
             INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
-            WHERE me.namespace_id = ?
+            WHERE ns.scope_type = ?
+              AND ns.scope_key = ?
+              AND IFNULL(ns.character_name, '') = IFNULL(?, '')
               AND me.entry_type = 'participant_profile'
-              AND json_extract(me.metadata_json, '$.participantId') = ?
+              AND CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT) = ?
             ORDER BY me.updated_at DESC, me.rowid DESC
             LIMIT 1
-        `).get(namespace.id, String(participantId));
+        `).get(
+            namespaceOptions.scopeType,
+            namespaceOptions.scopeKey,
+            namespaceOptions.characterName || null,
+            String(participantId)
+        );
         return row ? mapParticipantProfileRow(row) : null;
+    }
+
+    listParticipantProfileIdentityRows(namespaceOptions, participantId) {
+        return this.db.prepare(`
+            SELECT
+                me.id,
+                me.namespace_id,
+                me.entry_type,
+                me.title,
+                me.content,
+                me.tags_json,
+                me.metadata_json,
+                me.source_session_id,
+                me.source_message_id,
+                me.created_at,
+                me.updated_at,
+                me.rowid AS entry_rowid,
+                ns.scope_type,
+                ns.scope_key,
+                ns.character_name,
+                ns.preset_name
+            FROM memory_entries me
+            INNER JOIN memory_namespaces ns ON ns.id = me.namespace_id
+            WHERE ns.scope_type = ?
+              AND ns.scope_key = ?
+              AND IFNULL(ns.character_name, '') = IFNULL(?, '')
+              AND me.entry_type = 'participant_profile'
+              AND CAST(json_extract(me.metadata_json, '$.participantId') AS TEXT) = ?
+            ORDER BY me.updated_at DESC, me.rowid DESC
+        `).all(
+            namespaceOptions.scopeType,
+            namespaceOptions.scopeKey,
+            namespaceOptions.characterName || null,
+            String(participantId)
+        );
+    }
+
+    listParticipantProfileIdentityProfiles(namespaceOptions, participantId) {
+        return this.listParticipantProfileIdentityRows(namespaceOptions, participantId).map(mapParticipantProfileRow);
     }
 
     getLatestParticipantIdentity(participantId) {
@@ -1656,7 +1820,6 @@ export class SessionManager {
             searchPattern,
             searchPattern,
             searchPattern,
-            searchPattern,
             limit
         ).map(mapParticipantProfileRow);
     }
@@ -1675,7 +1838,6 @@ export class SessionManager {
             searchPattern,
             searchPattern,
             searchPattern,
-            searchPattern,
             searchPattern
         );
         return Number(row?.count) || 0;
@@ -1687,31 +1849,67 @@ export class SessionManager {
     }
 
     upsertParticipantProfile(namespaceOptions, participantProfile) {
-        const existing = this.getParticipantProfile(namespaceOptions, participantProfile.participantId);
-        const now = Date.now();
-
-        if (existing) {
-            this.db.prepare(`
-                UPDATE memory_entries
-                SET title = ?, content = ?, tags_json = ?, metadata_json = ?, updated_at = ?
-                WHERE id = ?
-            `).run(
-                participantProfile.title,
-                participantProfile.content,
-                JSON.stringify(participantProfile.tags || []),
-                JSON.stringify(participantProfile.metadata || {}),
-                now,
-                existing.id
-            );
-            return { id: existing.id, namespaceId: existing.namespaceId, updated: true };
+        const namespace = this.ensureMemoryNamespace(normalizeParticipantProfileNamespaceOptions(namespaceOptions));
+        const participantId = normalizeParticipantId(participantProfile.participantId ?? participantProfile.metadata?.participantId);
+        if (!participantId) {
+            throw new Error('人物档案 QQ 不能为空');
         }
 
-        return this.addMemoryEntry(namespaceOptions, {
+        const title = normalizeParticipantName(participantProfile.title || participantProfile.metadata?.participantName, participantId);
+        const participantName = normalizeParticipantName(participantProfile.metadata?.participantName, title || participantId);
+        const metadata = {
+            ...(participantProfile.metadata || {}),
+            participantId,
+            participantName
+        };
+        const stableId = buildParticipantProfileEntryId(namespace.id, participantId);
+        const identityRows = this.listParticipantProfileIdentityRows(namespaceOptions, participantId);
+        const stableRow = identityRows.find((row) => row.id === stableId);
+        const existingRow = stableRow || identityRows[0] || null;
+        const now = Date.now();
+        const sourceSessionId = participantProfile.sourceSessionId || existingRow?.source_session_id || null;
+        const sourceMessageId = participantProfile.sourceMessageId || existingRow?.source_message_id || null;
+
+        if (existingRow) {
+            const targetId = stableRow ? stableId : (this.getParticipantProfileByEntryId(stableId) ? existingRow.id : stableId);
+            this.db.prepare(`
+                UPDATE memory_entries
+                SET id = ?, namespace_id = ?, title = ?, content = ?, tags_json = ?, metadata_json = ?, source_session_id = ?, source_message_id = ?, updated_at = ?
+                WHERE id = ?
+            `).run(
+                targetId,
+                namespace.id,
+                title,
+                participantProfile.content,
+                JSON.stringify(participantProfile.tags || []),
+                JSON.stringify(metadata),
+                sourceSessionId,
+                sourceMessageId,
+                now,
+                existingRow.id
+            );
+
+            let mergedDuplicates = 0;
+            for (const row of identityRows) {
+                if (row.id === existingRow.id || row.id === targetId) {
+                    continue;
+                }
+                this.statements.deleteMemoryEntry.run(row.id);
+                mergedDuplicates += 1;
+            }
+
+            return { id: targetId, namespaceId: namespace.id, updated: true, mergedDuplicates };
+        }
+
+        return this.addMemoryEntry(normalizeParticipantProfileNamespaceOptions(namespaceOptions), {
+            id: stableId,
             entryType: 'participant_profile',
-            title: participantProfile.title,
+            title,
             content: participantProfile.content,
             tags: participantProfile.tags || [],
-            metadata: participantProfile.metadata || {}
+            metadata,
+            sourceSessionId,
+            sourceMessageId
         });
     }
 

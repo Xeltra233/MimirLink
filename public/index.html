@@ -7105,6 +7105,11 @@ input:focus, select:focus, textarea:focus {
     box-shadow: 0 0 0 2px var(--accent-soft) !important;
     outline: none !important;
 }
+#participant-profiles textarea#participant-profile-content {
+    min-height: clamp(420px, 58vh, 720px) !important;
+    line-height: 1.6 !important;
+    resize: vertical !important;
+}
 #config-memory-db-path {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
     font-size: 12px !important;
@@ -10402,6 +10407,7 @@ input[type="radio"] {
                 collecting: '收集',
                 prompting: '构建提示',
                 generating: '生成',
+                merging: '合并',
                 saving: '保存',
                 completed: '已完',
                 failed: '失败'
@@ -11177,7 +11183,7 @@ input[type="radio"] {
                     </div>
                     <div class="form-group">
                         <label>档案内容</label>
-                        <textarea id="participant-profile-content" placeholder="输入人物档案内容" required>${escapeHtml(currentItem.content || '')}</textarea>
+                        <textarea id="participant-profile-content" rows="22" placeholder="输入人物档案内容" required>${escapeHtml(currentItem.content || '')}</textarea>
                     </div>
                     <div class="meta-box">角色: ${escapeHtml(currentItem.characterName || '-')}
 预设: ${escapeHtml(currentItem.presetName || '-')}

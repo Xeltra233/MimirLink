@@ -59,6 +59,27 @@ export function buildParticipantProfilePrompt(source, analysisMode) {
     return `${scopeHint}请基于以下真实聊天内容增量更新人物档案。已有档案如下：\n${priorProfile}\n\n新增消息如下：\n${messageText}\n\n输出格式：\n稳定画像: ...\n当前状态: ...`;
 }
 
+export function buildParticipantProfileMergePrompt({ participantId = '', participantName = '', oldProfile = '', newProfile = '' } = {}) {
+    return [
+        '请合并同一个 QQ 用户的人物档案。',
+        `QQ：${participantId || '-'}`,
+        `当前昵称：${participantName || participantId || '-'}`,
+        '',
+        '要求：',
+        '1. 只保留一个最终档案，不要输出两个版本，也不要解释合并过程。',
+        '2. 以新版本中的最新状态为准，但不要丢掉旧档案里仍稳定、未被新版本推翻的信息。',
+        '3. 删除重复、冲突、空泛和模型自述内容；冲突处按“新版本 > 旧档案”，无法判断时写成不确定或省略。',
+        '4. 不要编造聊天记录中没有出现的信息。',
+        '5. 输出纯文本人物档案，建议包含“稳定画像”和“当前状态”两段。',
+        '',
+        '旧档案：',
+        String(oldProfile || '').trim() || '无',
+        '',
+        '新版本：',
+        String(newProfile || '').trim() || '无'
+    ].join('\n');
+}
+
 export function buildParticipantProfileAIOverrides(participantProfileConfig) {
     const overrides = {};
     if (participantProfileConfig.model) {

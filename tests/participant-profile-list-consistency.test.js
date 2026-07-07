@@ -148,6 +148,168 @@ test('participant profile count and search use actual saved profile entries', ()
     }
 });
 
+test('participant profile upsert reuses legacy numeric participant id metadata', () => {
+    const { manager } = createTempManager();
+    try {
+        const namespace = { scopeType: 'global_shared', scopeKey: 'global_shared_memory', characterName: 'Bot', presetName: '' };
+        const legacy = manager.addMemoryEntry(namespace, {
+            entryType: 'participant_profile',
+            title: 'OldName',
+            content: 'old profile',
+            tags: ['old'],
+            metadata: { participantId: 2131767814, participantName: 'OldName', source: 'participant_profile' }
+        });
+
+        const saved = manager.upsertParticipantProfile(namespace, {
+            participantId: '2131767814',
+            title: 'NewName',
+            content: 'new profile',
+            tags: ['new'],
+            metadata: { participantId: '2131767814', participantName: 'NewName', source: 'participant_profile' }
+        });
+
+        const items = manager.listParticipantProfiles(10);
+        const detail = manager.getParticipantProfile(namespace, '2131767814');
+
+        assert.equal(saved.updated, true);
+        assert.match(saved.id, /^participant_profile_2131767814_/);
+        assert.equal(items.length, 1);
+        assert.equal(items[0].id, saved.id);
+        assert.equal(items[0].participantName, 'NewName');
+        assert.equal(items[0].metadata.participantId, '2131767814');
+        assert.equal(detail.id, saved.id);
+        assert.equal(detail.content, 'new profile');
+        assert.equal(manager.getParticipantProfileByEntryId(legacy.id), null);
+        assert.equal(manager.countParticipantProfiles(), 1);
+    } finally {
+        manager.close();
+    }
+});
+
+test('participant profile list and count collapse duplicate records by identity scope', () => {
+    const { manager } = createTempManager();
+    try {
+        const namespace = { scopeType: 'global_shared', scopeKey: 'global_shared_memory', characterName: 'Bot', presetName: '' };
+        manager.addMemoryEntry(namespace, {
+            entryType: 'participant_profile',
+            title: 'OldNick',
+            content: 'old profile content',
+            tags: ['old'],
+            metadata: { participantId: '2131767814', participantName: 'OldNick', source: 'participant_profile' }
+        });
+        const latest = manager.addMemoryEntry(namespace, {
+            entryType: 'participant_profile',
+            title: 'NewNick',
+            content: 'new profile content',
+            tags: ['new'],
+            metadata: { participantId: '2131767814', participantName: 'NewNick', source: 'participant_profile' }
+        });
+        manager.addMemoryEntry({ ...namespace, characterName: 'OtherBot' }, {
+            entryType: 'participant_profile',
+            title: 'OtherScopeNick',
+            content: 'other scope profile content',
+            tags: ['other'],
+            metadata: { participantId: '2131767814', participantName: 'OtherScopeNick', source: 'participant_profile' }
+        });
+
+        const items = manager.listParticipantProfiles(10);
+        const searchedByOldName = manager.listParticipantProfiles({ search: 'OldNick', limit: 10 });
+
+        assert.equal(manager.countParticipantProfiles(), 2);
+        assert.equal(items.length, 2);
+        assert.equal(items.some((item) => item.id === latest.id), true);
+        assert.equal(items.some((item) => item.participantName === 'OldNick'), false);
+        assert.equal(manager.countParticipantProfiles({ search: 'OldNick' }), 1);
+        assert.equal(searchedByOldName.length, 1);
+        assert.equal(searchedByOldName[0].id, latest.id);
+        assert.equal(searchedByOldName[0].participantName, 'NewNick');
+    } finally {
+        manager.close();
+    }
+});
+
+test('participant profile list collapses same QQ across preset names for the same character', () => {
+    const { manager } = createTempManager();
+    try {
+        const namespace = { scopeType: 'global_shared', scopeKey: 'global_shared_memory', characterName: 'Bot', presetName: 'PresetA' };
+        manager.addMemoryEntry(namespace, {
+            entryType: 'participant_profile',
+            title: 'PresetAName',
+            content: 'preset A profile content',
+            tags: ['preset-a'],
+            metadata: { participantId: '1611022927', participantName: 'PresetAName', source: 'participant_profile' }
+        });
+        const latest = manager.addMemoryEntry({ ...namespace, presetName: 'PresetB' }, {
+            entryType: 'participant_profile',
+            title: 'PresetBName',
+            content: 'preset B profile content',
+            tags: ['preset-b'],
+            metadata: { participantId: '1611022927', participantName: 'PresetBName', source: 'participant_profile' }
+        });
+
+        const items = manager.listParticipantProfiles(10);
+        const searchedByOldPreset = manager.listParticipantProfiles({ search: 'PresetAName', limit: 10 });
+
+        assert.equal(manager.countParticipantProfiles(), 1);
+        assert.equal(items.length, 1);
+        assert.equal(items[0].id, latest.id);
+        assert.equal(items[0].participantName, 'PresetBName');
+        assert.equal(searchedByOldPreset.length, 1);
+        assert.equal(searchedByOldPreset[0].id, latest.id);
+    } finally {
+        manager.close();
+    }
+});
+
+test('participant profile upsert stores by stable QQ key and removes same-scope duplicates', () => {
+    const { manager } = createTempManager();
+    try {
+        const namespace = { scopeType: 'global_shared', scopeKey: 'global_shared_memory', characterName: 'Bot', presetName: '' };
+        const first = manager.addMemoryEntry(namespace, {
+            entryType: 'participant_profile',
+            title: 'OldNick',
+            content: 'old profile content',
+            tags: ['old'],
+            metadata: { participantId: '2661097662', participantName: 'OldNick', source: 'participant_profile' }
+        });
+        const second = manager.addMemoryEntry(namespace, {
+            entryType: 'participant_profile',
+            title: 'MiddleNick',
+            content: 'middle profile content',
+            tags: ['middle'],
+            metadata: { participantId: '2661097662', participantName: 'MiddleNick', source: 'participant_profile' }
+        });
+        assert.equal(manager.listParticipantProfileIdentityProfiles(namespace, '2661097662').length, 2);
+
+        const saved = manager.upsertParticipantProfile(namespace, {
+            participantId: '2661097662',
+            title: 'NewJanZ',
+            content: 'merged profile content',
+            tags: ['merged'],
+            metadata: { participantId: '2661097662', participantName: 'NewJanZ', source: 'participant_profile', mergeSource: 'llm' }
+        });
+        const rawCount = manager.db.prepare(`
+            SELECT COUNT(*) AS count
+            FROM memory_entries
+            WHERE entry_type = 'participant_profile'
+              AND CAST(json_extract(metadata_json, '$.participantId') AS TEXT) = '2661097662'
+        `).get().count;
+        const detail = manager.getParticipantProfile(namespace, '2661097662');
+
+        assert.match(saved.id, /^participant_profile_2661097662_/);
+        assert.equal(saved.updated, true);
+        assert.equal(saved.mergedDuplicates, 1);
+        assert.equal(rawCount, 1);
+        assert.equal(detail.id, saved.id);
+        assert.equal(detail.content, 'merged profile content');
+        assert.equal(detail.metadata.mergeSource, 'llm');
+        assert.equal(manager.getParticipantProfileByEntryId(first.id), null);
+        assert.equal(manager.getParticipantProfileByEntryId(second.id), null);
+    } finally {
+        manager.close();
+    }
+});
+
 test('participant profile API returns total, filtered list, and detail payload', async () => {
     const { manager } = createTempManager();
     try {
@@ -186,6 +348,10 @@ test('task center saved count is wired to persisted participant profile count', 
     assert.ok(source.includes('savedCount: getParticipantProfileSavedCount(),'));
     assert.ok(source.includes('speakerIdentity = await resolveCurrentParticipantIdentity(sessionManager, speakerIdentity, logger);'));
     assert.ok(source.includes('refreshExistingParticipantProfileIdentity(sessionManager, source.existing, speakerIdentity);'));
+    assert.ok(source.includes('listParticipantProfileIdentityProfiles(namespaceOptions, speakerIdentity.participantId)'));
+    assert.ok(source.includes('buildParticipantProfileMergePrompt'));
+    assert.ok(source.includes("stage: 'merging'"));
+    assert.ok(source.includes("mergeSource: 'llm'"));
     assert.ok(source.includes('participantNameSource: speakerIdentity.identitySource'));
     assert.ok(source.includes("const skippedMessage = source.existing"));
     assert.ok(source.includes("尚未生成档案"));

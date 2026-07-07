@@ -105,6 +105,44 @@ test('participant profile provider credentials override stale profile api fields
     });
 });
 
+test('participant profile config falls back to chat or active provider without dedicated credentials', () => {
+    const config = {
+        chat: {
+            modelProviderId: 'chat-provider',
+            model: 'chat-model'
+        },
+        ai: {
+            activeProviderId: 'active-provider',
+            providers: [
+                {
+                    id: 'chat-provider',
+                    model: 'chat-provider-model',
+                    baseUrl: 'https://chat.example/v1',
+                    apiKey: 'chat-key'
+                },
+                {
+                    id: 'active-provider',
+                    model: 'active-model',
+                    baseUrl: 'https://active.example/v1',
+                    apiKey: 'active-key'
+                }
+            ]
+        },
+        memory: {
+            participantProfile: {
+                model: ''
+            }
+        }
+    };
+
+    const normalized = getParticipantProfileConfig(config);
+
+    assert.equal(normalized.providerId, 'chat-provider');
+    assert.equal(normalized.model, 'chat-provider-model');
+    assert.equal(normalized.baseUrl, 'https://chat.example/v1');
+    assert.equal(normalized.apiKey, 'chat-key');
+});
+
 test('participant profile config ignores invalid values and keeps defaults', () => {
     const config = {
         memory: {

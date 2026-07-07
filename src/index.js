@@ -57,6 +57,7 @@ import {
     shouldUseIdleParticipantProfileTrigger,
     shouldUseIntervalParticipantProfileTrigger,
     buildParticipantProfilePrompt,
+    buildParticipantProfileMergePrompt,
     buildParticipantProfileAIOverrides,
     buildParticipantProfileTaskMeta
 } from './participant-profile-runtime.js';
@@ -239,12 +240,12 @@ function toOptionalString(value) {
 
 function buildChatAIOverrides(config = {}) {
     const chatConfig = config.chat || {};
-    const providerId = toOptionalString(chatConfig.modelProviderId);
+    const providerId = toOptionalString(chatConfig.modelProviderId) || toOptionalString(config.ai?.activeProviderId);
     const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
     const selectedProvider = providerId
         ? providers.find((provider) => provider?.id === providerId)
         : null;
-    const model = toOptionalString(chatConfig.model) || toOptionalString(selectedProvider?.model);
+    const model = toOptionalString(chatConfig.model) || toOptionalString(selectedProvider?.model) || toOptionalString(config.ai?.model);
     const overrides = {};
 
     if (model) {
@@ -272,7 +273,9 @@ function normalizeAIModelId(model = '') {
 }
 
 function buildAIOverridesFromProviderSelection(config = {}, { providerId = '', model = '' } = {}) {
-    const normalizedProviderId = toOptionalString(providerId);
+    const normalizedProviderId = toOptionalString(providerId)
+        || toOptionalString(config.chat?.modelProviderId)
+        || toOptionalString(config.ai?.activeProviderId);
     const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
     const selectedProvider = normalizedProviderId
         ? providers.find((provider) => provider?.id === normalizedProviderId)
@@ -297,7 +300,7 @@ function buildAIOverridesFromProviderSelection(config = {}, { providerId = '', m
 function getChatAISelectionSnapshot(config = {}) {
     const overrides = buildChatAIOverrides(config);
     return {
-        providerId: toOptionalString(config.chat?.modelProviderId) || null,
+        providerId: toOptionalString(config.chat?.modelProviderId) || toOptionalString(config.ai?.activeProviderId) || null,
         model: overrides.model || config.ai?.model || null,
         hasProviderOverride: Boolean(overrides.baseUrl || overrides.apiKey)
     };
@@ -1176,8 +1179,10 @@ function buildSpeakerIdentity(event, participantOverride = null) {
     };
 }
 
-function extractMentionedParticipant(event) {
+function extractMentionedParticipants(event) {
     const segments = Array.isArray(event?.message) ? event.message : [];
+    const seen = new Set();
+    const participants = [];
     for (const segment of segments) {
         if (segment.type !== 'at') {
             continue;
@@ -1188,12 +1193,22 @@ function extractMentionedParticipant(event) {
             continue;
         }
 
-        return {
-            participantId: String(qq)
-        };
+        const participantId = String(qq);
+        if (seen.has(participantId)) {
+            continue;
+        }
+        seen.add(participantId);
+        participants.push({
+            participantId,
+            participantName: segment.data?.name || segment.data?.card || segment.data?.nickname || ''
+        });
     }
 
-    return null;
+    return participants;
+}
+
+function extractMentionedParticipant(event) {
+    return extractMentionedParticipants(event)[0] || null;
 }
 
 function isParticipantProfileManualCommand(plainText, manualCommand) {
@@ -1316,6 +1331,7 @@ async function generateContextualMentionReply({
         targetUserId,
         targetName,
         promptText,
+        aiOptions: buildChatAIOverrides(config),
         buildPromptMessages({ groupId, targetUserId: mentionTargetUserId, targetName: mentionTargetName, promptText: mentionPromptText }) {
             return appendMentionTaskToPromptMessages({
                 messages,
@@ -1350,7 +1366,7 @@ async function generateAdminMentionReply(event, mentionedParticipant, promptText
         const result = await generateContextualMentionReply({
             event,
             targetUserId: mentionedParticipant.participantId,
-            targetName: mentionedParticipant?.participantName || event.sender?.card || event.sender?.nickname || null,
+            targetName: mentionedParticipant?.participantName || null,
             promptText,
             currentSpeakerOverride: buildSpeakerIdentity(event)
         });
@@ -2198,6 +2214,9 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                 sourceFilter
             }
         );
+        const existingProfilesForMerge = typeof sessionManager.listParticipantProfileIdentityProfiles === 'function'
+            ? sessionManager.listParticipantProfileIdentityProfiles(namespaceOptions, speakerIdentity.participantId)
+            : (source.existing ? [source.existing] : []);
         updateParticipantProfileProgress({
             stage: 'collecting',
             sourceMessageCount: Array.isArray(source.messages) ? source.messages.length : 0,
@@ -2330,11 +2349,60 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
             progressPercent: 70
         });
         recordDashboardMetric('participantProfile');
+        const participantProfileAIOverrides = buildParticipantProfileAIOverrides(participantProfileConfig);
         const profileResult = await aiClient.chat(
             [{ role: 'user', content: profilePrompt }],
-            buildParticipantProfileAIOverrides(participantProfileConfig)
+            participantProfileAIOverrides
         );
-        const profileText = aiClient.getVisibleResponseContent(profileResult);
+        let profileText = String(aiClient.getVisibleResponseContent(profileResult) || '').trim();
+        if (!profileText) {
+            throw new Error('AI 未生成可保存的人物档案');
+        }
+
+        const oldProfileText = existingProfilesForMerge
+            .map((item, index) => {
+                const title = item.participantName || item.title || item.participantId || `profile-${index + 1}`;
+                return `【旧档案 ${index + 1}: ${title}】\n${String(item.content || '').trim()}`;
+            })
+            .filter((text) => text.trim())
+            .join('\n\n');
+        let mergedAt = null;
+        let mergedProfileCount = 0;
+        if (oldProfileText) {
+            updateParticipantProfileProgress({
+                stage: 'merging',
+                currentMessage: '正在合并旧档案和新版本',
+                progressPercent: 82
+            });
+            setParticipantProfileTask({
+                ...profileTaskMeta,
+                running: true,
+                stage: 'merging',
+                triggeredBy: options.triggeredBy || 'auto',
+                analysisMode: participantProfileConfig.analysisMode,
+                sourceMessageCount: Array.isArray(source.messages) ? source.messages.length : 0,
+                hasEnoughNewInfo: !!source.hasEnoughNewInfo,
+                currentMessage: '正在合并旧档案和新版本',
+                progressPercent: 82
+            });
+            const mergePrompt = buildParticipantProfileMergePrompt({
+                participantId: speakerIdentity.participantId,
+                participantName: speakerIdentity.participantName,
+                oldProfile: oldProfileText,
+                newProfile: profileText
+            });
+            const mergeResult = await aiClient.chat(
+                [{ role: 'user', content: mergePrompt }],
+                participantProfileAIOverrides
+            );
+            const mergedProfileText = String(aiClient.getVisibleResponseContent(mergeResult) || '').trim();
+            if (!mergedProfileText) {
+                throw new Error('AI 未生成可保存的人物档案合并结果');
+            }
+            profileText = mergedProfileText;
+            mergedAt = Date.now();
+            mergedProfileCount = existingProfilesForMerge.length + 1;
+        }
 
         updateParticipantProfileProgress({
             stage: 'saving',
@@ -2357,7 +2425,7 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
         sessionManager.upsertParticipantProfile(namespaceOptions, {
             participantId: speakerIdentity.participantId,
             title: speakerIdentity.participantName,
-            content: profileText.trim(),
+            content: profileText,
             tags: sessionManager.buildKeywordsFromText(profileText),
             metadata: {
                 participantId: speakerIdentity.participantId,
@@ -2370,7 +2438,12 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                 triggeredBy: options.triggeredBy || 'auto',
                 groupId: speakerIdentity.groupId || null,
                 messageType: speakerIdentity.messageType || null,
-                participantNameSource: speakerIdentity.identitySource || 'runtime_identity'
+                participantNameSource: speakerIdentity.identitySource || 'runtime_identity',
+                ...(mergedAt ? {
+                    lastMergeAt: mergedAt,
+                    mergedProfileCount,
+                    mergeSource: 'llm'
+                } : {})
             }
         });
 
@@ -2789,27 +2862,29 @@ async function handleAdminMentionCommand(event, plainText) {
         return true;
     }
 
-    const mentionedParticipant = extractMentionedParticipant(event);
-    if (!mentionedParticipant?.participantId) {
+    const mentionedParticipants = extractMentionedParticipants(event);
+    if (mentionedParticipants.length === 0) {
         await sendFailureMessage(event, `请使用 ${mentionCommand} @某人 让 AI 生成的内容要求`);
         return true;
     }
 
-    const promptText = extractTextAfterMentionCommand(event, mentionCommand, mentionedParticipant.participantId);
+    const promptText = extractTextAfterMentionCommand(event, mentionCommand, mentionedParticipants[0].participantId);
     if (!promptText) {
         await sendFailureMessage(event, `请在 ${mentionCommand} @某人 后填写让 AI 生成的内容要求`);
         return true;
     }
 
     try {
-        const messageText = await generateAdminMentionReply(event, mentionedParticipant, promptText);
-        if (!messageText) {
-            throw new Error('AI 未生成可发送内容');
-        }
+        for (const mentionedParticipant of mentionedParticipants) {
+            const messageText = await generateAdminMentionReply(event, mentionedParticipant, promptText);
+            if (!messageText) {
+                throw new Error('AI 未生成可发送内容');
+            }
 
-        await bot.sendGroupMessage(event.group_id, buildMentionMessage(mentionedParticipant.participantId, messageText));
+            await bot.sendGroupMessage(event.group_id, buildMentionMessage(mentionedParticipant.participantId, messageText));
+        }
     } catch (error) {
-        logger.warn(`[主动@] 管理员触发主动 @ 失败: ${mentionedParticipant.participantId} ${error.message}`);
+        logger.warn(`[主动@] 管理员触发主动 @ 失败: ${mentionedParticipants.map((item) => item.participantId).join(',')} ${error.message}`);
         await sendFailureMessage(event, `主动 @ 生成失败: ${error.message}`);
     }
     return true;

@@ -176,6 +176,27 @@ export function setupRoutes(app, config, saveConfig, managers) {
         };
     };
 
+    const buildProviderAIOverrides = ({ providerId = '', model = '' } = {}) => {
+        const normalizedProviderId = String(providerId || config.chat?.modelProviderId || config.ai?.activeProviderId || '').trim();
+        const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
+        const provider = normalizedProviderId
+            ? providers.find((item) => item?.id === normalizedProviderId)
+            : null;
+        const normalizedModel = String(model || config.chat?.model || provider?.model || config.ai?.model || '').trim();
+        const overrides = {};
+        if (normalizedModel) {
+            overrides.model = normalizedModel;
+        }
+        if (provider) {
+            overrides.baseUrl = String(provider.baseUrl || '').trim();
+            overrides.apiKey = String(provider.apiKey || '').trim();
+        } else if (normalizedProviderId && providers.length > 0) {
+            overrides.baseUrl = '';
+            overrides.apiKey = '';
+        }
+        return overrides;
+    };
+
     const isWriteMethod = (method) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || '').toUpperCase());
 
     const isAllowedPanelOrigin = (req, originValue) => {
@@ -3936,7 +3957,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     content: grounding?.message || toolContext.buildRealtimeSearchPrompt?.(normalizedMessage) || `这条问题需要先联网检索再回答：${normalizedMessage}`
                 });
             }
-            const responseResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext), timeoutMs);
+            const responseResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext, buildProviderAIOverrides()), timeoutMs);
             const response = aiClient.getVisibleResponseContent(responseResult);
             logger.info(`[API ${req.requestId || 'no-id'}] AI 测试完成`, {
                 message: summarizeText(normalizedMessage),
@@ -3981,7 +4002,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 groupId,
                 targetUserId,
                 targetName,
-                promptText: String(message || '').trim()
+                promptText: String(message || '').trim(),
+                aiOptions: buildProviderAIOverrides()
             }), timeoutMs);
             logger.info(`[API ${req.requestId || 'no-id'}] 主动@测试完成`, {
                 groupId: String(groupId),

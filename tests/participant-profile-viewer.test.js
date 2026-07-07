@@ -134,7 +134,7 @@ test('listParticipantProfiles returns only participant_profile entries ordered b
     assert.equal(items[0].participantId, 'user-b');
     assert.equal(items[1].participantId, 'user-a');
     assert.equal(items[0].characterName, '角色B');
-    assert.equal(items[1].presetName, '预设A');
+    assert.equal(items[1].presetName, '');
     assert.ok(items[0].contentPreview.includes('稳定画像'));
 });
 
@@ -1623,7 +1623,9 @@ test('admin UI includes participant profile management actions', () => {
     assert.ok(html.includes('id="participant-profile-title"'));
     assert.ok(html.includes('id="participant-profile-tags"'));
     assert.ok(html.includes('id="participant-profile-note"'));
-    assert.ok(html.includes('id="participant-profile-content"'));
+    assert.ok(html.includes('id="participant-profile-content" rows="22"'));
+    assert.ok(html.includes('#participant-profiles textarea#participant-profile-content'));
+    assert.ok(html.includes('min-height: clamp(420px, 58vh, 720px) !important;'));
     assert.ok(html.includes('saveParticipantProfile()'));
     assert.ok(html.includes('refreshSelectedParticipantProfile()'));
     assert.ok(html.includes('deleteParticipantProfile()'));
@@ -1674,6 +1676,8 @@ test('message runtime handles participant profile admin manual command before no
 test('message runtime handles admin proactive mention commands before normal trigger checks', () => {
     const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
     assert.ok(source.includes("import { OneBotClient, buildMentionMessage } from './onebot.js';"));
+    assert.ok(source.includes('function extractMentionedParticipants(event) {'));
+    assert.ok(source.includes('const providerId = toOptionalString(chatConfig.modelProviderId) || toOptionalString(config.ai?.activeProviderId);'));
     assert.ok(source.includes('function extractTextAfterMentionCommand(event, command, mentionedParticipantId) {'));
     assert.ok(source.includes('async function generateAdminMentionReply(event, mentionedParticipant, promptText) {'));
     assert.ok(source.includes('async function handleAdminMentionCommand(event, plainText) {'));
@@ -1685,6 +1689,9 @@ test('message runtime handles admin proactive mention commands before normal tri
     assert.ok(source.includes("import { buildAIToolContext,"));
     assert.ok(source.includes('appendMentionTaskToPromptMessages'));
     assert.ok(source.includes('generateMentionTextFromPrompt'));
+    assert.ok(source.includes('aiOptions: buildChatAIOverrides(config)'));
+    assert.ok(source.includes('const mentionedParticipants = extractMentionedParticipants(event);'));
+    assert.ok(source.includes('for (const mentionedParticipant of mentionedParticipants) {'));
     assert.ok(source.includes('const messageText = await generateAdminMentionReply(event, mentionedParticipant, promptText);'));
     assert.ok(source.includes("throw new Error('AI 未生成可发送内容');"));
     assert.ok(source.includes("await sendFailureMessage(event, `主动 @ 生成失败: ${error.message}`);"));
