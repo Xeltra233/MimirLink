@@ -17,6 +17,7 @@ import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
 import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, runConfiguredWebSearch } from './tools.js';
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 import { syncPresetFiles } from './preset-sync.js';
+import { collectParticipantGroupIds, resolveParticipantIdentityFromOneBot } from './participant-identity.js';
 
 function estimateTokenCount(text) {
     if (!text) return 0;
@@ -1178,6 +1179,48 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 source: normalizeOptionalText(metadata.source) || 'participant_profile'
             }
         };
+    };
+
+    const resolveParticipantProfileNameIdentity = async (profile, body = {}) => {
+        const identitySources = typeof sessionManager.listParticipantIdentitySources === 'function'
+            ? sessionManager.listParticipantIdentitySources(profile.participantId, 20)
+            : [];
+        const groupIds = collectParticipantGroupIds(
+            body.groupId,
+            profile.metadata?.groupId,
+            profile.metadata?.groupIds,
+            identitySources.map((item) => item.groupId)
+        );
+
+        const qqIdentity = await resolveParticipantIdentityFromOneBot(bot, profile.participantId, {
+            groupIds,
+            messageType: profile.metadata?.messageType || identitySources[0]?.messageType || null,
+            logger
+        });
+        if (qqIdentity?.participantName) {
+            return qqIdentity;
+        }
+
+        const localIdentity = identitySources.find((item) => item.participantName)
+            || (typeof sessionManager.getLatestParticipantIdentity === 'function'
+                ? sessionManager.getLatestParticipantIdentity(profile.participantId)
+                : null);
+        return localIdentity?.participantName ? localIdentity : null;
+    };
+
+    const formatParticipantNameRefreshMessage = (result) => {
+        const sourceLabel = {
+            qq_global_info: 'QQ 全局资料',
+            qq_group_member_info: 'QQ群成员资料',
+            qq_group_member_list: 'QQ群成员列表',
+            qq_friend_list: 'QQ好友列表',
+            message_history: '本地聊天记录'
+        }[result?.source] || '可用来源';
+
+        if (result?.changed) {
+            return `用户名已按${sourceLabel}刷新`;
+        }
+        return `用户名已是最新（来源：${sourceLabel}）`;
     };
 
     const listKnownMemoryDatabases = async () => {
@@ -4165,25 +4208,32 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
-    app.post('/api/participant-profiles/:id/refresh-name', requireAuth, (req, res) => {
+    app.post('/api/participant-profiles/:id/refresh-name', requireAuth, async (req, res) => {
         try {
             if (typeof sessionManager.refreshParticipantProfileName !== 'function') {
                 return res.status(501).json({ success: false, error: '刷新用户名未启用' });
             }
 
-            const result = sessionManager.refreshParticipantProfileName(req.params.id);
+            const existing = sessionManager.getParticipantProfileByEntryId(req.params.id);
+            if (!existing) {
+                return res.status(404).json({ success: false, error: '人物档案不存在' });
+            }
+
+            const identity = await resolveParticipantProfileNameIdentity(existing, req.body || {});
+            const result = sessionManager.refreshParticipantProfileName(req.params.id, identity);
             if (!result) {
                 return res.status(404).json({ success: false, error: '人物档案不存在' });
             }
             if (result.reason === 'no_latest_name') {
-                return res.status(409).json({ success: false, error: '没有找到该 QQ 的最新用户名来源，请先让该用户在群里发言' });
+                return res.status(409).json({ success: false, error: '没有从 QQ 全局资料、群成员资料、好友列表或本地历史中找到该 QQ 的用户名' });
             }
 
             res.json({
                 success: true,
                 item: result.item,
                 changed: result.changed,
-                message: result.changed ? '用户名已按最新聊天记录刷新' : '用户名已是最新'
+                source: result.source,
+                message: formatParticipantNameRefreshMessage(result)
             });
         } catch (error) {
             logger.error('刷新人物档案用户名失败', error);

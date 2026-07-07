@@ -184,6 +184,9 @@ test('task center saved count is wired to persisted participant profile count', 
     assert.ok(source.includes('return sessionManager.countParticipantProfiles();'));
     assert.ok(source.includes('participantProfileProgress.savedCount = getParticipantProfileSavedCount();'));
     assert.ok(source.includes('savedCount: getParticipantProfileSavedCount(),'));
+    assert.ok(source.includes('speakerIdentity = await resolveCurrentParticipantIdentity(sessionManager, speakerIdentity, logger);'));
+    assert.ok(source.includes('refreshExistingParticipantProfileIdentity(sessionManager, source.existing, speakerIdentity);'));
+    assert.ok(source.includes('participantNameSource: speakerIdentity.identitySource'));
     assert.ok(source.includes("const skippedMessage = source.existing"));
     assert.ok(source.includes("尚未生成档案"));
 });

@@ -790,6 +790,13 @@ export class SessionManager {
                 ORDER BY timestamp ASC, rowid ASC
                 LIMIT ?
             `),
+            listParticipantIdentitySources: this.db.prepare(`
+                SELECT session_id, role, content, metadata_json, timestamp, date_iso
+                FROM messages
+                WHERE CAST(json_extract(metadata_json, '$.userId') AS TEXT) = ?
+                ORDER BY timestamp DESC, rowid DESC
+                LIMIT ?
+            `),
             exportMemoryNamespaces: this.db.prepare(`
                 SELECT id, scope_type, scope_key, character_name, preset_name, created_at, updated_at
                 FROM memory_namespaces
@@ -1291,6 +1298,24 @@ export class SessionManager {
         }));
     }
 
+    listParticipantIdentitySources(participantId, limit = 10) {
+        const normalizedLimit = Math.min(Math.max(Number(limit) || 10, 1), 50);
+        const rows = this.statements.listParticipantIdentitySources.all(String(participantId), normalizedLimit);
+
+        return rows.map((row) => {
+            const metadata = parseJson(row.metadata_json, {});
+            return {
+                participantId: String(participantId),
+                participantName: extractParticipantNameFromMessage(row),
+                groupId: metadata.groupId ? String(metadata.groupId) : null,
+                messageType: metadata.messageType || null,
+                sessionId: row.session_id,
+                timestamp: row.timestamp,
+                source: 'message_history'
+            };
+        });
+    }
+
     getParticipantProfile(namespaceOptions, participantId) {
         const namespace = this.ensureMemoryNamespace(namespaceOptions);
         const row = this.db.prepare(`
@@ -1309,43 +1334,35 @@ export class SessionManager {
     }
 
     getLatestParticipantIdentity(participantId) {
-        const row = this.db.prepare(`
-            SELECT metadata_json, content, timestamp
-            FROM messages
-            WHERE CAST(json_extract(metadata_json, '$.userId') AS TEXT) = ?
-            ORDER BY timestamp DESC, rowid DESC
-            LIMIT 1
-        `).get(String(participantId));
-        if (!row) {
-            return null;
-        }
-
-        const participantName = extractParticipantNameFromMessage(row);
-        return {
-            participantId: String(participantId),
-            participantName,
-            timestamp: row.timestamp
-        };
+        return this.listParticipantIdentitySources(participantId, 1)[0] || null;
     }
 
-    refreshParticipantProfileName(entryId) {
+    refreshParticipantProfileName(entryId, identityOverride = null) {
         const existing = this.getParticipantProfileByEntryId(entryId);
         if (!existing) {
             return null;
         }
-        const identity = this.getLatestParticipantIdentity(existing.participantId);
-        const latestName = identity?.participantName || '';
+        const identity = identityOverride || this.getLatestParticipantIdentity(existing.participantId);
+        const latestName = String(identity?.participantName || '').trim();
         if (!latestName) {
             return { item: existing, changed: false, reason: 'no_latest_name' };
         }
 
+        const now = Date.now();
         const metadata = {
             ...existing.metadata,
             participantId: existing.participantId,
             participantName: latestName,
-            lastParticipantNameRefreshAt: Date.now(),
-            lastParticipantNameSourceAt: identity.timestamp || null
+            lastParticipantNameRefreshAt: now,
+            lastParticipantNameSourceAt: identity.timestamp || null,
+            lastParticipantNameSource: identity.source || 'message_history'
         };
+        if (identity.groupId) {
+            metadata.groupId = String(identity.groupId);
+        }
+        if (identity.messageType) {
+            metadata.messageType = identity.messageType;
+        }
         this.statements.updateMemoryEntry.run(
             latestName,
             existing.content,
@@ -1353,13 +1370,14 @@ export class SessionManager {
             JSON.stringify(metadata),
             existing.sourceSessionId || null,
             existing.sourceMessageId || null,
-            Date.now(),
+            now,
             existing.id
         );
         return {
             item: this.getParticipantProfileByEntryId(existing.id),
             changed: latestName !== existing.participantName,
-            participantName: latestName
+            participantName: latestName,
+            source: metadata.lastParticipantNameSource
         };
     }
 

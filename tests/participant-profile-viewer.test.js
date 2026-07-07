@@ -199,6 +199,117 @@ test('participant profile routes return list and detail payloads', async () => {
     }
 });
 
+test('refresh participant profile name prefers QQ global info', async () => {
+    const { manager } = createTempManager();
+    const namespace = { scopeType: 'global_shared', scopeKey: 'global_shared_memory', characterName: 'Bot', presetName: '' };
+    manager.upsertParticipantProfile(namespace, {
+        participantId: '10001',
+        title: 'OldName',
+        content: 'profile',
+        tags: [],
+        metadata: { participantId: '10001', participantName: 'OldName', source: 'participant_profile', groupId: '20001', messageType: 'group' }
+    });
+
+    const { server, baseUrl } = await startTestServer(manager, {
+        bot: {
+            isConnected() { return true; },
+            async getStrangerInfo(userId) {
+                assert.equal(String(userId), '10001');
+                return { user_id: 10001, nickname: 'GlobalName' };
+            }
+        }
+    });
+    try {
+        const item = manager.listParticipantProfiles(1)[0];
+        const res = await fetch(`${baseUrl}/api/participant-profiles/${encodeURIComponent(item.id)}/refresh-name`, { method: 'POST' });
+        const data = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(data.success, true);
+        assert.equal(data.item.participantName, 'GlobalName');
+        assert.equal(data.item.metadata.lastParticipantNameSource, 'qq_global_info');
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        manager.close();
+    }
+});
+
+test('refresh participant profile name falls back to group member info', async () => {
+    const { manager } = createTempManager();
+    const namespace = { scopeType: 'global_shared', scopeKey: 'global_shared_memory', characterName: 'Bot', presetName: '' };
+    manager.upsertParticipantProfile(namespace, {
+        participantId: '10002',
+        title: 'OldName',
+        content: 'profile',
+        tags: [],
+        metadata: { participantId: '10002', participantName: 'OldName', source: 'participant_profile', groupId: '20002', messageType: 'group' }
+    });
+
+    const calls = [];
+    const { server, baseUrl } = await startTestServer(manager, {
+        bot: {
+            isConnected() { return true; },
+            async getStrangerInfo() {
+                calls.push('global');
+                return {};
+            },
+            async getGroupMemberInfo(groupId, userId) {
+                calls.push(`member:${groupId}:${userId}`);
+                return { user_id: 10002, card: 'GroupCardName', nickname: 'GlobalFallback' };
+            }
+        }
+    });
+    try {
+        const item = manager.listParticipantProfiles(1)[0];
+        const res = await fetch(`${baseUrl}/api/participant-profiles/${encodeURIComponent(item.id)}/refresh-name`, { method: 'POST' });
+        const data = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(data.item.participantName, 'GroupCardName');
+        assert.equal(data.item.metadata.lastParticipantNameSource, 'qq_group_member_info');
+        assert.deepEqual(calls, ['global', 'member:20002:10002']);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        manager.close();
+    }
+});
+
+test('refresh participant profile name falls back to friend list for private profile', async () => {
+    const { manager } = createTempManager();
+    const namespace = { scopeType: 'user_persistent', scopeKey: 'user:10003', characterName: 'Bot', presetName: '' };
+    manager.upsertParticipantProfile(namespace, {
+        participantId: '10003',
+        title: 'OldName',
+        content: 'profile',
+        tags: [],
+        metadata: { participantId: '10003', participantName: 'OldName', source: 'participant_profile', messageType: 'private' }
+    });
+
+    const { server, baseUrl } = await startTestServer(manager, {
+        bot: {
+            isConnected() { return true; },
+            async getStrangerInfo() {
+                return {};
+            },
+            async getFriendList() {
+                return [{ user_id: 10003, remark: 'FriendRemark', nickname: 'FriendNick' }];
+            }
+        }
+    });
+    try {
+        const item = manager.listParticipantProfiles(1)[0];
+        const res = await fetch(`${baseUrl}/api/participant-profiles/${encodeURIComponent(item.id)}/refresh-name`, { method: 'POST' });
+        const data = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(data.item.participantName, 'FriendRemark');
+        assert.equal(data.item.metadata.lastParticipantNameSource, 'qq_friend_list');
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        manager.close();
+    }
+});
+
 test('participant profile routes support detail save delete and manual analyze payloads', async () => {
     const { manager } = createTempManager();
     const namespace = { scopeType: 'user', scopeKey: '10001', characterName: '角色A', presetName: '预设A' };

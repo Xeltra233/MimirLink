@@ -407,6 +407,27 @@ export class OneBotClient extends EventEmitter {
         return this._call('get_friend_list');
     }
 
+    async getStrangerInfo(userId, noCache = true) {
+        return this._call('get_stranger_info', {
+            user_id: parseInt(userId, 10),
+            no_cache: Boolean(noCache)
+        });
+    }
+
+    async getGroupMemberInfo(groupId, userId, noCache = true) {
+        return this._call('get_group_member_info', {
+            group_id: parseInt(groupId, 10),
+            user_id: parseInt(userId, 10),
+            no_cache: Boolean(noCache)
+        });
+    }
+
+    async getGroupMemberList(groupId) {
+        return this._call('get_group_member_list', {
+            group_id: parseInt(groupId, 10)
+        });
+    }
+
     async getMessage(messageId) {
         return this._call('get_msg', {
             message_id: Number(messageId)

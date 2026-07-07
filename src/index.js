@@ -50,6 +50,7 @@ import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detect
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 import { GroupRepeatDetector, normalizeGroupRepeatConfig, shouldObserveGroupRepeatMessage } from './group-repeat.js';
 import { DEFAULT_QQ_EMOJI_REACTION_ID, executeAdminPokeCommand, normalizeEmojiReactionId, resolveEmojiReactionId } from './qq-interactions.js';
+import { collectParticipantGroupIds, mergeParticipantIdentity, resolveParticipantIdentityFromOneBot } from './participant-identity.js';
 import {
     getParticipantProfileTimerKey,
     trackParticipantProfileTarget,
@@ -2038,6 +2039,46 @@ function isParticipantProfileBlacklisted(participantProfileConfig, participantId
     return participantProfileConfig.blacklistParticipantIds.includes(String(participantId));
 }
 
+async function resolveCurrentParticipantIdentity(manager, speakerIdentity, logger) {
+    if (!speakerIdentity?.participantId) {
+        return speakerIdentity;
+    }
+
+    const localSources = typeof manager?.listParticipantIdentitySources === 'function'
+        ? manager.listParticipantIdentitySources(speakerIdentity.participantId, 20)
+        : [];
+    const groupIds = collectParticipantGroupIds(
+        speakerIdentity.groupId,
+        localSources.map((item) => item.groupId)
+    );
+    const qqIdentity = await resolveParticipantIdentityFromOneBot(bot, speakerIdentity.participantId, {
+        groupIds,
+        messageType: speakerIdentity.messageType || localSources[0]?.messageType || null,
+        logger
+    });
+    if (qqIdentity?.participantName) {
+        return mergeParticipantIdentity(speakerIdentity, qqIdentity);
+    }
+
+    const localIdentity = localSources.find((item) => item.participantName);
+    return mergeParticipantIdentity(speakerIdentity, localIdentity);
+}
+
+function refreshExistingParticipantProfileIdentity(manager, existing, speakerIdentity) {
+    if (!existing?.id || !speakerIdentity?.participantName || typeof manager?.refreshParticipantProfileName !== 'function') {
+        return existing;
+    }
+
+    const result = manager.refreshParticipantProfileName(existing.id, {
+        participantId: speakerIdentity.participantId,
+        participantName: speakerIdentity.participantName,
+        groupId: speakerIdentity.groupId || existing.metadata?.groupId || null,
+        messageType: speakerIdentity.messageType || existing.metadata?.messageType || null,
+        source: speakerIdentity.identitySource || 'runtime_identity'
+    });
+    return result?.item || existing;
+}
+
 async function analyzeParticipantProfileEntry(entry, options = {}) {
     if (!entry?.participantId || !entry.scopeType || !entry.scopeKey) {
         throw new Error('人物档案上下文不完整，无法重分析');
@@ -2102,6 +2143,8 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
     if (isParticipantProfileBlacklisted(participantProfileConfig, speakerIdentity.participantId)) {
         return null;
     }
+
+    speakerIdentity = await resolveCurrentParticipantIdentity(sessionManager, speakerIdentity, logger);
 
     const buildKey = getParticipantProfileTimerKey(namespaceOptions, speakerIdentity);
     if (participantProfileBuilds.has(buildKey)) {
@@ -2175,6 +2218,7 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
         });
 
         if (!options.force && !source.hasEnoughNewInfo) {
+            const refreshedExisting = refreshExistingParticipantProfileIdentity(sessionManager, source.existing, speakerIdentity);
             const skippedMessage = source.existing
                 ? '新信息不足，沿用现有人物档案'
                 : '新信息不足，尚未生成档案';
@@ -2189,7 +2233,7 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                     skipped: true,
                     reason: 'not_enough_new_info',
                     participantId: String(speakerIdentity.participantId),
-                    profileId: source.existing?.id || null
+                    profileId: refreshedExisting?.id || null
                 }
             });
             setParticipantProfileTask({
@@ -2208,13 +2252,14 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                     skipped: true,
                     reason: 'not_enough_new_info',
                     participantId: String(speakerIdentity.participantId),
-                    profileId: source.existing?.id || null
+                    profileId: refreshedExisting?.id || null
                 }
             });
-            return source.existing;
+            return refreshedExisting;
         }
 
         if (!source.messages.length) {
+            const refreshedExisting = refreshExistingParticipantProfileIdentity(sessionManager, source.existing, speakerIdentity);
             updateParticipantProfileProgress({
                 running: false,
                 stage: 'completed',
@@ -2226,7 +2271,7 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                     skipped: true,
                     reason: 'no_source_messages',
                     participantId: String(speakerIdentity.participantId),
-                    profileId: source.existing?.id || null
+                    profileId: refreshedExisting?.id || null
                 }
             });
             setParticipantProfileTask({
@@ -2245,10 +2290,10 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                     skipped: true,
                     reason: 'no_source_messages',
                     participantId: String(speakerIdentity.participantId),
-                    profileId: source.existing?.id || null
+                    profileId: refreshedExisting?.id || null
                 }
             });
-            return source.existing;
+            return refreshedExisting;
         }
 
         updateParticipantProfileProgress({
@@ -2322,7 +2367,10 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
                 lastSourceMessageCount: source.messages.length,
                 analysisMode: participantProfileConfig.analysisMode,
                 source: 'participant_profile',
-                triggeredBy: options.triggeredBy || 'auto'
+                triggeredBy: options.triggeredBy || 'auto',
+                groupId: speakerIdentity.groupId || null,
+                messageType: speakerIdentity.messageType || null,
+                participantNameSource: speakerIdentity.identitySource || 'runtime_identity'
             }
         });
 
@@ -2600,12 +2648,13 @@ async function backfillParticipantProfilesFromHistory(sessionManager, aiClient, 
             continue;
         }
 
-        const participantName = String(row.participant_label || '').split('(')[0].trim() || participantId;
+        const latestIdentity = sessionManager.getLatestParticipantIdentity?.(participantId) || null;
+        const participantName = latestIdentity?.participantName || participantId;
         const speakerIdentity = {
             participantId,
             participantName,
             messageType: 'group',
-            groupId: String(row.group_id || '') || null
+            groupId: latestIdentity?.groupId || String(row.group_id || '') || null
         };
 
         try {

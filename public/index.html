@@ -10647,13 +10647,6 @@ input[type="radio"] {
                     title: '人物档案任务'
                 });
             }
-
-            const detailPanel = document.getElementById('participant-profile-progress-panel');
-            if (detailPanel) {
-                detailPanel.innerHTML = renderParticipantProfileProgress(participantProfileProgress, {
-                    title: '当前建档进度'
-                });
-            }
         }
 
         function updateKnowledgeImportProgressPanels() {
@@ -11197,7 +11190,6 @@ input[type="radio"] {
 最近分析会话: ${escapeHtml(lastProcessedSessionId || '-')}
 最近参考消息数: ${escapeHtml(String(lastSourceMessageCount || '-'))}
 创建时间: ${escapeHtml(currentItem.createdAt ? formatProfileTime(currentItem.createdAt) : '-')}</div>
-                    <div id="participant-profile-progress-panel">${renderParticipantProfileProgress(participantProfileProgress, { title: '当前建档进度' })}</div>
                     <div class="variable-actions">
                         <button type="submit">保存档案</button>
                         <button type="button" class="secondary" onclick="analyzeParticipantProfile()">立即增量分析</button>
