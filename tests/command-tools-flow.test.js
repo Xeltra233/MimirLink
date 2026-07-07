@@ -4,7 +4,9 @@ import fs from 'node:fs';
 
 import { buildAIToolContext, buildRealtimeGroundingMessage } from '../src/tools.js';
 import {
+    extractMentionedUserIds,
     executeAdminPokeCommand,
+    isCommandInvocation,
     normalizeEmojiReactionId,
     resolveEmojiReactionId
 } from '../src/qq-interactions.js';
@@ -292,8 +294,61 @@ test('admin poke command calls OneBot group_poke five times', async () => {
     assert.equal(result.repeatCount, 5);
     assert.equal(pokeCalls.length, 5);
     assert.deepEqual(new Set(pokeCalls.map((item) => `${item.groupId}:${item.userId}`)), new Set(['123456:10002']));
-    assert.equal(statuses[0], 'emoji');
-    assert.match(statuses.at(-1), /已戳一戳 QQ 10002 5 下/);
+    assert.deepEqual(statuses, ['emoji']);
+});
+
+test('admin poke command supports compact multi-mention syntax without success reply', async () => {
+    const pokeCalls = [];
+    const statuses = [];
+    const event = buildPokeEvent({
+        raw_message: '/戳一戳@10002@10003@10002',
+        message: [
+            { type: 'text', data: { text: '/戳一戳' } },
+            { type: 'at', data: { qq: '10002' } },
+            { type: 'at', data: { qq: '10003' } },
+            { type: 'at', data: { qq: '10002' } }
+        ]
+    });
+    const result = await executeAdminPokeCommand({
+        event,
+        plainText: '/戳一戳[@A|QQ:10002][@B|QQ:10003]',
+        command: '/戳一戳',
+        repeatCount: 2,
+        isAdmin: true,
+        bot: {
+            async sendGroupPoke(groupId, userId) {
+                pokeCalls.push({ groupId, userId });
+            }
+        },
+        onCommandAccepted() {
+            statuses.push('emoji');
+        },
+        sendStatusMessage(message) {
+            statuses.push(message);
+        },
+        sendFailureMessage(message) {
+            statuses.push(`failure:${message}`);
+        },
+        logger: silentLogger
+    });
+
+    assert.equal(isCommandInvocation('/戳一戳@10002', '/戳一戳'), true);
+    assert.equal(isCommandInvocation('/戳一戳[@A|QQ:10002]', '/戳一戳'), true);
+    assert.equal(isCommandInvocation('/戳一戳abc', '/戳一戳'), false);
+    assert.deepEqual(extractMentionedUserIds(event), ['10002', '10003']);
+    assert.equal(result.handled, true);
+    assert.equal(result.ok, true);
+    assert.equal(result.targetUserId, '10002');
+    assert.deepEqual(result.targetUserIds, ['10002', '10003']);
+    assert.equal(result.targetCount, 2);
+    assert.equal(result.repeatCount, 2);
+    assert.deepEqual(pokeCalls.map((item) => `${item.groupId}:${item.userId}`), [
+        '123456:10002',
+        '123456:10002',
+        '123456:10003',
+        '123456:10003'
+    ]);
+    assert.deepEqual(statuses, ['emoji']);
 });
 
 test('admin poke command reports visible failure states', async () => {
@@ -468,5 +523,7 @@ test('config UI exposes poke command and QQ emoji id settings', () => {
     assert.ok(html.includes('id="config-chat-command-admin-poke-enabled"'));
     assert.ok(html.includes('id="config-chat-command-admin-poke-command"'));
     assert.ok(html.includes('id="config-chat-command-admin-poke-repeat"'));
+    assert.ok(html.includes('/戳一戳@A@B'));
+    assert.ok(html.includes('成功后不发送完成消息'));
     assert.ok(html.includes('adminPoke: {'));
 });

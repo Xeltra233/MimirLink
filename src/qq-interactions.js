@@ -64,11 +64,21 @@ export function isCommandInvocation(plainText = '', command = '') {
     if (!normalizedText || !normalizedCommand) {
         return false;
     }
-    return normalizedText === normalizedCommand || normalizedText.startsWith(`${normalizedCommand} `);
+    if (normalizedText === normalizedCommand) {
+        return true;
+    }
+    if (!normalizedText.startsWith(normalizedCommand)) {
+        return false;
+    }
+
+    const nextChar = normalizedText.slice(normalizedCommand.length, normalizedCommand.length + 1);
+    return !nextChar || /\s/.test(nextChar) || nextChar === '@' || nextChar === '[' || nextChar === '［';
 }
 
-export function extractFirstMentionedUserId(event = {}) {
+export function extractMentionedUserIds(event = {}) {
     const segments = Array.isArray(event.message) ? event.message : [];
+    const seen = new Set();
+    const targetUserIds = [];
     for (const segment of segments) {
         if (segment?.type !== 'at') {
             continue;
@@ -78,11 +88,16 @@ export function extractFirstMentionedUserId(event = {}) {
             continue;
         }
         const targetUserId = sanitizeText(qq);
-        if (targetUserId) {
-            return targetUserId;
+        if (targetUserId && !seen.has(targetUserId)) {
+            seen.add(targetUserId);
+            targetUserIds.push(targetUserId);
         }
     }
-    return '';
+    return targetUserIds;
+}
+
+export function extractFirstMentionedUserId(event = {}) {
+    return extractMentionedUserIds(event)[0] || '';
 }
 
 export function hasAtAllMention(event = {}) {
@@ -139,8 +154,8 @@ export async function executeAdminPokeCommand({
         return fail('戳一戳不支持 @全体成员', 'at_all');
     }
 
-    const targetUserId = extractFirstMentionedUserId(event);
-    if (!targetUserId) {
+    const targetUserIds = extractMentionedUserIds(event);
+    if (targetUserIds.length === 0) {
         return fail(`请使用 ${normalizedCommand} @某人`, 'missing_target');
     }
 
@@ -149,27 +164,30 @@ export async function executeAdminPokeCommand({
     }
 
     const normalizedRepeatCount = normalizePokeRepeatCount(repeatCount, 5);
-    let completed = 0;
+    const completedByTarget = new Map(targetUserIds.map((targetUserId) => [targetUserId, 0]));
+    let currentTargetUserId = targetUserIds[0];
     try {
-        for (let index = 0; index < normalizedRepeatCount; index += 1) {
-            await bot.sendGroupPoke(event.group_id, targetUserId);
-            completed += 1;
+        for (const targetUserId of targetUserIds) {
+            currentTargetUserId = targetUserId;
+            for (let index = 0; index < normalizedRepeatCount; index += 1) {
+                await bot.sendGroupPoke(event.group_id, targetUserId);
+                completedByTarget.set(targetUserId, (completedByTarget.get(targetUserId) || 0) + 1);
+            }
         }
     } catch (error) {
-        logger?.warn?.(`[戳一戳] 执行失败: ${targetUserId} ${error.message}`);
-        return fail(`戳一戳失败: ${error.message}（已执行 ${completed}/${normalizedRepeatCount} 下）`, 'poke_failed');
-    }
-
-    const message = `已戳一戳 QQ ${targetUserId} ${normalizedRepeatCount} 下`;
-    if (typeof sendStatusMessage === 'function') {
-        await sendStatusMessage(message);
+        const completedCurrent = completedByTarget.get(currentTargetUserId) || 0;
+        const completedTotal = Array.from(completedByTarget.values()).reduce((sum, count) => sum + count, 0);
+        logger?.warn?.(`[戳一戳] 执行失败: ${currentTargetUserId} ${error.message}`);
+        return fail(`戳一戳失败: ${error.message}（QQ ${currentTargetUserId} 已执行 ${completedCurrent}/${normalizedRepeatCount} 下，总计 ${completedTotal}/${targetUserIds.length * normalizedRepeatCount} 下）`, 'poke_failed');
     }
 
     return {
         handled: true,
         ok: true,
         groupId: String(event.group_id),
-        targetUserId,
+        targetUserId: targetUserIds[0],
+        targetUserIds,
+        targetCount: targetUserIds.length,
         repeatCount: normalizedRepeatCount
     };
 }

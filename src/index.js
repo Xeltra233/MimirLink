@@ -49,7 +49,7 @@ import { buildStandardEvent, updateStandardEventRouting } from './standard-event
 import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 import { GroupRepeatDetector, normalizeGroupRepeatConfig, shouldObserveGroupRepeatMessage } from './group-repeat.js';
-import { DEFAULT_QQ_EMOJI_REACTION_ID, executeAdminPokeCommand, normalizeEmojiReactionId, resolveEmojiReactionId } from './qq-interactions.js';
+import { DEFAULT_QQ_EMOJI_REACTION_ID, executeAdminPokeCommand, isCommandInvocation, normalizeEmojiReactionId, resolveEmojiReactionId } from './qq-interactions.js';
 import { collectParticipantGroupIds, mergeParticipantIdentity, resolveParticipantIdentityFromOneBot } from './participant-identity.js';
 import {
     getParticipantProfileTimerKey,
@@ -1216,7 +1216,7 @@ function isParticipantProfileManualCommand(plainText, manualCommand) {
         return false;
     }
 
-    return plainText === manualCommand || plainText.startsWith(`${manualCommand} `);
+    return isCommandInvocation(plainText, manualCommand);
 }
 
 function extractTextAfterMentionCommand(event, command, mentionedParticipantId) {
@@ -2835,7 +2835,7 @@ async function handleParticipantProfileManualCommand(event, plainText) {
 async function handleAdminMentionCommand(event, plainText) {
     const commandConfig = config.chat?.commands?.adminMention || {};
     const mentionCommand = (commandConfig.command || '/at').trim();
-    if (plainText !== mentionCommand && !plainText.startsWith(`${mentionCommand} `)) {
+    if (!isCommandInvocation(plainText, mentionCommand)) {
         return false;
     }
 
