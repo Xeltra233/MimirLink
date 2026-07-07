@@ -16,6 +16,13 @@ test('config UI restores and saves group repeat settings', () => {
     assert.match(source, /groupRepeat:\s*\{\s*enabled:\s*document\.getElementById\('config-chat-group-repeat-enabled'\)\.checked,\s*triggerCount:\s*2,\s*cooldownMs:\s*\(parseInt\(document\.getElementById\('config-chat-group-repeat-cooldown-minutes'\)\.value\) \|\| 3\) \* 60000\s*\}/);
 });
 
+test('config UI restores and saves memory summary model provider selection', () => {
+    assert.ok(source.includes("const summaryLegacySelection = parseAIModelRef(currentConfig.memory?.summary?.model || '');"));
+    assert.ok(source.includes("const summaryModelSelection = getSelectedAIModelRef('config-memory-summary-model');"));
+    assert.ok(source.includes('modelProviderId: summaryModelSelection.providerId'));
+    assert.ok(source.includes('model: summaryModelSelection.model'));
+});
+
 test('config UI disables cooldown input when group repeat is off', () => {
     assert.ok(source.includes('function updateGroupRepeatFields()'));
     assert.ok(source.includes("setConfigInputDisabledState('config-chat-group-repeat-cooldown-minutes', !enabled);"));

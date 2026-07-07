@@ -31,7 +31,7 @@ import { dirname, join } from 'path';
 import fs from 'fs';
 
 import { OneBotClient, buildMentionMessage } from './onebot.js';
-import { buildAIToolContext, buildRealtimeGroundingMessage, buildVoicePrefaceText, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt } from './tools.js';
+import { buildAIToolContext, buildRealtimeGroundingMessage, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt } from './tools.js';
 import { CharacterManager } from './character.js';
 import { WorldBookManager } from './worldbook.js';
 import { PromptBuilder } from './prompt.js';
@@ -41,8 +41,9 @@ import { RegexProcessor } from './regex.js';
 import { setupRoutes } from './routes.js';
 import { syncPresetFiles } from './preset-sync.js';
 import { Logger } from './logger.js';
-import { TTSManager, VOICE_TYPES, parseVoiceTags } from './tts.js';
+import { TTSManager, VOICE_TYPES } from './tts.js';
 import { MessageRuntime } from './runtime.js';
+import { dispatchReply as dispatchReplyWithDeps } from './reply-dispatcher.js';
 import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.js';
 import { buildStandardEvent, updateStandardEventRouting } from './standard-event.js';
 import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
@@ -238,8 +239,9 @@ function toOptionalString(value) {
 function buildChatAIOverrides(config = {}) {
     const chatConfig = config.chat || {};
     const providerId = toOptionalString(chatConfig.modelProviderId);
-    const selectedProvider = providerId && Array.isArray(config.ai?.providers)
-        ? config.ai.providers.find((provider) => provider?.id === providerId)
+    const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
+    const selectedProvider = providerId
+        ? providers.find((provider) => provider?.id === providerId)
         : null;
     const model = toOptionalString(chatConfig.model) || toOptionalString(selectedProvider?.model);
     const overrides = {};
@@ -250,12 +252,42 @@ function buildChatAIOverrides(config = {}) {
     if (selectedProvider) {
         const baseUrl = toOptionalString(selectedProvider.baseUrl);
         const apiKey = toOptionalString(selectedProvider.apiKey);
-        if (baseUrl) {
-            overrides.baseUrl = baseUrl;
-        }
-        if (apiKey) {
-            overrides.apiKey = apiKey;
-        }
+        overrides.baseUrl = baseUrl;
+        overrides.apiKey = apiKey;
+    } else if (providerId && providers.length > 0) {
+        overrides.baseUrl = '';
+        overrides.apiKey = '';
+    }
+
+    return overrides;
+}
+
+function normalizeAIModelId(model = '') {
+    const text = toOptionalString(model);
+    if (!text) return '';
+    if (text.includes('::')) return text.split('::').pop();
+    if (text.includes('||')) return text.split('||').pop();
+    return text;
+}
+
+function buildAIOverridesFromProviderSelection(config = {}, { providerId = '', model = '' } = {}) {
+    const normalizedProviderId = toOptionalString(providerId);
+    const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
+    const selectedProvider = normalizedProviderId
+        ? providers.find((provider) => provider?.id === normalizedProviderId)
+        : null;
+    const normalizedModel = normalizeAIModelId(model) || toOptionalString(selectedProvider?.model);
+    const overrides = {};
+
+    if (normalizedModel) {
+        overrides.model = normalizedModel;
+    }
+    if (selectedProvider) {
+        overrides.baseUrl = toOptionalString(selectedProvider.baseUrl);
+        overrides.apiKey = toOptionalString(selectedProvider.apiKey);
+    } else if (normalizedProviderId && providers.length > 0) {
+        overrides.baseUrl = '';
+        overrides.apiKey = '';
     }
 
     return overrides;
@@ -352,6 +384,20 @@ function normalizeAIConfig(config) {
     config.chat = config.chat || {};
     config.chat.modelProviderId = toOptionalString(config.chat.modelProviderId);
     config.chat.model = toOptionalString(config.chat.model);
+
+    if (config.ai.variableParsing && typeof config.ai.variableParsing === 'object' && !Array.isArray(config.ai.variableParsing)) {
+        config.ai.variableParsing.providerId = toOptionalString(config.ai.variableParsing.providerId);
+        config.ai.variableParsing.model = normalizeAIModelId(config.ai.variableParsing.model);
+        delete config.ai.variableParsing.baseUrl;
+        delete config.ai.variableParsing.apiKey;
+    }
+
+    config.memory = config.memory || {};
+    config.memory.summary = config.memory.summary || {};
+    config.memory.summary.modelProviderId = toOptionalString(config.memory.summary.modelProviderId);
+    config.memory.summary.model = normalizeAIModelId(config.memory.summary.model);
+    delete config.memory.summary.baseUrl;
+    delete config.memory.summary.apiKey;
 }
 
 function clampInteger(value, minimum, maximum, fallback) {
@@ -613,14 +659,6 @@ function applyMemoryBinding() {
 
 function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function buildGroupMentionPrefix(userId) {
-    if (userId === undefined || userId === null || userId === '') {
-        return '';
-    }
-
-    return `[CQ:at,qq=${String(userId)}] `;
 }
 
 // LLM 开关状态
@@ -1982,113 +2020,14 @@ function sendEmojiReactionForEvent(event) {
 }
 
 async function dispatchReply(event, processedReply, options = {}) {
-    const ttsConfig = ttsManager.getConfig();
-    const { textParts } = parseVoiceTags(processedReply);
-    const splitMessage = options.forceSingleMessage ? false : config.chat.splitMessage !== false;
-    const segmentDelayMs = config.chat.segmentDelayMs ?? 300;
-    const proactiveIntervalMs = config.chat.proactiveMessageIntervalMs ?? Math.max(segmentDelayMs, 1200);
-    const quoteReplyEnabled = config.chat.quoteReplyEnabled !== false;
-    const mentionSenderOnReply = config.chat.mentionSenderOnReply !== false;
-    const mentionPrefix = event.message_type === 'group' && mentionSenderOnReply ? buildGroupMentionPrefix(event.user_id) : '';
-    let hasSentPrimary = false;
-
-    const sendText = async (content) => {
-        const message = !hasSentPrimary && mentionPrefix ? `${mentionPrefix}${content}` : content;
-        if (event.message_type === 'group') {
-            if (quoteReplyEnabled && event.message_id) {
-                // 引用+@：用消息段数组确保@生效
-                if (!hasSentPrimary && mentionSenderOnReply && event.user_id) {
-                    const segments = [
-                        { type: 'reply', data: { id: String(event.message_id) } },
-                        { type: 'at', data: { qq: String(event.user_id) } },
-                        { type: 'text', data: { text: String(content) } }
-                    ];
-                    await bot.sendGroupMessage(event.group_id, segments);
-                } else {
-                    await bot.sendGroupReply(event.group_id, event.message_id, message);
-                }
-            } else {
-                await bot.sendGroupMessage(event.group_id, message);
-            }
-        } else if (quoteReplyEnabled && event.message_id) {
-            await bot.sendPrivateReply(event.user_id, event.message_id, message);
-        } else {
-            await bot.sendPrivateMessage(event.user_id, message);
-        }
-
-        hasSentPrimary = true;
-    };
-
-    const sendVoice = async (audioPath, fallbackText) => {
-        const fallbackMessage = !hasSentPrimary && mentionPrefix && fallbackText
-            ? `${mentionPrefix}${fallbackText}`
-            : fallbackText;
-
-        if (event.message_type === 'group') {
-            if (quoteReplyEnabled && !hasSentPrimary && fallbackMessage && event.message_id) {
-                await bot.sendGroupReply(event.group_id, event.message_id, fallbackMessage);
-            } else {
-                if (!hasSentPrimary && fallbackMessage) {
-                    await bot.sendGroupMessage(event.group_id, fallbackMessage);
-                }
-                await bot.sendGroupRecord(event.group_id, audioPath);
-            }
-        } else if (quoteReplyEnabled && !hasSentPrimary && fallbackMessage && event.message_id) {
-            await bot.sendPrivateReply(event.user_id, event.message_id, fallbackMessage);
-        } else {
-            if (!hasSentPrimary && fallbackMessage) {
-                await bot.sendPrivateMessage(event.user_id, fallbackMessage);
-            }
-            await bot.sendPrivateRecord(event.user_id, audioPath);
-        }
-
-        hasSentPrimary = true;
-    };
-
-    for (const part of textParts) {
-        if (part.type === 'text') {
-            const segments = splitMessage
-                ? part.content.split(/\n\n+/).filter((segment) => segment.trim())
-                : [part.content];
-
-            for (let index = 0; index < segments.length; index += 1) {
-                const segment = segments[index];
-                const content = segment.trim();
-                if (!content) {
-                    continue;
-                }
-
-                const isPrimarySend = !hasSentPrimary;
-                await sendText(content);
-                const hasMoreSegments = index < segments.length - 1 || textParts.indexOf(part) < textParts.length - 1;
-                const delayMs = isPrimarySend ? segmentDelayMs : proactiveIntervalMs;
-                if (hasMoreSegments && delayMs > 0) {
-                    await sleep(delayMs);
-                }
-            }
-            continue;
-        }
-
-        if (part.type === 'voice' && ttsConfig.enabled) {
-            try {
-                logger.info(`[TTS] 合成语音: ${part.content.substring(0, 30)}...`);
-                recordDashboardMetric('tts');
-                const audioPath = await ttsManager.synthesize(part.content);
-                await sendVoice(audioPath, buildVoicePrefaceText(part.content));
-                logger.info('[TTS] 语音发送成功');
-            } catch (error) {
-                logger.warn(`[TTS] 语音合成失败: ${error.message}`);
-                const fallbackText = buildVoicePrefaceText(part.content);
-                await sendText(fallbackText);
-            }
-            continue;
-        }
-
-        if (part.type === 'voice') {
-            const fallbackText = buildVoicePrefaceText(part.content);
-            await sendText(fallbackText);
-        }
-    }
+    return dispatchReplyWithDeps(event, processedReply, options, {
+        config,
+        bot,
+        ttsManager,
+        logger,
+        recordDashboardMetric,
+        sleep
+    });
 }
 
 function isParticipantProfileBlacklisted(participantProfileConfig, participantId) {
@@ -2899,11 +2838,15 @@ async function processBatch(batch) {
                 }
             }
 
-            const summaryModel = config.memory?.summary?.model || null;
+            const summaryAIOverrides = buildAIOverridesFromProviderSelection(config, {
+                providerId: config.memory?.summary?.modelProviderId || '',
+                model: config.memory?.summary?.model || ''
+            });
+            const summaryModel = summaryAIOverrides.model || null;
             if (shouldRunLlm && !hasGroupRepeatObservable) {
                 await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
                     logger.info(`[摘要] 开始生成 (${messages.length}条消息) 模型:${summaryModel||'默认'}`);
-                    const result = await aiClient.summarize(messages, lockedSessionId, summaryModel);
+                    const result = await aiClient.summarize(messages, lockedSessionId, summaryAIOverrides);
                     logger.info(`[摘要] 完成 (${result?.length||0}字)`);
                     return result;
                 });
@@ -3064,7 +3007,7 @@ async function processBatch(batch) {
             }
 
             const summaryBeforeReply = await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
-                return aiClient.summarize(messages, lockedSessionId, summaryModel);
+                return aiClient.summarize(messages, lockedSessionId, summaryAIOverrides);
             });
             if (summaryBeforeReply) {
                 sessionManager.upsertSummaryIndexFromSummary(runtimeContext.recallNamespace, summaryBeforeReply, sessionId);
@@ -3305,9 +3248,10 @@ async function processBatch(batch) {
                                 const vpModel = config.chat?.varparseModel || config.ai?.variableParsing?.model || config.ai.model;
                                 const vpProviderId = config.chat?.varparseModelProviderId || config.ai?.variableParsing?.providerId || config.ai.activeProviderId;
                                 if (!config.chat?.varparseModel && !config.ai?.variableParsing?.model) { return; } // 未配置变量解析模型则跳过
-                                const vpProvider = config.ai.providers?.find(p => p.id === vpProviderId) || {};
-                                const vpBaseUrl = config.ai?.variableParsing?.baseUrl || vpProvider.baseUrl || config.ai.baseUrl;
-                                const vpApiKey = vpProvider.apiKey || config.ai.apiKey;
+                                const vpOverrides = buildAIOverridesFromProviderSelection(config, {
+                                    providerId: vpProviderId,
+                                    model: vpModel
+                                });
 
                                 let varStatus = '';
                                 try {
@@ -3331,9 +3275,7 @@ ${varStatus || '(无)'}
                                 const vpMessages = [{ role: 'user', content: varParsePrompt }];
                                 const vpResult = await aiClient.chat(vpMessages, {
                                     temperature: 0.1, maxTokens: 1024,
-                                    model: vpModel,
-                                    baseUrl: vpBaseUrl || undefined,
-                                    apiKey: vpApiKey || undefined
+                                    ...vpOverrides
                                 });
                                 const vpReply = aiClient.getVisibleResponseContent(vpResult);
                                 if (vpReply && vpReply.includes('<UpdateVariable>')) {

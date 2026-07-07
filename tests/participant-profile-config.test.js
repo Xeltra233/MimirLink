@@ -58,9 +58,50 @@ test('participant profile config prefers configured values', () => {
         triggerMode: 'both',
         analysisMode: 'messages_only',
         model: 'profile-model',
-        baseUrl: 'https://example.test/v1',
-        apiKey: 'secret-key',
+        baseUrl: '',
+        apiKey: '',
         retryOnError: false
+    });
+});
+
+test('participant profile provider credentials override stale profile api fields', () => {
+    const config = {
+        ai: {
+            providers: [
+                {
+                    id: 'cloud-main',
+                    model: 'chat-model',
+                    baseUrl: 'https://current.example/v1',
+                    apiKey: 'current-key'
+                }
+            ]
+        },
+        memory: {
+            participantProfile: {
+                providerId: 'cloud-main',
+                model: 'chat-model',
+                baseUrl: 'https://stale.example/v1',
+                apiKey: 'stale-key'
+            }
+        }
+    };
+
+    assert.deepEqual(getParticipantProfileConfig(config), {
+        enabled: false,
+        injectEnabled: true,
+        blacklistParticipantIds: [],
+        manualCommand: '/人物档案',
+        threshold: 8,
+        idleMs: 2 * 60 * 1000,
+        intervalMs: 5 * 60 * 1000,
+        sourceMessageLimit: 50,
+        triggerMode: 'idle',
+        analysisMode: 'bot_only_profile',
+        model: 'chat-model',
+        baseUrl: 'https://current.example/v1',
+        apiKey: 'current-key',
+        retryOnError: true,
+        providerId: 'cloud-main'
     });
 });
 
@@ -140,8 +181,8 @@ test('normalize participant profile config writes normalized values back to conf
         triggerMode: 'interval',
         analysisMode: 'messages_only',
         model: 'profile-model',
-        baseUrl: 'https://example.test/v1',
-        apiKey: 'token',
+        baseUrl: '',
+        apiKey: '',
         retryOnError: false
     });
 
@@ -157,8 +198,36 @@ test('normalize participant profile config writes normalized values back to conf
         triggerMode: 'interval',
         analysisMode: 'messages_only',
         model: 'profile-model',
-        baseUrl: 'https://example.test/v1',
-        apiKey: 'token',
         retryOnError: false
     });
+});
+
+test('normalize participant profile config removes legacy dedicated credentials on load', () => {
+    const config = {
+        ai: {
+            providers: [{
+                id: 'default',
+                baseUrl: 'https://provider.example/v1',
+                apiKey: 'provider-key',
+                model: 'provider-model'
+            }]
+        },
+        memory: {
+            participantProfile: {
+                providerId: 'default',
+                model: 'provider-model',
+                baseUrl: 'https://old-profile.example/v1',
+                apiKey: 'old-profile-key'
+            }
+        }
+    };
+
+    const normalized = normalizeParticipantProfileConfig(config);
+
+    assert.equal(normalized.baseUrl, 'https://provider.example/v1');
+    assert.equal(normalized.apiKey, 'provider-key');
+    assert.equal(config.memory.participantProfile.providerId, 'default');
+    assert.equal(config.memory.participantProfile.model, 'provider-model');
+    assert.equal(config.memory.participantProfile.baseUrl, undefined);
+    assert.equal(config.memory.participantProfile.apiKey, undefined);
 });

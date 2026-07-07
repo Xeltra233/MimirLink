@@ -1040,7 +1040,7 @@ test('admin UI includes role-first knowledge hooks and AI-learning defaults', ()
     assert.ok(!html.includes('id="knowledge-import-scope-key"'));
 });
 
-test('config routes preserve participant profile api key mask and trigger timer reset', async () => {
+test('config routes drop participant profile dedicated api credentials and trigger timer reset', async () => {
     const { manager } = createTempManager();
     let saveCalls = 0;
     let timerResetCalls = 0;
@@ -1063,6 +1063,7 @@ test('config routes preserve participant profile api key mask and trigger timer 
                 maxSourceMessages: 50,
                 triggerMode: 'idle',
                 analysisMode: 'profile_plus_messages',
+                providerId: 'default',
                 model: 'profile-model',
                 baseUrl: 'https://profile.example/v1',
                 apiKey: 'secret-token'
@@ -1088,6 +1089,7 @@ test('config routes preserve participant profile api key mask and trigger timer 
                 {
                     id: 'default',
                     provider: 'openai-compatible',
+                    baseUrl: 'https://provider.example/v1',
                     apiKey: 'provider-secret',
                     model: 'main-model'
                 }
@@ -1139,7 +1141,8 @@ test('config routes preserve participant profile api key mask and trigger timer 
         assert.equal(getData.tts.apiKey, undefined);
         assert.equal(getData.tts.hasApiKey, true);
         assert.equal(getData.memory.participantProfile.apiKey, undefined);
-        assert.equal(getData.memory.participantProfile.hasApiKey, true);
+        assert.equal(getData.memory.participantProfile.baseUrl, undefined);
+        assert.equal(getData.memory.participantProfile.hasApiKey, false);
         assert.equal(getData.memory.participantProfile.enabled, true);
         assert.equal(getData.memory.participantProfile.injectEnabled, true);
         assert.deepEqual(getData.memory.participantProfile.blacklistParticipantIds, ['10002']);
@@ -1201,6 +1204,7 @@ test('config routes preserve participant profile api key mask and trigger timer 
                         intervalMs: 90000,
                         maxSourceMessages: 30,
                         analysisMode: 'messages_only',
+                        providerId: 'default',
                         model: 'profile-model-2',
                         baseUrl: 'https://profile2.example/v1',
                         apiKey: '******'
@@ -1214,7 +1218,8 @@ test('config routes preserve participant profile api key mask and trigger timer 
         assert.equal(saveCalls, 1);
         assert.ok(timerResetCalls >= 1);
         assert.equal(config.ai.apiKey, 'global-secret');
-        assert.equal(config.memory.participantProfile.apiKey, 'secret-token');
+        assert.equal(config.memory.participantProfile.apiKey, undefined);
+        assert.equal(config.memory.participantProfile.baseUrl, undefined);
         assert.equal(config.memory.participantProfile.enabled, false);
         assert.equal(config.memory.participantProfile.injectEnabled, false);
         assert.deepEqual(config.memory.participantProfile.blacklistParticipantIds, ['10003', '10004']);
@@ -1225,8 +1230,8 @@ test('config routes preserve participant profile api key mask and trigger timer 
         assert.equal(config.memory.participantProfile.intervalMs, 90000);
         assert.equal(config.memory.participantProfile.maxSourceMessages, 30);
         assert.equal(config.memory.participantProfile.analysisMode, 'messages_only');
+        assert.equal(config.memory.participantProfile.providerId, 'default');
         assert.equal(config.memory.participantProfile.model, 'profile-model-2');
-        assert.equal(config.memory.participantProfile.baseUrl, 'https://profile2.example/v1');
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -1567,7 +1572,6 @@ test('message runtime handles admin proactive mention commands before normal tri
     assert.ok(source.includes('await sendFailureMessage(event, `请使用 ${mentionCommand} @某人 让 AI 生成的内容要求`);'));
     assert.ok(source.includes('await sendFailureMessage(event, `请在 ${mentionCommand} @某人 后填写让 AI 生成的内容要求`);'));
     assert.ok(source.includes("import { buildAIToolContext,"));
-    assert.ok(source.includes('buildVoicePrefaceText'));
     assert.ok(source.includes('appendMentionTaskToPromptMessages'));
     assert.ok(source.includes('generateMentionTextFromPrompt'));
     assert.ok(source.includes('const messageText = await generateAdminMentionReply(event, mentionedParticipant, promptText);'));
@@ -1579,16 +1583,18 @@ test('message runtime handles admin proactive mention commands before normal tri
 
 test('message dispatch adds configurable CQ mention and skips quote reply for split group replies', () => {
     const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
-    assert.ok(source.includes('function buildGroupMentionPrefix(userId) {'));
-    assert.ok(source.includes('return `[CQ:at,qq=${String(userId)}] `;'));
-    assert.ok(source.includes("const mentionSenderOnReply = config.chat.mentionSenderOnReply !== false;"));
-    assert.ok(source.includes("const mentionPrefix = event.message_type === 'group' && mentionSenderOnReply ? buildGroupMentionPrefix(event.user_id) : '';"));
-    assert.ok(source.includes("const message = !hasSentPrimary && mentionPrefix ? `${mentionPrefix}${content}` : content;"));
-    assert.ok(source.includes("if (quoteReplyEnabled && event.message_id) {"));
-    assert.ok(source.includes('const segments = ['));
-    assert.ok(source.includes("{ type: 'reply', data: { id: String(event.message_id) } },"));
-    assert.ok(source.includes("{ type: 'at', data: { qq: String(event.user_id) } },"));
-    assert.ok(source.includes("await bot.sendGroupMessage(event.group_id, message);"));
+    const dispatcherSource = fs.readFileSync(new URL('../src/reply-dispatcher.js', import.meta.url), 'utf8');
+    assert.ok(source.includes('dispatchReplyWithDeps(event, processedReply, options'));
+    assert.ok(dispatcherSource.includes('function buildGroupMentionPrefix(userId) {'));
+    assert.ok(dispatcherSource.includes('return `[CQ:at,qq=${String(userId)}] `;'));
+    assert.ok(dispatcherSource.includes("const mentionSenderOnReply = config.chat.mentionSenderOnReply !== false;"));
+    assert.ok(dispatcherSource.includes("const mentionPrefix = event.message_type === 'group' && mentionSenderOnReply ? buildGroupMentionPrefix(event.user_id) : '';"));
+    assert.ok(dispatcherSource.includes("const message = !hasSentPrimary && mentionPrefix ? `${mentionPrefix}${content}` : content;"));
+    assert.ok(dispatcherSource.includes("if (quoteReplyEnabled && event.message_id) {"));
+    assert.ok(dispatcherSource.includes('const segments = ['));
+    assert.ok(dispatcherSource.includes("{ type: 'reply', data: { id: String(event.message_id) } },"));
+    assert.ok(dispatcherSource.includes("{ type: 'at', data: { qq: String(event.user_id) } },"));
+    assert.ok(dispatcherSource.includes("await bot.sendGroupMessage(event.group_id, message);"));
 });
 
 test('admin UI exposes mention sender reply toggle in config hooks', () => {

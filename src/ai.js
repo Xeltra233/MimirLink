@@ -68,6 +68,16 @@ export class AIClient {
         this.logger.info?.(`[AI执行] ${stage}`, details);
     }
 
+    getConfiguredProviders() {
+        if (Array.isArray(this.config.providers)) {
+            return this.config.providers;
+        }
+        if (Array.isArray(this.config.ai?.providers)) {
+            return this.config.ai.providers;
+        }
+        return [];
+    }
+
     extractTextContent(content) {
         if (typeof content === 'string') {
             return content;
@@ -394,10 +404,12 @@ export class AIClient {
     }
 
     resolveChatOptions(overrides = {}) {
+        const hasBaseUrlOverride = Object.prototype.hasOwnProperty.call(overrides, 'baseUrl') && overrides.baseUrl !== undefined;
+        const hasApiKeyOverride = Object.prototype.hasOwnProperty.call(overrides, 'apiKey') && overrides.apiKey !== undefined;
         return {
             model: overrides.model || this.config.model,
-            baseUrl: overrides.baseUrl || this.config.baseUrl,
-            apiKey: overrides.apiKey || this.config.apiKey,
+            baseUrl: hasBaseUrlOverride ? overrides.baseUrl : this.config.baseUrl,
+            apiKey: hasApiKeyOverride ? overrides.apiKey : this.config.apiKey,
             maxTokens: overrides.maxTokens ?? this.config.maxTokens,
             temperature: overrides.temperature ?? this.config.temperature
         };
@@ -1017,103 +1029,6 @@ export class AIClient {
 
         throw new Error('文本工具兜底轮次过多，已停止继续请求');
     }
-    async chatWithTools(messages, toolContext = {}, overrides = {}) {
-        const tools = Array.isArray(toolContext?.tools) ? toolContext.tools : [];
-        const handlers = toolContext?.handlers || {};
-        const textToolFallbackEnabled = toolContext?.textToolFallback?.enabled === true;
-
-        if (tools.length === 0) {
-            return this.chat(messages, overrides);
-        }
-
-        let conversation = Array.isArray(messages) ? messages.map((message) => ({ ...message })) : [];
-
-        for (let round = 0; round < 4; round += 1) {
-            const payload = this.buildToolsChatPayload(conversation, tools, overrides);
-            this.logPipelineStage('开始执行 chatWithTools', {
-                round: round + 1,
-                toolCount: tools.length,
-                messageCount: conversation.length,
-                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean),
-                textToolFallbackEnabled
-            });
-
-            const result = await this.sendChatRequest(payload, overrides);
-            if (!result.ok) {
-                if (textToolFallbackEnabled && this.isDegradedFunctionError(result.errorText)) {
-                    this.logPipelineStage('原生工具调用失败，切换文本工具兜底', {
-                        round: round + 1,
-                        status: result.status,
-                        errorText: String(result.errorText || '').slice(0, 500)
-                    });
-                    return this.runTextToolFallback(messages, toolContext, overrides);
-                }
-                throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
-            }
-
-            const assistantMessage = result.data?.choices?.[0]?.message || {};
-            const toolCalls = Array.isArray(assistantMessage.tool_calls) ? assistantMessage.tool_calls : [];
-            const assistantContent = this.extractTextContent(assistantMessage.content);
-
-            if (toolCalls.length === 0) {
-                let extractedError = null;
-                try {
-                    return await this.extractChatContentWithPrefillFallback(result.data, conversation, overrides);
-                } catch (error) {
-                    extractedError = error;
-                }
-
-                if (!this.isEmptyMessageContentError(extractedError)) {
-                    throw extractedError;
-                }
-
-                this.logPipelineStage('chatWithTools 检测到非流式空回复，尝试流式提取兜底', {
-                    round: round + 1,
-                    diagnostic: extractedError?.diagnostic || null
-                });
-
-                const streamingResult = await this.sendStreamingChatRequest(payload, overrides);
-                if (!streamingResult.ok) {
-                    throw new Error(`AI API 错误: ${streamingResult.status} - ${streamingResult.errorText}`);
-                }
-
-                return await this.extractChatContentWithPrefillFallback(streamingResult.data, conversation, overrides);
-            }
-
-            conversation.push({
-                role: 'assistant',
-                content: assistantContent || '',
-                tool_calls: toolCalls
-            });
-
-            for (const toolCall of toolCalls) {
-                const toolName = toolCall?.function?.name || '';
-                const handler = handlers[toolName];
-                let toolResult;
-
-                if (typeof handler !== 'function') {
-                    toolResult = { ok: false, error: `未找到工具处理器: ${toolName}` };
-                } else {
-                    let parsedArgs = {};
-                    try {
-                        parsedArgs = toolCall?.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
-                    } catch {
-                        parsedArgs = {};
-                    }
-                    toolResult = await handler(parsedArgs);
-                }
-
-                conversation.push({
-                    role: 'tool',
-                    tool_call_id: toolCall.id,
-                    content: JSON.stringify(toolResult, null, 2)
-                });
-            }
-        }
-
-        throw new Error('工具调用轮次过多，已停止继续请求');
-    }
-
     normalizeModel(model = {}) {
         const tokenInfo = this.extractModelTokenInfo(model);
         return {
@@ -1128,8 +1043,10 @@ export class AIClient {
     }
 
     async listModels(options = {}) {
-        const baseUrl = options.baseUrl || this.config.baseUrl;
-        const apiKey = options.apiKey || this.config.apiKey;
+        const hasBaseUrlOverride = Object.prototype.hasOwnProperty.call(options, 'baseUrl') && options.baseUrl !== undefined;
+        const hasApiKeyOverride = Object.prototype.hasOwnProperty.call(options, 'apiKey') && options.apiKey !== undefined;
+        const baseUrl = hasBaseUrlOverride ? options.baseUrl : this.config.baseUrl;
+        const apiKey = hasApiKeyOverride ? options.apiKey : this.config.apiKey;
         const apiUrl = this.resolveApiUrl('/models', baseUrl);
 
         if (!apiUrl) {
@@ -1280,14 +1197,14 @@ export class AIClient {
             const backupModel = this.config.chat?.backupModel;
             const backupProviderId = this.config.chat?.backupModelProviderId;
             if (backupModel && backupProviderId) {
-                const backupProvider = (this.config.ai?.providers || []).find(p => p.id === backupProviderId);
+                const backupProvider = this.getConfiguredProviders().find(p => p.id === backupProviderId);
                 if (backupProvider) {
                     this.logPipelineStage('降级全失败，尝试切换到备用模型', { provider: backupProviderId, model: backupModel });
                     const backupOverrides = {
                         ...overrides,
                         model: backupModel,
-                        baseUrl: backupProvider.baseUrl || overrides.baseUrl,
-                        apiKey: backupProvider.apiKey || overrides.apiKey
+                        baseUrl: backupProvider.baseUrl || '',
+                        apiKey: backupProvider.apiKey || ''
                     };
                     const backupPayload = this.buildChatPayload(messages, backupOverrides);
                     const backupResult = await this.sendChatRequest(backupPayload, backupOverrides);
@@ -1314,14 +1231,14 @@ export class AIClient {
         const backupModel = this.config.chat?.backupModel;
         const backupProviderId = this.config.chat?.backupModelProviderId;
         if (backupModel && backupProviderId) {
-            const backupProvider = (this.config.ai?.providers || []).find(p => p.id === backupProviderId);
+            const backupProvider = this.getConfiguredProviders().find(p => p.id === backupProviderId);
             if (backupProvider) {
                 this.logPipelineStage('尝试切换到备用模型', { provider: backupProviderId, model: backupModel });
                 const backupOverrides = {
                     ...overrides,
                     model: backupModel,
-                    baseUrl: backupProvider.baseUrl || overrides.baseUrl,
-                    apiKey: backupProvider.apiKey || overrides.apiKey
+                    baseUrl: backupProvider.baseUrl || '',
+                    apiKey: backupProvider.apiKey || ''
                 };
                 const backupPayload = this.buildChatPayload(messages, backupOverrides);
                 const backupResult = await this.sendChatRequest(backupPayload, backupOverrides);
@@ -1350,42 +1267,51 @@ export class AIClient {
                 content: `会话ID: ${sessionId}\n\n对话内容:\n${messages.map((message) => `[${message.role}] ${message.content}`).join('\n')}`
             }
         ];
-        const overrides = modelOverride ? { model: modelOverride } : {};
+        const overrides = modelOverride && typeof modelOverride === 'object'
+            ? { ...modelOverride }
+            : (modelOverride ? { model: modelOverride } : {});
         return this.chat(summaryPrompt, overrides);
     }
 
     async chatWithTools(messages, toolContext = {}, overrides = {}) {
         const tools = Array.isArray(toolContext?.tools) ? toolContext.tools : [];
         const handlers = toolContext?.handlers || {};
+        const textToolFallbackEnabled = toolContext?.textToolFallback?.enabled === true;
 
         if (tools.length === 0) {
             return this.chat(messages, overrides);
         }
 
         let conversation = Array.isArray(messages) ? messages.map((message) => ({ ...message })) : [];
+        let effectiveOverrides = { ...overrides };
 
         for (let round = 0; round < 4; round += 1) {
-            const payload = this.buildToolsChatPayload(conversation, tools, overrides);
+            const payload = this.buildToolsChatPayload(conversation, tools, effectiveOverrides);
+            let requestPayload = payload;
             this.logPipelineStage('开始执行 chatWithTools', {
                 round: round + 1,
                 toolCount: tools.length,
                 messageCount: conversation.length,
-                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean)
+                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean),
+                textToolFallbackEnabled
             });
 
-            let result = await this.sendChatRequest(payload, overrides);
+            let result = await this.sendChatRequest(payload, effectiveOverrides);
             if (!result.ok) {
+                const primaryErrorText = result.errorText;
                 // 备用模型切换
                 const backupModel2 = this.config.chat?.backupModel;
                 const backupProviderId2 = this.config.chat?.backupModelProviderId;
                 if (backupModel2 && backupProviderId2) {
-                    const backupProvider2 = (this.config.ai?.providers || []).find(p => p.id === backupProviderId2);
+                    const backupProvider2 = this.getConfiguredProviders().find(p => p.id === backupProviderId2);
                     if (backupProvider2) {
                         this.logPipelineStage('chatWithTools 主模型失败，尝试备用模型');
-                        const backupOv = { ...overrides, model: backupModel2, baseUrl: backupProvider2.baseUrl || overrides.baseUrl, apiKey: backupProvider2.apiKey || overrides.apiKey };
+                        const backupOv = { ...effectiveOverrides, model: backupModel2, baseUrl: backupProvider2.baseUrl || '', apiKey: backupProvider2.apiKey || '' };
                         const backupPayload = this.buildToolsChatPayload(conversation, tools, backupOv);
                         const backupResult = await this.sendChatRequest(backupPayload, backupOv);
                         if (backupResult.ok) {
+                            effectiveOverrides = backupOv;
+                            requestPayload = backupPayload;
                             result = backupResult;
                             this.logPipelineStage('备用模型请求成功');
                         } else {
@@ -1394,6 +1320,14 @@ export class AIClient {
                     }
                 }
                 if (!result.ok) {
+                    if (textToolFallbackEnabled && this.isDegradedFunctionError(primaryErrorText)) {
+                        this.logPipelineStage('原生工具调用失败，切换文本工具兜底', {
+                            round: round + 1,
+                            status: result.status,
+                            errorText: String(primaryErrorText || '').slice(0, 500)
+                        });
+                        return this.runTextToolFallback(messages, toolContext, effectiveOverrides);
+                    }
                     throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
                 }
             }
@@ -1405,7 +1339,7 @@ export class AIClient {
             if (toolCalls.length === 0) {
                 let extractedError = null;
                 try {
-                    return await this.extractChatContentWithPrefillFallback(result.data, conversation, overrides);
+                    return await this.extractChatContentWithPrefillFallback(result.data, conversation, effectiveOverrides);
                 } catch (error) {
                     extractedError = error;
                 }
@@ -1419,12 +1353,12 @@ export class AIClient {
                     diagnostic: extractedError?.diagnostic || null
                 });
 
-                const streamingResult = await this.sendStreamingChatRequest(payload, overrides);
+                const streamingResult = await this.sendStreamingChatRequest(requestPayload, effectiveOverrides);
                 if (!streamingResult.ok) {
                     throw new Error(`AI API 错误: ${streamingResult.status} - ${streamingResult.errorText}`);
                 }
 
-                return await this.extractChatContentWithPrefillFallback(streamingResult.data, conversation, overrides);
+                return await this.extractChatContentWithPrefillFallback(streamingResult.data, conversation, effectiveOverrides);
             }
 
             conversation.push({

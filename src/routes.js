@@ -1287,6 +1287,22 @@ export function setupRoutes(app, config, saveConfig, managers) {
         return value;
     };
 
+    const stripFeatureScopedAISecrets = (targetConfig = {}) => {
+        if (targetConfig?.ai?.variableParsing) {
+            delete targetConfig.ai.variableParsing.baseUrl;
+            delete targetConfig.ai.variableParsing.apiKey;
+        }
+        if (targetConfig?.memory?.participantProfile) {
+            delete targetConfig.memory.participantProfile.baseUrl;
+            delete targetConfig.memory.participantProfile.apiKey;
+        }
+        if (targetConfig?.memory?.summary) {
+            delete targetConfig.memory.summary.baseUrl;
+            delete targetConfig.memory.summary.apiKey;
+        }
+        return targetConfig;
+    };
+
     const normalizeAccessControlConfig = () => {
         config.chat = config.chat || {};
         const mode = config.chat.accessControlMode || 'allowlist';
@@ -1459,8 +1475,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
         safeOneBotConfig.hasAccessToken = Boolean(accessToken);
         const { apiKey: ttsApiKey, ...safeTtsConfig } = config.tts || {};
         safeTtsConfig.hasApiKey = Boolean(ttsApiKey);
-        const { apiKey: participantProfileApiKey, ...safeParticipantProfileConfig } = config.memory?.participantProfile || {};
-        safeParticipantProfileConfig.hasApiKey = Boolean(participantProfileApiKey);
+        const {
+            apiKey: participantProfileApiKey,
+            baseUrl: participantProfileBaseUrl,
+            ...safeParticipantProfileConfig
+        } = config.memory?.participantProfile || {};
+        safeParticipantProfileConfig.hasApiKey = false;
         const safeConfig = {
             ...config,
             auth: safeAuthConfig,
@@ -1520,9 +1540,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
             if (newConfig?.ai?.tools?.webSearch?.apiKey === '******') {
                 newConfig.ai.tools.webSearch.apiKey = config.ai?.tools?.webSearch?.apiKey || '';
             }
-            if (newConfig?.memory?.participantProfile?.apiKey === '******') {
+            if (newConfig?.memory?.participantProfile) {
                 delete newConfig.memory.participantProfile.apiKey;
+                delete newConfig.memory.participantProfile.baseUrl;
             }
+            stripFeatureScopedAISecrets(newConfig);
+            stripFeatureScopedAISecrets(config);
 
 			const onebotChanged = (
 				newConfig.onebot?.url !== undefined && newConfig.onebot.url !== config.onebot?.url
@@ -3940,12 +3963,16 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const provider = (providerId && Array.isArray(config.ai?.providers))
                 ? config.ai.providers.find(p => p.id === providerId)
                 : null;
+            const hasBodyBaseUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'baseUrl') && baseUrl !== undefined;
+            const hasBodyApiKey = Object.prototype.hasOwnProperty.call(req.body || {}, 'apiKey') && apiKey !== undefined;
+            const resolvedBaseUrl = hasBodyBaseUrl ? baseUrl : (provider?.baseUrl ?? config.ai?.baseUrl);
+            const resolvedApiKey = hasBodyApiKey ? apiKey : (provider?.apiKey ?? config.ai?.apiKey);
             const models = await aiClient.listModels({
-                baseUrl: baseUrl || provider?.baseUrl || config.ai?.baseUrl,
-                apiKey: apiKey || provider?.apiKey || config.ai?.apiKey
+                baseUrl: resolvedBaseUrl,
+                apiKey: resolvedApiKey
             });
             logger.info(`[API ${req.requestId || 'no-id'}] 模型列表拉取完成`, {
-                baseUrl: baseUrl || config.ai?.baseUrl || '',
+                baseUrl: resolvedBaseUrl || '',
                 modelCount: Array.isArray(models) ? models.length : 0
             });
             res.json({ success: true, models });
@@ -3961,12 +3988,16 @@ export function setupRoutes(app, config, saveConfig, managers) {
             const provider = (providerId && Array.isArray(config.ai?.providers))
                 ? config.ai.providers.find(p => p.id === providerId)
                 : null;
+            const hasBodyBaseUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'baseUrl') && baseUrl !== undefined;
+            const hasBodyApiKey = Object.prototype.hasOwnProperty.call(req.body || {}, 'apiKey') && apiKey !== undefined;
+            const resolvedBaseUrl = hasBodyBaseUrl ? baseUrl : (provider?.baseUrl ?? config.ai?.baseUrl);
+            const resolvedApiKey = hasBodyApiKey ? apiKey : (provider?.apiKey ?? config.ai?.apiKey);
             const result = await aiClient.probeModel(model, {
-                baseUrl: baseUrl || provider?.baseUrl || config.ai?.baseUrl,
-                apiKey: apiKey || provider?.apiKey || config.ai?.apiKey
+                baseUrl: resolvedBaseUrl,
+                apiKey: resolvedApiKey
             });
             logger.info(`[API ${req.requestId || 'no-id'}] 模型探测完成`, {
-                baseUrl: baseUrl || config.ai?.baseUrl || '',
+                baseUrl: resolvedBaseUrl || '',
                 model,
                 resolvedModel: result.model?.id || result.model?.name || '',
                 probeOnly: true,
@@ -4749,11 +4780,17 @@ ${promptListText}
     function resolveRangeModelSelection({ modelProviderId = '', model = '' } = {}) {
         const providerId = String(modelProviderId || config.chat?.modelProviderId || config.ai?.activeProviderId || '').trim();
         const requestedModel = normalizeRangeModelId(model || config.chat?.model || config.ai?.model || '');
+        const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
         const provider = providerId
-            ? (config.ai?.providers || []).find((item) => item?.id === providerId)
+            ? providers.find((item) => item?.id === providerId)
             : null;
-        const baseUrl = provider?.baseUrl || config.ai?.baseUrl || '';
-        const apiKey = provider?.apiKey || ((providerId === config.ai?.activeProviderId || providerId === 'default') ? config.ai?.apiKey : '') || config.ai?.apiKey || '';
+        const shouldUseRootFallback = !providerId || providers.length === 0;
+        const baseUrl = provider
+            ? (provider.baseUrl || '')
+            : (shouldUseRootFallback ? (config.ai?.baseUrl || '') : '');
+        const apiKey = provider
+            ? (provider.apiKey || '')
+            : (shouldUseRootFallback ? (config.ai?.apiKey || '') : '');
         return {
             provider,
             providerId,
@@ -4797,15 +4834,15 @@ ${promptListText}
         return error?.message || '连接 AI 服务失败';
     }
 
-    function buildRangeAIOverrides({ modelProviderId = '', model = '', baseUrl = '', apiKey = '' } = {}) {
+    function buildRangeAIOverrides({ modelProviderId = '', model = '' } = {}) {
         const selection = resolveRangeModelSelection({ modelProviderId, model });
         const overrides = {
             provider: selection.provider,
             providerId: selection.providerId || '',
             providerName: selection.provider?.name || '',
             model: normalizeRangeModelId(model) || selection.model || '',
-            baseUrl: baseUrl || selection.baseUrl || '',
-            apiKey: apiKey || selection.apiKey || ''
+            baseUrl: selection.baseUrl || '',
+            apiKey: selection.apiKey || ''
         };
         assertRangeAIReady(overrides);
         return overrides;
@@ -5851,7 +5888,7 @@ ${promptListText}
 
     app.post('/api/prompt-range/agent-chat', requireAuth, async (req, res) => {
         try {
-            const { messages, baseUrl, apiKey, modelProviderId, model, rangeContext } = req.body || {};
+            const { messages, modelProviderId, model, rangeContext } = req.body || {};
             if (!Array.isArray(messages) || messages.length === 0) {
                 return res.status(400).json({ success: false, error: '请提供消息数组' });
             }
@@ -5871,7 +5908,7 @@ ${promptListText}
                 }
             }
 
-            const aiOverrides = buildRangeAIOverrides({ modelProviderId, model, baseUrl, apiKey });
+            const aiOverrides = buildRangeAIOverrides({ modelProviderId, model });
             const replyResult = await aiClient.chat(normalizedMessages, {
                 baseUrl: aiOverrides.baseUrl,
                 apiKey: aiOverrides.apiKey,
@@ -6216,12 +6253,14 @@ ${lastResultText}
 
             optimizeMetrics.promptBuildMs = Date.now() - promptStartedAt;
 
-            const overrides = { temperature: 0.4, maxTokens: 4096 };
-            if (modelProviderId) {
-                const provider = (config.ai?.providers || []).find(p => p.id === modelProviderId);
-                if (provider) { overrides.baseUrl = provider.baseUrl; overrides.apiKey = provider.apiKey; }
-            }
-            if (model) overrides.model = String(model).includes('||') ? String(model).split('||').pop() : model;
+            const rangeAIOverrides = buildRangeAIOverrides({ modelProviderId, model });
+            const overrides = {
+                temperature: 0.4,
+                maxTokens: 4096,
+                model: rangeAIOverrides.model,
+                baseUrl: rangeAIOverrides.baseUrl,
+                apiKey: rangeAIOverrides.apiKey
+            };
 
             const modelStartedAt = Date.now();
             const aiResult = await aiClient.chat([{ role: 'user', content: optimizePrompt }], overrides);
@@ -6411,7 +6450,22 @@ ${lastResultText}
     // 靶场偏好持久化
     const RANGE_PREFS_PATH = path.join(__dirname, '..', 'data', 'range-prefs.json');
     function loadRangePrefs() { try { return JSON.parse(fsSync.readFileSync(RANGE_PREFS_PATH, 'utf8')); } catch(e) { return {}; } }
-    function saveRangePrefs(prefs) { fsSync.writeFileSync(RANGE_PREFS_PATH, JSON.stringify(prefs, null, 2), 'utf8'); }
+    function sanitizeRangePrefs(prefs = {}) {
+        const cloned = JSON.parse(JSON.stringify(prefs || {}));
+        const strip = (value) => {
+            if (!value || typeof value !== 'object') return;
+            if (Array.isArray(value)) {
+                value.forEach(strip);
+                return;
+            }
+            delete value.baseUrl;
+            delete value.apiKey;
+            for (const child of Object.values(value)) strip(child);
+        };
+        strip(cloned);
+        return cloned;
+    }
+    function saveRangePrefs(prefs) { fsSync.writeFileSync(RANGE_PREFS_PATH, JSON.stringify(sanitizeRangePrefs(prefs), null, 2), 'utf8'); }
 
     app.get('/api/prompt-range/prefs', requireAuth, (req, res) => {
         res.json({ success: true, prefs: loadRangePrefs() });
@@ -6461,11 +6515,12 @@ ${lastResultText}
             let foundProvider = null, foundModel = null;
             const ordered = [...(config.ai?.providers || [])];
             if (modelProviderId) {
-                const idx = ordered.findIndex(p => p.id === modelProviderId);
-                if (idx >= 0) ordered.unshift(...ordered.splice(idx, 1));
-            }
-
-            if (explicitModel) {
+                foundProvider = ordered.find(p => p.id === modelProviderId) || null;
+                if (foundProvider?.baseUrl && foundProvider?.apiKey) {
+                    const embedM = (foundProvider.models || []).find(m => classifyModel(m.id||m.name||'') === 'embedding');
+                    foundModel = explicitModel || embedM?.id || embedM?.name || null;
+                }
+            } else if (explicitModel) {
                 // 用户手动选了模型
                 for (const p of ordered) {
                     if (p.baseUrl && p.apiKey) { foundProvider = p; foundModel = explicitModel; break; }
@@ -6987,6 +7042,7 @@ ${lastResultText}
         const embedProviderId = rangeCorpusStore.embedProviderId;
         const providers = config.ai?.providers || [];
         const embedProv = embedProviderId ? providers.find(p => p.id === embedProviderId) : providers[0];
+        if (embedProviderId && !embedProv) return null;
         if (!embedProv?.baseUrl || !embedProv?.apiKey) return null;
 
         const baseUrl = embedProv.baseUrl.replace(/\/+$/, '');

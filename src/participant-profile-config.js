@@ -65,6 +65,8 @@ export function getParticipantProfileConfig(config = {}) {
     const selectedProvider = providerId && Array.isArray(config.ai?.providers)
         ? config.ai.providers.find((provider) => provider?.id === providerId)
         : null;
+    const selectedProviderBaseUrl = toOptionalString(selectedProvider?.baseUrl);
+    const selectedProviderApiKey = toOptionalString(selectedProvider?.apiKey);
 
     const result = {
         enabled: toBoolean(participantProfile.enabled, false),
@@ -78,8 +80,8 @@ export function getParticipantProfileConfig(config = {}) {
         triggerMode: normalizeTriggerMode(participantProfile.triggerMode),
         analysisMode: normalizeAnalysisMode(participantProfile.analysisMode),
         model: toOptionalString(participantProfile.model) || toOptionalString(selectedProvider?.model),
-        baseUrl: toOptionalString(participantProfile.baseUrl) || toOptionalString(selectedProvider?.baseUrl),
-        apiKey: toOptionalString(participantProfile.apiKey) || toOptionalString(selectedProvider?.apiKey),
+        baseUrl: selectedProviderBaseUrl,
+        apiKey: selectedProviderApiKey,
         retryOnError: participantProfile.retryOnError !== false
     };
     if (providerId) {
@@ -109,8 +111,8 @@ export function normalizeParticipantProfileConfig(config = {}) {
         delete config.memory.participantProfile.providerId;
     }
     config.memory.participantProfile.model = toOptionalString(config.memory.participantProfile.model);
-    config.memory.participantProfile.baseUrl = toOptionalString(config.memory.participantProfile.baseUrl);
-    config.memory.participantProfile.apiKey = toOptionalString(config.memory.participantProfile.apiKey);
+    delete config.memory.participantProfile.baseUrl;
+    delete config.memory.participantProfile.apiKey;
     config.memory.participantProfile.retryOnError = normalized.retryOnError;
 
     return normalized;

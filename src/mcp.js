@@ -278,12 +278,18 @@ export function createMCPHandler(managers, config, saveConfig) {
     function resolveMcpRangeModelOverrides({ modelProviderId = '', model = '' } = {}) {
         const requestedProviderId = String(modelProviderId || config.chat?.modelProviderId || config.ai?.activeProviderId || '').trim();
         const requestedModel = normalizeMcpModelId(model || config.chat?.model || config.ai?.model || '');
+        const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
         const provider = requestedProviderId
-            ? (config.ai?.providers || []).find((item) => item.id === requestedProviderId)
+            ? providers.find((item) => item.id === requestedProviderId)
             : null;
         const overrides = {};
-        if (provider?.baseUrl) overrides.baseUrl = provider.baseUrl;
-        if (provider?.apiKey) overrides.apiKey = provider.apiKey;
+        if (provider) {
+            overrides.baseUrl = provider.baseUrl || '';
+            overrides.apiKey = provider.apiKey || '';
+        } else if (requestedProviderId && providers.length > 0) {
+            overrides.baseUrl = '';
+            overrides.apiKey = '';
+        }
         if (requestedModel) overrides.model = requestedModel;
         return {
             overrides,
@@ -491,16 +497,18 @@ export function createMCPHandler(managers, config, saveConfig) {
                             logger.info('[变量-额外解析] 配置检查', { vpModel, vpProviderId, hasChat: !!config.chat });
                             if (!vpModel) { logger.info('[变量-额外解析] 跳过 - 未配置变量解析模型'); }
                             else {
-                                const vpProvider = (config.ai?.providers || []).find(p => p.id === vpProviderId) || {};
-                                logger.info('[变量-额外解析] 开始', { vpModel, vpProviderId, providerType: vpProvider.provider });
+                                const vpProvider = (config.ai?.providers || []).find(p => p.id === vpProviderId) || null;
+                                logger.info('[变量-额外解析] 开始', { vpModel, vpProviderId, providerType: vpProvider?.provider });
 
                                 const varParsePrompt = '你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。\n\n当前变量：\n' + (varStatus || '(无)') + '\n\n用户：' + message + '\n角色：' + finalReply + '\n\n请输出变量更新（无变化输出空数组）：\n<UpdateVariable>\n[{"op":"replace","path":"/变量名","value":新值}]\n</UpdateVariable>';
 
                                 const vpResult = await aiClient.chat([{ role: 'user', content: varParsePrompt }], {
                                     temperature: 0.1, maxTokens: 1024,
                                     model: vpModel,
-                                    baseUrl: vpProvider.baseUrl || undefined,
-                                    apiKey: vpProvider.apiKey || undefined
+                                    ...(vpProviderId ? {
+                                        baseUrl: vpProvider?.baseUrl || '',
+                                        apiKey: vpProvider?.apiKey || ''
+                                    } : {})
                                 });
                                 const vpReply = aiClient.getVisibleResponseContent(vpResult);
                                 logger.info('[变量-额外解析] 回复', { hasUpdateVariable: vpReply?.includes('<UpdateVariable>') || false, preview: vpReply?.slice(0, 200) });

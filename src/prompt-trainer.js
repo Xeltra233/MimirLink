@@ -106,15 +106,21 @@ function buildTrainingSystemPrompt(profile) {
 
 async function sendToAI(systemPrompt, userMessage, config) {
     const aiConfig = config.ai || {};
-    const provider = aiConfig.providers?.find(p => p.id === aiConfig.activeProviderId) || aiConfig.providers?.[0] || {};
-    const baseUrl = provider.baseUrl || aiConfig.baseUrl || 'https://api.openai.com/v1';
-    const apiKey = provider.apiKey || aiConfig.apiKey || '';
-    const model = provider.model || aiConfig.model || '';
+    const providers = Array.isArray(aiConfig.providers) ? aiConfig.providers : [];
+    const provider = (aiConfig.activeProviderId
+        ? providers.find(p => p.id === aiConfig.activeProviderId)
+        : null) || providers[0] || null;
+    const baseUrl = provider ? (provider.baseUrl || '') : (aiConfig.baseUrl || 'https://api.openai.com/v1');
+    const apiKey = provider ? (provider.apiKey || '') : (aiConfig.apiKey || '');
+    const model = provider ? (provider.model || aiConfig.model || '') : (aiConfig.model || '');
     const url = baseUrl.replace(/\/+$/, '') + '/chat/completions';
 
     const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {})
+        },
         body: JSON.stringify({
             model,
             messages: [

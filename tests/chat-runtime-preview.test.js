@@ -166,7 +166,8 @@ test('participant profile AI overrides only include configured fields', () => {
     assert.deepEqual(buildParticipantProfileAIOverrides({
         model: 'profile-model',
         baseUrl: '',
-        apiKey: 'profile-key'
+        apiKey: 'profile-key',
+        providerId: 'cloud-main'
     }), {
         model: 'profile-model',
         apiKey: 'profile-key'
@@ -414,6 +415,259 @@ test('AI client applies per-call participant profile overrides to payload and he
     assert.equal(requests[0].body.model, 'profile-model');
     assert.equal(requests[0].body.max_tokens, 2048);
     assert.equal(requests[0].body.temperature, 0.2);
+});
+
+test('AI client backup provider does not reuse primary provider api key', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+        requests.push({
+            url: String(url),
+            headers: options.headers,
+            body: JSON.parse(options.body)
+        });
+        if (String(url) === 'https://primary.example/v1/chat/completions') {
+            return jsonResponse({ error: { message: 'primary failed' } }, { status: 500 });
+        }
+        return jsonResponse({
+            choices: [{
+                message: {
+                    content: 'backup ok'
+                }
+            }]
+        });
+    };
+
+    try {
+        const client = new AIClient({
+            baseUrl: 'https://primary.example/v1',
+            apiKey: 'primary-key',
+            model: 'primary-model',
+            maxTokens: 1024,
+            temperature: 0.7,
+            providers: [{
+                id: 'backup-provider',
+                baseUrl: 'https://backup.example/v1',
+                apiKey: '',
+                model: 'backup-model'
+            }],
+            chat: {
+                backupModelProviderId: 'backup-provider',
+                backupModel: 'backup-model'
+            }
+        });
+
+        const result = await client.chat([{ role: 'user', content: 'try backup' }]);
+
+        assert.equal(result.content, 'backup ok');
+        assert.equal(requests.length, 2);
+        assert.equal(requests[0].url, 'https://primary.example/v1/chat/completions');
+        assert.equal(requests[0].headers.Authorization, 'Bearer primary-key');
+        assert.equal(requests[1].url, 'https://backup.example/v1/chat/completions');
+        assert.equal(requests[1].headers.Authorization, undefined);
+        assert.equal(requests[1].body.model, 'backup-model');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('AI client chatWithTools keeps backup provider for tool follow-up', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+        const request = {
+            url: String(url),
+            headers: options.headers,
+            body: JSON.parse(options.body)
+        };
+        requests.push(request);
+
+        if (request.url === 'https://primary.example/v1/chat/completions') {
+            return jsonResponse({ error: { message: 'primary failed' } }, { status: 500 });
+        }
+
+        const backupCount = requests.filter((item) => item.url === 'https://backup.example/v1/chat/completions').length;
+        if (backupCount === 1) {
+            return jsonResponse({
+                choices: [{
+                    message: {
+                        content: null,
+                        tool_calls: [{
+                            id: 'tool-1',
+                            type: 'function',
+                            function: {
+                                name: 'web_search',
+                                arguments: '{"query":"backup search","limit":1}'
+                            }
+                        }]
+                    }
+                }]
+            });
+        }
+
+        return jsonResponse({
+            choices: [{
+                message: {
+                    content: 'backup tool final'
+                }
+            }]
+        });
+    };
+
+    try {
+        const client = new AIClient({
+            baseUrl: 'https://primary.example/v1',
+            apiKey: 'primary-key',
+            model: 'primary-model',
+            maxTokens: 1024,
+            temperature: 0.7,
+            providers: [{
+                id: 'backup-provider',
+                baseUrl: 'https://backup.example/v1',
+                apiKey: 'backup-key',
+                model: 'backup-model'
+            }],
+            chat: {
+                backupModelProviderId: 'backup-provider',
+                backupModel: 'backup-model'
+            }
+        });
+
+        const toolCalls = [];
+        const result = await client.chatWithTools(
+            [{ role: 'user', content: 'use backup and tool' }],
+            {
+                tools: [{
+                    type: 'function',
+                    function: {
+                        name: 'web_search',
+                        description: 'search web',
+                        parameters: { type: 'object' }
+                    }
+                }],
+                handlers: {
+                    async web_search(args) {
+                        toolCalls.push(args);
+                        return { ok: true, results: [{ title: 'result' }] };
+                    }
+                }
+            }
+        );
+
+        assert.equal(result.content, 'backup tool final');
+        assert.equal(requests.length, 3);
+        assert.deepEqual(requests.map((request) => request.url), [
+            'https://primary.example/v1/chat/completions',
+            'https://backup.example/v1/chat/completions',
+            'https://backup.example/v1/chat/completions'
+        ]);
+        assert.equal(requests[0].headers.Authorization, 'Bearer primary-key');
+        assert.equal(requests[1].headers.Authorization, 'Bearer backup-key');
+        assert.equal(requests[2].headers.Authorization, 'Bearer backup-key');
+        assert.equal(requests[0].body.model, 'primary-model');
+        assert.equal(requests[1].body.model, 'backup-model');
+        assert.equal(requests[2].body.model, 'backup-model');
+        assert.equal(requests[2].body.messages.at(-2).tool_calls[0].function.name, 'web_search');
+        assert.equal(requests[2].body.messages.at(-1).role, 'tool');
+        assert.deepEqual(toolCalls, [{ query: 'backup search', limit: 1 }]);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('AI client chatWithTools uses text fallback on degraded function error', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+        const request = {
+            url: String(url),
+            headers: options.headers,
+            body: JSON.parse(options.body)
+        };
+        requests.push(request);
+
+        if (Array.isArray(request.body.tools)) {
+            return jsonResponse({
+                error: { message: 'degraded function cannot be invoked in this model' }
+            }, { status: 400 });
+        }
+
+        return jsonResponse({
+            choices: [{
+                message: {
+                    content: '{"action":"final","content":"fallback final"}'
+                }
+            }]
+        });
+    };
+
+    try {
+        const client = new AIClient({
+            baseUrl: 'https://api.example.com/v1',
+            apiKey: 'global-key',
+            model: 'global-model',
+            maxTokens: 1024,
+            temperature: 0.7
+        });
+
+        const result = await client.chatWithTools(
+            [{ role: 'user', content: 'search with fallback' }],
+            {
+                tools: [{
+                    type: 'function',
+                    function: {
+                        name: 'web_search',
+                        description: 'search web',
+                        parameters: { type: 'object' }
+                    }
+                }],
+                handlers: {},
+                textToolFallback: {
+                    enabled: true,
+                    maxRounds: 2,
+                    instruction: 'Return JSON with action final or tool_calls.'
+                }
+            }
+        );
+
+        assert.equal(result.content, 'fallback final');
+        assert.equal(requests.length, 2);
+        assert.equal(Array.isArray(requests[0].body.tools), true);
+        assert.equal(Array.isArray(requests[1].body.tools), false);
+        assert.equal(requests[1].body.messages[0].content, 'Return JSON with action final or tool_calls.');
+        assert.equal(requests[1].body.model, 'global-model');
+        assert.equal(requests[1].headers.Authorization, 'Bearer global-key');
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
+});
+
+test('AI client listModels honors explicit empty api key override', async () => {
+    const originalFetch = globalThis.fetch;
+    const requests = [];
+    globalThis.fetch = async (url, options) => {
+        requests.push({ url: String(url), headers: options.headers });
+        return jsonResponse({ data: [{ id: 'model-a' }] });
+    };
+
+    try {
+        const client = new AIClient({
+            baseUrl: 'https://global.example/v1',
+            apiKey: 'global-key',
+            model: 'global-model'
+        });
+
+        const models = await client.listModels({
+            baseUrl: 'https://provider.example/v1',
+            apiKey: ''
+        });
+
+        assert.equal(models[0].id, 'model-a');
+        assert.equal(requests[0].url, 'https://provider.example/v1/models');
+        assert.equal(requests[0].headers.Authorization, undefined);
+    } finally {
+        globalThis.fetch = originalFetch;
+    }
 });
 
 test('AI client chatWithTools executes one tool call and follows up with tool result', async () => {

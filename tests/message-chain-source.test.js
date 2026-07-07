@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+const replyDispatcherSource = fs.readFileSync(new URL('../src/reply-dispatcher.js', import.meta.url), 'utf8');
 
 test('real chat path preserves QQ non-text segments in structured prompt input', () => {
     assert.ok(source.includes('function summarizeOneBotSegment'));
@@ -59,7 +60,17 @@ test('real chat path keeps reasoning available but does not send it to QQ by def
     assert.ok(source.includes('sendReplyIncludesReasoning: sendReasoningToQQ && !!reasoningContent'));
     assert.ok(source.includes('includeReasoningContent: sendReasoningToQQ && !!reasoningContent'));
     assert.ok(source.includes('await dispatchReply(event, replyToSend, { forceSingleMessage: sendReasoningToQQ && !!reasoningContent })'));
-    assert.ok(source.includes('const splitMessage = options.forceSingleMessage ? false : config.chat.splitMessage !== false;'));
+    assert.ok(source.includes('dispatchReplyWithDeps(event, processedReply, options'));
+    assert.ok(replyDispatcherSource.includes('const splitMessage = options.forceSingleMessage ? false : config.chat.splitMessage !== false;'));
+});
+
+test('real chat path sends voice records instead of full text when TTS is enabled', () => {
+    assert.ok(replyDispatcherSource.includes('if (part.type === \'text\')'));
+    assert.ok(replyDispatcherSource.includes('if (ttsEnabled)'));
+    assert.ok(replyDispatcherSource.includes('await sendTtsContent(content, { explicitVoice: false });'));
+    assert.ok(replyDispatcherSource.includes('await bot.sendGroupRecord(event.group_id, audioPath, prefixSegments);'));
+    assert.ok(replyDispatcherSource.includes('await bot.sendPrivateRecord(event.user_id, audioPath, prefixSegments);'));
+    assert.ok(replyDispatcherSource.includes('语音合成失败，先发送文本回复'));
 });
 
 test('real chat path preserves mention-only and other-user mentions for AI context', () => {

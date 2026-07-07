@@ -418,14 +418,16 @@ export class OneBotClient extends EventEmitter {
      * @param {number} groupId - 群号
      * @param {string} filePath - 音频文件路径（绝对路径）
      */
-    async sendGroupRecord(groupId, filePath) {
+    async sendGroupRecord(groupId, filePath, prefixSegments = []) {
         // 读取文件并转换为 base64
         const audioData = fs.readFileSync(filePath);
         const base64Data = audioData.toString('base64');
+        const safePrefixSegments = Array.isArray(prefixSegments) ? prefixSegments : [];
         
         return this._call('send_group_msg', {
             group_id: groupId,
             message: [
+                ...safePrefixSegments,
                 {
                     type: 'record',
                     data: {
@@ -441,14 +443,16 @@ export class OneBotClient extends EventEmitter {
      * @param {number} userId - 用户 QQ 号
      * @param {string} filePath - 音频文件路径（绝对路径）
      */
-    async sendPrivateRecord(userId, filePath) {
+    async sendPrivateRecord(userId, filePath, prefixSegments = []) {
         // 读取文件并转换为 base64
         const audioData = fs.readFileSync(filePath);
         const base64Data = audioData.toString('base64');
+        const safePrefixSegments = Array.isArray(prefixSegments) ? prefixSegments : [];
         
         return this._call('send_private_msg', {
             user_id: userId,
             message: [
+                ...safePrefixSegments,
                 {
                     type: 'record',
                     data: {

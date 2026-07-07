@@ -1478,7 +1478,15 @@ test('config save preserves provider key but drops client-only key flags', async
             tools: { webSearch: { apiKey: 'web-key' } }
         },
         chat: { modelProviderId: 'provider-chat', model: 'deepseek-v4-pro' },
-        memory: { participantProfile: { apiKey: 'profile-key' } },
+        memory: {
+            participantProfile: { apiKey: 'profile-key' },
+            summary: {
+                modelProviderId: 'provider-chat',
+                model: 'deepseek-v4-pro',
+                baseUrl: 'https://old-summary.example/v1',
+                apiKey: 'old-summary-key'
+            }
+        },
         tts: { apiKey: 'tts-key' },
         regex: {},
         bindings: { global: { regexRules: [] }, characters: {} },
@@ -1504,6 +1512,12 @@ test('config save preserves provider key but drops client-only key flags', async
                 ai: {
                     activeProviderId: 'provider-chat',
                     hasApiKey: true,
+                    variableParsing: {
+                        providerId: 'provider-chat',
+                        model: 'deepseek-v4-pro',
+                        baseUrl: 'https://old-varparse.example/v1',
+                        apiKey: 'old-varparse-key'
+                    },
                     providers: [{
                         id: 'provider-chat',
                         name: '配置页供应商',
@@ -1516,7 +1530,15 @@ test('config save preserves provider key but drops client-only key flags', async
                     }],
                     tools: { webSearch: { apiKey: '******', hasApiKey: true } }
                 },
-                memory: { participantProfile: { apiKey: '******', hasApiKey: true } },
+                memory: {
+                    participantProfile: { apiKey: '******', hasApiKey: true },
+                    summary: {
+                        modelProviderId: 'provider-chat',
+                        model: 'deepseek-v4-pro',
+                        baseUrl: 'https://old-summary.example/v1',
+                        apiKey: 'old-summary-key'
+                    }
+                },
                 tts: { hasApiKey: true }
             })
         });
@@ -1526,6 +1548,13 @@ test('config save preserves provider key but drops client-only key flags', async
         assert.equal(body.success, true);
         assert.equal(savedConfig.ai.providers[0].apiKey, 'provider-key');
         assert.equal(savedConfig.ai.tools.webSearch.apiKey, 'web-key');
+        assert.equal(savedConfig.memory.participantProfile.apiKey, undefined);
+        assert.equal(savedConfig.memory.participantProfile.baseUrl, undefined);
+        assert.equal(savedConfig.ai.variableParsing.apiKey, undefined);
+        assert.equal(savedConfig.ai.variableParsing.baseUrl, undefined);
+        assert.equal(savedConfig.memory.summary.apiKey, undefined);
+        assert.equal(savedConfig.memory.summary.baseUrl, undefined);
+        assert.equal(savedConfig.memory.summary.modelProviderId, 'provider-chat');
         assert.equal(savedConfig.onebot.accessToken, 'onebot-token');
         assert.equal('hasApiKey' in savedConfig.ai, false);
         assert.equal('hasApiKey' in savedConfig.ai.providers[0], false);
@@ -2447,8 +2476,10 @@ test('prompt range agent chat resolves provider credentials by provider id', asy
     };
 
     const managers = createManagers(config);
+    let chatCall = null;
     managers.aiClient = {
         async chat(messages, overrides) {
+            chatCall = { messages, overrides };
             return {
                 content: 'agent provider ok',
                 overrides,
@@ -2471,6 +2502,8 @@ test('prompt range agent chat resolves provider credentials by provider id', asy
             body: JSON.stringify({
                 modelProviderId: 'provider-chat',
                 model: 'deepseek-v4-pro',
+                baseUrl: 'https://wrong-body.example/v1',
+                apiKey: 'wrong-body-key',
                 messages: [{ role: 'user', content: '优化一下' }]
             })
         });
@@ -2483,6 +2516,8 @@ test('prompt range agent chat resolves provider credentials by provider id', asy
         assert.equal(body.provider.endpoint, 'https://provider.example/v1');
         assert.equal(body.provider.model, 'deepseek-v4-pro');
         assert.equal(body.provider.hasApiKey, true);
+        assert.equal(chatCall.overrides.baseUrl, 'https://provider.example/v1');
+        assert.equal(chatCall.overrides.apiKey, 'provider-key');
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

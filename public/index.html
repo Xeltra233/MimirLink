@@ -6310,6 +6310,601 @@
                 grid-template-columns: 1fr;
             }
         }
+
+        /* Task 6: visible operations-console refresh for dashboard, tasks, profiles and config. */
+        :root {
+            --bg: #f6f7f9;
+            --bg-elevated: #ffffff;
+            --bg-inset: #eef1f4;
+            --text: #151922;
+            --text-muted: #5f6876;
+            --text-faint: #8a94a3;
+            --accent: #2563eb;
+            --accent-soft: rgba(37, 99, 235, 0.09);
+            --accent-hover: #1d4ed8;
+            --btn-primary: #111827;
+            --btn-primary-hover: #263244;
+            --btn-ghost: #f1f4f8;
+            --btn-ghost-hover: #e3e9f1;
+            --btn-ghost-text: #1f2937;
+            --success: #16835a;
+            --warning: #b77909;
+            --error: #c93b43;
+            --info: #2563eb;
+            --border: #dbe1ea;
+            --border-strong: #c6cfda;
+            --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+            --shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+            --shadow-md: 0 10px 24px rgba(15, 23, 42, 0.12);
+            --radius: 8px;
+            --radius-lg: 8px;
+        }
+
+        body,
+        header h1,
+        .panel h2,
+        #config .config-page-head h2 {
+            letter-spacing: 0;
+        }
+
+        body {
+            background: var(--bg);
+        }
+
+        header {
+            padding: 10px 20px;
+            border-bottom-color: var(--border);
+            box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+        }
+
+        header h1 span {
+            border-radius: 6px !important;
+            background: #111827 !important;
+            box-shadow: none !important;
+            letter-spacing: 0 !important;
+            text-transform: uppercase;
+        }
+
+        .status-bar {
+            gap: 12px;
+        }
+
+        .status-item,
+        .global-search-trigger {
+            min-height: 32px;
+            padding: 0 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-elevated);
+        }
+
+        .shell-layout {
+            background: linear-gradient(180deg, #f7f8fa 0%, #eef2f6 100%);
+        }
+
+        .tabs {
+            background: #f9fafb;
+            padding: 12px 8px;
+        }
+
+        .tab {
+            border-radius: 6px;
+            min-height: 34px;
+            color: #4b5563;
+        }
+
+        .tab:hover {
+            transform: none;
+        }
+
+        .tab.active {
+            background: #ffffff;
+            color: var(--accent);
+            border-left-color: var(--accent);
+            box-shadow: inset 0 0 0 1px var(--border);
+        }
+
+        .shell-layout > .panel:not(#prompt-range) {
+            padding: 16px 16px 36px;
+        }
+
+        #dashboard .card,
+        #tasks .card,
+        #participant-profiles .card,
+        #config .card {
+            border-radius: 8px;
+            border-color: var(--border);
+            box-shadow: var(--shadow-sm);
+        }
+
+        #dashboard .card:hover,
+        #tasks .card:hover,
+        #participant-profiles .card:hover,
+        #config .card:hover {
+            transform: none;
+            box-shadow: var(--shadow);
+        }
+
+        #dashboard .dashboard-layout {
+            gap: 12px;
+        }
+
+        #dashboard .dashboard-onboarding-card {
+            padding: 14px 18px;
+            border-left: 4px solid var(--info);
+            background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), #ffffff 42%);
+        }
+
+        #dashboard .dashboard-onboarding-head {
+            align-items: center;
+            gap: 12px;
+        }
+
+        #dashboard .dashboard-onboarding-head h3 {
+            margin: 0 0 4px;
+            font-size: 1rem;
+        }
+
+        #dashboard .dashboard-refresh-pill {
+            border-radius: 6px;
+            background: #f8fafc;
+            border-color: var(--border);
+        }
+
+        #dashboard .dashboard-top-grid {
+            gap: 10px;
+        }
+
+        #dashboard .dashboard-stat-card {
+            min-height: 118px;
+            padding: 14px 16px;
+            gap: 8px;
+            border-top: 3px solid var(--border-strong);
+        }
+
+        #dashboard .dashboard-top-grid .dashboard-stat-card:nth-child(1) {
+            border-top-color: var(--success);
+        }
+
+        #dashboard .dashboard-top-grid .dashboard-stat-card:nth-child(2) {
+            border-top-color: var(--info);
+        }
+
+        #dashboard .dashboard-top-grid .dashboard-stat-card:nth-child(3) {
+            border-top-color: var(--warning);
+        }
+
+        #dashboard .dashboard-top-grid .dashboard-stat-card:nth-child(4) {
+            border-top-color: #4b5563;
+        }
+
+        #dashboard .dashboard-stat-label {
+            font-size: 0.74rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+        }
+
+        #dashboard .dashboard-stat-value {
+            font-size: 1.28rem;
+            line-height: 1.25;
+            overflow-wrap: anywhere;
+            color: #111827;
+        }
+
+        #dashboard #dash-character,
+        #dashboard #dash-worldbook {
+            font-size: 1.08rem;
+            color: var(--accent);
+        }
+
+        #dashboard #dash-sessions {
+            font-size: 1.05rem;
+            color: var(--info);
+        }
+
+        #dashboard .dashboard-visual-grid {
+            gap: 12px;
+            grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+        }
+
+        #dashboard .dashboard-chart-card {
+            padding: 16px 18px;
+            gap: 12px;
+        }
+
+        #dashboard .dashboard-chart-panel {
+            border-radius: 8px;
+            background: #fbfdff;
+        }
+
+        #dashboard .dashboard-mini-stats {
+            gap: 8px;
+        }
+
+        #dashboard .dashboard-mini-stat {
+            padding: 10px 12px;
+            border-radius: 8px;
+            box-shadow: none !important;
+            background: #ffffff;
+        }
+
+        #dashboard .dashboard-mini-stat:hover {
+            transform: none;
+        }
+
+        #dashboard .dashboard-bottom-grid {
+            gap: 12px;
+        }
+
+        #dashboard .dashboard-kv-item {
+            grid-template-columns: 92px minmax(0, 1fr);
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+            border-radius: 0;
+            background: transparent;
+        }
+
+        #tasks .task-status-banner {
+            margin-bottom: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            background: #ffffff;
+            border-left: 4px solid var(--border-strong);
+        }
+
+        #tasks .task-status-banner.is-active {
+            border-color: var(--info);
+            background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), #ffffff 48%);
+        }
+
+        #tasks .task-status-indicator {
+            width: 10px;
+            height: 10px;
+        }
+
+        #tasks .task-status-title {
+            font-size: 0.98rem;
+        }
+
+        #tasks .task-grid {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        #tasks .task-card {
+            padding: 14px;
+            gap: 12px;
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        #tasks .task-card.is-active {
+            border-color: var(--info);
+            box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.16);
+        }
+
+        #tasks .task-card-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            font-size: 1.25rem;
+            background: #eef2f7;
+        }
+
+        #tasks .task-card-head {
+            margin-bottom: 8px;
+        }
+
+        #tasks .progress-box {
+            margin-top: 0;
+            padding: 0;
+            border: none;
+            background: transparent;
+        }
+
+        #tasks .progress-box h4 {
+            margin-bottom: 8px;
+            color: #111827;
+        }
+
+        #tasks .progress-line {
+            max-height: 150px;
+            overflow: auto;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: #f8fafc;
+            font-size: 0.78rem;
+        }
+
+        #tasks .task-progress-summary {
+            gap: 6px;
+            margin: 10px 0 8px;
+        }
+
+        #tasks .task-progress-pill,
+        #tasks .task-progress-meta {
+            border-radius: 6px;
+            background: #ffffff;
+        }
+
+        #tasks .task-progress-list {
+            gap: 8px;
+        }
+
+        #tasks .task-progress-item {
+            padding: 10px 12px;
+            border-radius: 6px;
+            background: #ffffff;
+        }
+
+        #tasks .task-progress-item.is-running {
+            border-color: rgba(37, 99, 235, 0.35);
+            background: rgba(37, 99, 235, 0.04);
+        }
+
+        #tasks .task-progress-item.is-failed {
+            border-color: rgba(201, 59, 67, 0.42);
+            background: rgba(201, 59, 67, 0.06);
+        }
+
+        #tasks .task-progress-head {
+            margin-bottom: 6px;
+            flex-wrap: nowrap;
+        }
+
+        #tasks .task-progress-title {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        #tasks .task-progress-desc {
+            max-height: 4.8em;
+            overflow: hidden;
+            font-size: 0.78rem;
+        }
+
+        #tasks .task-progress-bar {
+            height: 5px;
+            margin-bottom: 6px;
+        }
+
+        #tasks .task-progress-fill {
+            background: var(--info);
+        }
+
+        #participant-profiles .participant-profile-grid {
+            grid-template-columns: minmax(320px, 380px) minmax(0, 1fr);
+            gap: 12px;
+            align-items: start;
+        }
+
+        #participant-profiles .participant-profile-list-card,
+        #participant-profiles .participant-profile-detail-card {
+            padding: 16px 18px;
+        }
+
+        #participant-profiles .participant-profile-list-card {
+            position: sticky;
+            top: 12px;
+        }
+
+        #participant-profiles .participant-profile-list-card .list {
+            max-height: min(690px, calc(100vh - 255px));
+        }
+
+        #participant-profiles .participant-profile-toolbar input[type="search"] {
+            min-height: 36px;
+            border-radius: 6px;
+            background: #f8fafc;
+        }
+
+        #participant-profiles .participant-profile-item {
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid transparent;
+            background: #ffffff;
+        }
+
+        #participant-profiles .participant-profile-item:hover {
+            transform: none;
+            border-color: var(--border-strong);
+            border-left-color: var(--info);
+        }
+
+        #participant-profiles .participant-profile-item.selected {
+            border-color: rgba(37, 99, 235, 0.35);
+            border-left-color: var(--info);
+            background: rgba(37, 99, 235, 0.06);
+            box-shadow: none;
+        }
+
+        #participant-profiles .participant-profile-detail-card {
+            min-height: calc(100vh - 130px);
+        }
+
+        #participant-profiles .participant-profile-detail-card .section-head {
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        #participant-profiles .participant-profile-detail-card .variable-detail-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        #participant-profiles .participant-profile-detail-card .variable-detail-form {
+            padding-bottom: 64px;
+        }
+
+        #participant-profiles .participant-profile-detail-card textarea#participant-profile-content {
+            min-height: 245px;
+            background: #fbfdff;
+            border-radius: 6px;
+        }
+
+        #participant-profiles .participant-profile-detail-card .meta-box {
+            border-left: 3px solid var(--info);
+            background: #f8fafc;
+            border-radius: 6px;
+            font-size: 0.82rem;
+        }
+
+        #participant-profiles .participant-profile-detail-card .progress-box {
+            border-radius: 6px;
+            background: #ffffff;
+        }
+
+        #participant-profiles .variable-actions {
+            position: static;
+            z-index: auto;
+            padding: 12px 0 0;
+            border-top: 1px solid var(--border);
+            background: transparent;
+        }
+
+        #config .config-page-head {
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+
+        #config .config-subtabs {
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            padding: 8px;
+            margin-bottom: 14px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(10px);
+        }
+
+        #config .config-subtab {
+            border-radius: 6px;
+            min-height: 34px;
+            background: transparent;
+        }
+
+        #config .config-subtab.active {
+            background: var(--accent-soft);
+            border-color: rgba(37, 99, 235, 0.34);
+            color: var(--accent);
+        }
+
+        #config .config-subpanel.active {
+            gap: 12px;
+        }
+
+        #config .dashboard-quick-links {
+            gap: 10px;
+        }
+
+        #config .dashboard-quick-link {
+            min-height: 58px;
+            border-radius: 8px;
+            background: #ffffff;
+            box-shadow: none;
+        }
+
+        #config .config-subpanel[data-config-panel="overview"] .dashboard-quick-link:first-child {
+            position: relative;
+            border-color: rgba(37, 99, 235, 0.36);
+            border-left: 4px solid var(--info);
+            background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), #ffffff 50%);
+        }
+
+        #config .config-subpanel[data-config-panel="overview"] .dashboard-quick-link:first-child::after {
+            content: "统一 API 创建入口";
+            justify-self: start;
+            width: max-content;
+            padding: 2px 7px;
+            border-radius: 6px;
+            color: var(--info);
+            background: rgba(37, 99, 235, 0.1);
+            font-size: 0.72rem;
+            font-weight: 700;
+        }
+
+        #config .config-subpanel[data-config-panel="memory"] .card {
+            border-top: 3px solid var(--info);
+        }
+
+        #config .config-subsection-title {
+            color: #1f2937;
+        }
+
+        #config input,
+        #config select,
+        #config textarea,
+        #participant-profiles input,
+        #participant-profiles textarea,
+        #tasks input,
+        #dashboard input {
+            border-radius: 6px;
+            background: #fbfdff;
+        }
+
+        #config .form-group:has(#config-memory-db-path) {
+            grid-column: span 2;
+        }
+
+        #config-memory-db-path {
+            font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+            font-size: 0.74rem;
+            padding-left: 8px;
+            padding-right: 8px;
+        }
+
+        #config .model-provider-layout {
+            gap: 12px;
+        }
+
+        #config .model-provider-item {
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        #config .model-provider-item.active {
+            border-color: rgba(37, 99, 235, 0.4);
+            background: rgba(37, 99, 235, 0.06);
+        }
+
+        @media (max-width: 1280px) {
+            #tasks .task-grid,
+            #dashboard .dashboard-top-grid,
+            #dashboard .dashboard-mini-stats {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            #dashboard .dashboard-visual-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .status-bar {
+                justify-content: flex-start;
+            }
+
+            #tasks .task-grid,
+            #dashboard .dashboard-top-grid,
+            #dashboard .dashboard-mini-stats,
+            #participant-profiles .participant-profile-grid,
+            #participant-profiles .participant-profile-detail-card .variable-detail-grid {
+                grid-template-columns: 1fr;
+            }
+
+            #config .form-group:has(#config-memory-db-path) {
+                grid-column: 1 / -1;
+            }
+
+            #participant-profiles .participant-profile-list-card {
+                position: static;
+            }
+        }
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
@@ -7033,7 +7628,7 @@
                             🔊 启用语音合成
                         </label>
                         <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 5px;">
-                            开启后，AI 回复会同时发送语音消息
+                            开启后，AI 回复优先发送语音消息，合成失败时回退文本
                         </p>
                     </div>
                     <div class="form-group">
@@ -9653,7 +10248,24 @@
             }
 
             const status = dashboardStatusSnapshot;
-            const metricData = status?.dashboardMetrics || null;
+            const recentMetrics = Array.isArray(status?.metrics?.recent) ? status.metrics.recent : [];
+            const fallbackMetricData = recentMetrics.length > 0 ? {
+                timeline: recentMetrics.map((item, index) => Date.now() - (recentMetrics.length - index - 1) * 10 * 60 * 1000),
+                series: {
+                    chat: recentMetrics.map((item) => Number(item.requests) || 0),
+                    participantProfile: recentMetrics.map((item, index) => index === recentMetrics.length - 1 ? Number(status?.participantProfileProgress?.taskCount) || 0 : 0),
+                    knowledgeImport: recentMetrics.map((item, index) => index === recentMetrics.length - 1 ? Number(status?.knowledgeImportProgress?.processedChunks) || 0 : 0),
+                    tts: recentMetrics.map(() => 0)
+                },
+                composition: {
+                    messages: Number(status?.globalMemory?.totalMessages) || 0,
+                    summaries: Number(status?.globalMemory?.totalSummaries) || 0,
+                    participantProfiles: Number(status?.participantProfileProgress?.savedCount) || 0,
+                    fixedKnowledge: 0,
+                    dynamicKnowledge: Number(status?.knowledgeImportProgress?.savedCount) || 0
+                }
+            } : null;
+            const metricData = status?.dashboardMetrics || fallbackMetricData;
             const fallbackComposition = {
                 messages: Number(status?.globalMemory?.totalMessages) || 0,
                 summaries: Number(status?.globalMemory?.totalSummaries) || 0,
@@ -9663,9 +10275,15 @@
             };
             const composition = metricData?.composition || fallbackComposition;
             const totalMessages = Number(status?.globalMemory?.totalMessages) || Number(composition.messages) || 0;
-            const totalSessions = Number(status?.globalMemory?.totalSessions) || 0;
+            const totalSessions = Number(status?.globalMemory?.totalSessions)
+                || Number(status?.sessions?.total)
+                || Number(status?.sessions?.active)
+                || Number(status?.activeSessions)
+                || 0;
             const totalSummaries = Number(status?.globalMemory?.totalSummaries) || Number(composition.summaries) || 0;
-            const memorySizeMb = Number(status?.globalMemory?.memoryFileSizeMB) || 0;
+            const memorySizeMb = Number(status?.globalMemory?.memoryFileSizeMB)
+                || Number(status?.globalMemory?.storage?.sizeMb)
+                || 0;
             const activeLabel = status?.activeMemory?.dbPath ? status.activeMemory.dbPath.split(/[\\/]/).pop() || status.activeMemory.dbPath : '未绑';
             const summaryDensity = totalMessages > 0 ? `${((totalSummaries / totalMessages) * 100).toFixed(1)}%` : '0%';
             const series = metricData?.series || {};
@@ -11388,18 +12006,29 @@
                     ? ` | 并发:${data.runtime.maxConcurrentSessions} 缓冲:${data.runtime.bufferWindowMs}ms`
                     : '';
                 const storageInfo = data.globalMemory?.storage?.type ? ` | 存储:${data.globalMemory.storage.type}` : '';
-                const sessionCount = data.sessions ?? '-';
+                const rawSessions = data.sessions;
+                const sessionCount = rawSessions && typeof rawSessions === 'object'
+                    ? `${rawSessions.active ?? data.activeSessions ?? 0} 活跃 / ${rawSessions.total ?? '-'} 总计`
+                    : `${data.activeSessions ?? rawSessions ?? '-'}`;
                 document.getElementById('dash-sessions').textContent = `${sessionCount}${runtimeInfo}${storageInfo}`;
                 // Token 统计
-                const ts = data.tokenStats;
+                const ts = data.tokenStats || data.tokenUsage;
                 if (ts) {
-                    const totalTokens = ts.totalInputTokens + ts.totalOutputTokens;
+                    const inputTokens = Number(ts.totalInputTokens ?? ts.promptTokens ?? 0) || 0;
+                    const outputTokens = Number(ts.totalOutputTokens ?? ts.completionTokens ?? 0) || 0;
+                    const totalTokens = Number(ts.totalTokens ?? (inputTokens + outputTokens)) || 0;
+                    const totalRequests = Number(ts.totalRequests ?? ts.requestCount ?? 0) || 0;
+                    const cacheRate = typeof ts.cacheHitRate === 'number' ? `${(ts.cacheHitRate * 100).toFixed(1)}%` : (ts.cacheHitRate || '0%');
+                    const cacheHitTokens = Number(ts.cacheHitTokens ?? 0) || 0;
+                    const cacheMissTokens = Number(ts.cacheMissTokens ?? 0) || 0;
                     document.getElementById('dash-token-total').textContent = totalTokens > 0 ? (totalTokens / 1000).toFixed(1) + 'K' : '-';
-                    document.getElementById('dash-token-detail').textContent = `输入 ${(ts.totalInputTokens/1000).toFixed(1)}K · 输出 ${(ts.totalOutputTokens/1000).toFixed(1)}K`;
-                    document.getElementById('dash-token-requests').textContent = ts.totalRequests;
-                    document.getElementById('dash-cache-rate').textContent = ts.cacheHitRate || '0%';
-                    document.getElementById('dash-cache-detail').textContent = `命中 ${(ts.cacheHitTokens/1000).toFixed(1)}K · 未命中 ${(ts.cacheMissTokens/1000).toFixed(1)}K`;
-                    document.getElementById('dash-token-io').textContent = `${(ts.totalInputTokens/1000).toFixed(1)}K / ${(ts.totalOutputTokens/1000).toFixed(1)}K`;
+                    document.getElementById('dash-token-detail').textContent = `输入 ${(inputTokens/1000).toFixed(1)}K · 输出 ${(outputTokens/1000).toFixed(1)}K`;
+                    document.getElementById('dash-token-requests').textContent = totalRequests || '-';
+                    document.getElementById('dash-cache-rate').textContent = cacheRate;
+                    document.getElementById('dash-cache-detail').textContent = cacheHitTokens || cacheMissTokens
+                        ? `命中 ${(cacheHitTokens/1000).toFixed(1)}K · 未命中 ${(cacheMissTokens/1000).toFixed(1)}K`
+                        : '等待缓存明细';
+                    document.getElementById('dash-token-io').textContent = `${(inputTokens/1000).toFixed(1)}K / ${(outputTokens/1000).toFixed(1)}K`;
                 }
                 renderDashboardVisuals();
             } catch (e) {
@@ -15209,6 +15838,21 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (chatProvider && providerNeedsConfigApiKey(chatProvider) && !providerDraftHasApiKey(chatProvider)) {
                 errors.push(`当前聊天模型供应商“${chatProvider.name || chatProvider.id}”需要 API Key，请先填写并保存真实密钥`);
             }
+            const requireSelectedProviderKey = (providerId, label) => {
+                if (!providerId) return;
+                const provider = (draft.ai.providers || []).find((item) => item.id === providerId);
+                if (provider && providerNeedsConfigApiKey(provider) && !providerDraftHasApiKey(provider)) {
+                    errors.push(`${label}供应商“${provider.name || provider.id}”需要 API Key，请先在模型供应商区填写并保存真实密钥`);
+                }
+            };
+            requireSelectedProviderKey(draft.chat.backupModelProviderId, '备用模型');
+            requireSelectedProviderKey(draft.chat.varparseModelProviderId, '变量解析模型');
+            if (draft.memory?.participantProfile?.enabled) {
+                requireSelectedProviderKey(draft.memory?.participantProfile?.providerId, '人物档案分析模型');
+            }
+            if (draft.memory?.summary?.enabled) {
+                requireSelectedProviderKey(draft.memory?.summary?.modelProviderId, '记忆摘要模型');
+            }
 
             if (!draft.ai.maxTokens || draft.ai.maxTokens <= 0) {
                 errors.push('最大 Tokens 必须是大于 0 的数字');
@@ -15310,14 +15954,6 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             const validModes = ['messages_only', 'profile_plus_messages', 'bot_only_messages', 'bot_only_profile'];
             if (!validModes.includes(draft.memory.participantProfile.analysisMode)) {
                 errors.push('人物档案分析模式无效');
-            }
-
-            if (draft.memory.participantProfile.baseUrl && !draft.memory.participantProfile.model) {
-                warnings.push('人物档案已填写独Base URL，但没有填写独立模型，将继续回到全屢模型名');
-            }
-
-            if (draft.memory.participantProfile.apiKey && !draft.memory.participantProfile.baseUrl && !draft.ai.baseUrl) {
-                warnings.push('人物档案已填写独API Key，但当前没有可用Base URL');
             }
 
             if (draft.chat.accessControlMode === 'allowlist' && draft.chat.allowedGroups.length === 0 && draft.chat.allowedUsers.length === 0) {
@@ -15808,7 +16444,18 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-backup-model-ref').value = buildAIModelRef(currentConfig.chat?.backupModelProviderId || '', currentConfig.chat?.backupModel || '');
                 document.getElementById('config-chat-varparse-model-ref').value = buildAIModelRef(currentConfig.chat?.varparseModelProviderId || currentConfig.ai?.variableParsing?.providerId || '', currentConfig.chat?.varparseModel || currentConfig.ai?.variableParsing?.model || '');
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
-                document.getElementById('config-memory-summary-model').value = currentConfig.memory?.summary?.model || '';
+                const summaryLegacySelection = parseAIModelRef(currentConfig.memory?.summary?.model || '');
+                const summaryProviderId = currentConfig.memory?.summary?.modelProviderId
+                    || summaryLegacySelection.providerId
+                    || currentConfig.chat?.modelProviderId
+                    || currentConfig.ai?.activeProviderId
+                    || '';
+                const summaryModel = summaryLegacySelection.model
+                    || currentConfig.memory?.summary?.model
+                    || currentConfig.chat?.model
+                    || currentConfig.ai?.model
+                    || '';
+                document.getElementById('config-memory-summary-model').value = buildAIModelRef(summaryProviderId, summaryModel);
 
                 document.getElementById('config-preset-enabled').checked = currentConfig.preset?.enabled === true;
                 document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
@@ -16025,6 +16672,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             const backupModelSelection = getSelectedAIModelRef('config-chat-backup-model-ref');
             const varparseModelSelection = getSelectedAIModelRef('config-chat-varparse-model-ref');
             const participantProfileModelSelection = getSelectedAIModelRef('config-memory-participant-profile-model');
+            const summaryModelSelection = getSelectedAIModelRef('config-memory-summary-model');
 
             const newConfig = {
                 onebot: {
@@ -16189,7 +16837,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         maxSummaries: parseInt(document.getElementById('config-memory-summary-max').value) || 8,
                         maxSourceMessages: parseInt(document.getElementById('config-memory-summary-source').value) || 50,
                         useAI: document.getElementById('config-memory-summary-enabled').checked,
-                        model: document.getElementById('config-memory-summary-model').value || ''
+                        modelProviderId: summaryModelSelection.providerId,
+                        model: summaryModelSelection.model
                     }
                 },
                 preset: {
