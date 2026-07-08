@@ -39,3 +39,10 @@ test('preset selector defaults to active runtime preset instead of restored impo
     assert.equal(source.includes('const firstId = records[0].id;'), false);
     assert.equal(source.includes('select.value = `import:${firstId}`;'), false);
 });
+
+test('config UI uses batch delete endpoints for preset imports and worldbooks', () => {
+    assert.ok(source.includes("fetchJsonSafe('/api/preset/imports/batch-delete'"));
+    assert.ok(source.includes("fetchJsonSafe('/api/worldbooks/batch-delete'"));
+    assert.equal(source.includes('await deletePresetImportFile(id, true);'), false);
+    assert.equal(source.includes("fetch(`/api/worldbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' });\n                    const data = await res.json();\n                    if (data.success) success++;"), false);
+});

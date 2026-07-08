@@ -367,6 +367,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
         if (record.linkedRegexImportId) {
             config.imports.regexFiles = config.imports.regexFiles.filter((item) => item?.id !== record.linkedRegexImportId);
         }
+        if (record.sourceType === 'disk-preset' || record.fileBackedOnly === true) {
+            return { found: true, removedCount: 0, restoredFields: [], record };
+        }
         config.preset = { ...(config.preset || {}) };
 
         const restoredFields = [];
@@ -401,6 +404,23 @@ export function setupRoutes(app, config, saveConfig, managers) {
             config.preset.regexRules = currentRegexRules;
         }
         return { found: true, removedCount, restoredFields, record };
+    };
+
+    const deletePresetImportDiskFile = (recordId) => {
+        const normalizedId = String(recordId || '').trim();
+        if (!normalizedId || normalizedId.includes('/') || normalizedId.includes('\\')) {
+            return false;
+        }
+        const presetsDir = path.resolve(config.chat?.dataDir || path.join(__dirname, '..', 'data'), 'presets');
+        const presetFile = path.resolve(presetsDir, `${normalizedId}.json`);
+        if (!presetFile.startsWith(`${presetsDir}${path.sep}`)) {
+            return false;
+        }
+        if (fsSync.existsSync(presetFile)) {
+            fsSync.unlinkSync(presetFile);
+            return true;
+        }
+        return false;
     };
 
     const summarizePresetImportRecord = (record = {}) => ({
@@ -1520,6 +1540,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
     // 获取配置（需要认证）
     app.get('/api/config', requireAuth, (req, res) => {
         ensureImportsConfig();
+        if (config.chat?.dataDir) {
+            syncPresetFiles(config, { importLoosePresets: true, importPosition: 'append' });
+        }
         // 隐藏敏感信息，仅返回是否已配置，避免接口泄露密钥或口令
         const safeAIProviders = Array.isArray(config.ai?.providers)
             ? config.ai.providers.map((provider) => {
@@ -2654,6 +2677,19 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     // ==================== 世界书管理 ====================
 
+    const resolveWorldBookFilePath = (filename) => {
+        const normalized = String(filename || '').trim();
+        if (!normalized || path.basename(normalized) !== normalized || !normalized.endsWith('.json')) {
+            throw new Error('世界书文件名无效');
+        }
+        const worldsDir = path.resolve(config.chat?.dataDir || './data', 'worlds');
+        const filePath = path.resolve(worldsDir, normalized);
+        if (!filePath.startsWith(`${worldsDir}${path.sep}`)) {
+            throw new Error('世界书文件路径无效');
+        }
+        return filePath;
+    };
+
     // 获取世界书列表（需要认证）
     app.get('/api/worldbooks', requireAuth, async (req, res) => {
         try {
@@ -2747,13 +2783,55 @@ export function setupRoutes(app, config, saveConfig, managers) {
     app.delete('/api/worldbooks/:filename', requireAuth, async (req, res) => {
         try {
             const { filename } = req.params;
-            const filePath = path.join(config.chat.dataDir || './data', 'worlds', filename);
+            const filePath = resolveWorldBookFilePath(filename);
             await fs.unlink(filePath);
             await worldBookManager.scanWorldBooks();
             logger.info(`世界书已删除: ${filename}`);
             res.json({ success: true, message: '世界书已删除' });
         } catch (error) {
             logger.error('删除世界书失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/worldbooks/batch-delete', requireAuth, async (req, res) => {
+        try {
+            const filenames = Array.from(new Set((Array.isArray(req.body?.filenames) ? req.body.filenames : [])
+                .map((filename) => String(filename || '').trim())
+                .filter(Boolean)));
+            if (filenames.length === 0) {
+                return res.status(400).json({ success: false, error: '请提供要删除的世界书文件名' });
+            }
+
+            const existing = new Set((await worldBookManager.listWorldBooks()).filter(Boolean));
+            const deleted = [];
+            const notFound = [];
+            const failed = [];
+
+            for (const filename of filenames) {
+                if (!existing.has(filename)) {
+                    notFound.push(filename);
+                    continue;
+                }
+                try {
+                    await fs.unlink(resolveWorldBookFilePath(filename));
+                    deleted.push(filename);
+                } catch (error) {
+                    failed.push({ filename, error: error.message });
+                }
+            }
+
+            await worldBookManager.scanWorldBooks();
+            logger.info(`世界书批量删除完成: ${deleted.length}/${filenames.length}`);
+            res.json({
+                success: failed.length === 0,
+                deleted,
+                notFound,
+                failed,
+                message: `已删除 ${deleted.length} 个世界书`
+            });
+        } catch (error) {
+            logger.error('批量删除世界书失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });
@@ -4606,11 +4684,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             applyRuntimeConfig();
             saveConfig(config);
             // 同步删除预设文件
-            try {
-                const presetsDir = path.join(config.chat?.dataDir || path.join(__dirname, '..', 'data'), 'presets');
-                const presetFile = path.join(presetsDir, `${req.params.id}.json`);
-                if (fsSync.existsSync(presetFile)) fsSync.unlinkSync(presetFile);
-            } catch {}
+            try { deletePresetImportDiskFile(req.params.id); } catch {}
             res.json({
                 success: true,
                 removedCount: result.removedCount,
@@ -4619,6 +4693,56 @@ export function setupRoutes(app, config, saveConfig, managers) {
             });
         } catch (error) {
             logger.error('删除预设导入文件失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/preset/imports/batch-delete', requireAuth, (req, res) => {
+        try {
+            const ids = Array.from(new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+                .map((id) => String(id || '').trim())
+                .filter(Boolean)));
+            if (ids.length === 0) {
+                return res.status(400).json({ success: false, error: '请提供要删除的预设导入记录 ID' });
+            }
+
+            const deletedIds = [];
+            const notFoundIds = [];
+            const failed = [];
+            let removedCount = 0;
+            const restoredFields = new Set();
+
+            for (const id of ids) {
+                try {
+                    const result = deleteTrackedPresetImport(id);
+                    if (!result.found) {
+                        notFoundIds.push(id);
+                        continue;
+                    }
+                    deletePresetImportDiskFile(id);
+                    deletedIds.push(id);
+                    removedCount += result.removedCount || 0;
+                    for (const field of result.restoredFields || []) {
+                        restoredFields.add(field);
+                    }
+                } catch (error) {
+                    failed.push({ id, error: error.message });
+                }
+            }
+
+            applyRuntimeConfig();
+            saveConfig(config);
+            res.json({
+                success: failed.length === 0,
+                deletedIds,
+                notFoundIds,
+                failed,
+                removedCount,
+                restoredFields: [...restoredFields],
+                message: `已删除 ${deletedIds.length} 个预设导入文件`
+            });
+        } catch (error) {
+            logger.error('批量删除预设导入文件失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });

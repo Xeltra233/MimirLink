@@ -85,6 +85,12 @@ function createManagers(config, onSave) {
         worldBookManager: {
             getCurrentWorldBook() {
                 return null;
+            },
+            listWorldBooks() {
+                return [];
+            },
+            scanWorldBooks() {
+                return [];
             }
         },
         sessionManager: {
@@ -2674,5 +2680,157 @@ test('prompt range sync-latest reloads observer history from disk after restart'
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
         await rm(dataDir, { recursive: true, force: true });
+    }
+});
+
+test('config API exposes loose preset files from data presets as import records', async () => {
+    const app = express();
+    app.use(express.json({ limit: '1mb' }));
+    const tmpRoot = await mkdtemp(join(tmpdir(), 'mimir-loose-preset-config-'));
+    const dataDir = join(tmpRoot, 'data');
+    const presetsDir = join(dataDir, 'presets');
+    await mkdir(presetsDir, { recursive: true });
+    await writeFile(join(presetsDir, 'xuque-qq-human-cot-v1.raw-preset.json'), JSON.stringify({
+        enabled: true,
+        name: '炸天帮徐缺 QQBot 人类水群 COT v1',
+        prompts: [{ identifier: 'current-group-first', name: '当前群聊优先', content: '优先当前群聊历史' }]
+    }, null, 2), 'utf8');
+
+    const config = {
+        auth: { enabled: false },
+        chat: { dataDir },
+        ai: {},
+        imports: { presetFiles: [], regexFiles: [] },
+        server: {}
+    };
+
+    setupRoutes(app, config, () => {}, createManagers(config));
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/config`);
+        const body = await response.json();
+
+        assert.equal(response.status, 200, JSON.stringify(body));
+        const record = body.imports.presetFiles.find((item) => item.filename === 'xuque-qq-human-cot-v1.raw-preset.json');
+        assert.ok(record);
+        assert.equal(record.id, 'xuque-qq-human-cot-v1.raw-preset');
+        assert.equal(record.importedPreset.name, '炸天帮徐缺 QQBot 人类水群 COT v1');
+        assert.equal(record.importedPreset.prompts[0].content, '优先当前群聊历史');
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await rm(tmpRoot, { recursive: true, force: true });
+    }
+});
+
+test('preset import records can be batch deleted with one request', async () => {
+    const app = express();
+    app.use(express.json({ limit: '1mb' }));
+    const tmpRoot = await mkdtemp(join(tmpdir(), 'mimir-preset-batch-delete-'));
+    const dataDir = join(tmpRoot, 'data');
+    const presetsDir = join(dataDir, 'presets');
+    await mkdir(presetsDir, { recursive: true });
+
+    const records = ['preset-a', 'preset-b'].map((id) => ({
+        id,
+        type: 'preset',
+        filename: `${id}.json`,
+        presetName: id,
+        importedPreset: { prompts: [{ identifier: id, name: id, content: id }] },
+        importedRegexRules: [],
+        previousPreset: {},
+        previousRegexRules: []
+    }));
+    for (const record of records) {
+        await writeFile(join(presetsDir, `${record.id}.json`), JSON.stringify(record, null, 2), 'utf8');
+    }
+
+    const config = {
+        auth: { enabled: false },
+        chat: { dataDir },
+        preset: { name: 'Runtime', prompts: [] },
+        imports: { presetFiles: structuredClone(records), regexFiles: [] },
+        bindings: { global: {}, characters: {} },
+        ai: {},
+        server: {}
+    };
+    let saveCount = 0;
+
+    setupRoutes(app, config, () => { saveCount += 1; }, createManagers(config));
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/preset/imports/batch-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: records.map((record) => record.id) })
+        });
+        const body = await response.json();
+
+        assert.equal(response.status, 200, JSON.stringify(body));
+        assert.equal(body.success, true);
+        assert.deepEqual(body.deletedIds.sort(), ['preset-a', 'preset-b']);
+        assert.equal(config.imports.presetFiles.length, 0);
+        assert.equal(existsSync(join(presetsDir, 'preset-a.json')), false);
+        assert.equal(existsSync(join(presetsDir, 'preset-b.json')), false);
+        assert.equal(saveCount, 1);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await rm(tmpRoot, { recursive: true, force: true });
+    }
+});
+
+test('worldbooks can be batch deleted with one request', async () => {
+    const app = express();
+    app.use(express.json({ limit: '1mb' }));
+    const tmpRoot = await mkdtemp(join(tmpdir(), 'mimir-worldbook-batch-delete-'));
+    const dataDir = join(tmpRoot, 'data');
+    const worldsDir = join(dataDir, 'worlds');
+    await mkdir(worldsDir, { recursive: true });
+    await writeFile(join(worldsDir, 'a.json'), JSON.stringify({ entries: [] }), 'utf8');
+    await writeFile(join(worldsDir, 'b.json'), JSON.stringify({ entries: [] }), 'utf8');
+
+    const config = {
+        auth: { enabled: false },
+        chat: { dataDir },
+        ai: {},
+        server: {}
+    };
+    let scanned = false;
+    const managers = createManagers(config);
+    managers.worldBookManager = {
+        getCurrentWorldBook() { return null; },
+        listWorldBooks() {
+            return readdirSync(worldsDir).filter((item) => item.endsWith('.json'));
+        },
+        scanWorldBooks() {
+            scanned = true;
+            return this.listWorldBooks();
+        }
+    };
+
+    setupRoutes(app, config, () => {}, managers);
+    const server = await listenTestApp(app);
+    const { port } = server.address();
+
+    try {
+        const response = await fetch(`http://127.0.0.1:${port}/api/worldbooks/batch-delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filenames: ['a.json', 'b.json'] })
+        });
+        const body = await response.json();
+
+        assert.equal(response.status, 200, JSON.stringify(body));
+        assert.equal(body.success, true);
+        assert.deepEqual(body.deleted.sort(), ['a.json', 'b.json']);
+        assert.equal(existsSync(join(worldsDir, 'a.json')), false);
+        assert.equal(existsSync(join(worldsDir, 'b.json')), false);
+        assert.equal(scanned, true);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+        await rm(tmpRoot, { recursive: true, force: true });
     }
 });

@@ -38,6 +38,45 @@ function normalizeIdSet(ids) {
     return new Set([...ids].map((id) => String(id || '')).filter(Boolean));
 }
 
+function isLoosePresetPayload(value) {
+    return Boolean(
+        value
+        && typeof value === 'object'
+        && value.type !== 'preset'
+        && Array.isArray(value.prompts)
+    );
+}
+
+function shouldImportLoosePresetFile(filename, options = {}) {
+    if (!options.importLoosePresets) return false;
+    if (options.skipRuntimeRawPreset !== false && /^runtime\.raw-preset\.json$/i.test(filename)) {
+        return false;
+    }
+    return filename.endsWith('.json');
+}
+
+function buildLoosePresetImportRecord({ id, filename, preset, createdAt }) {
+    const importedFields = Object.keys(preset).filter((key) => {
+        const value = preset[key];
+        return value !== '' && value !== false && value !== undefined;
+    });
+    return {
+        id,
+        type: 'preset',
+        filename,
+        presetName: String(preset.name || filename.replace(/\.json$/i, '') || '').trim() || null,
+        createdAt,
+        importedFields,
+        importedPreset: preset,
+        importedRegexRules: Array.isArray(preset.regexRules) ? preset.regexRules : [],
+        linkedRegexImportId: null,
+        previousRegexRules: [],
+        previousPreset: {},
+        sourceType: 'disk-preset',
+        fileBackedOnly: true
+    };
+}
+
 export function getPresetDataDir(config = {}) {
     return join(config.chat?.dataDir || join(ROOT_DIR, 'data'), 'presets');
 }
@@ -67,7 +106,8 @@ export function syncPresetFiles(config, options = {}) {
             }
             if (existingIds.has(id)) continue;
             try {
-                const record = JSON.parse(fs.readFileSync(join(presetsDir, file), 'utf8'));
+                const filePath = join(presetsDir, file);
+                const record = JSON.parse(fs.readFileSync(filePath, 'utf8'));
                 if (record && record.type === 'preset') {
                     if (!record.id) record.id = id;
                     if (importPosition === 'append') {
@@ -77,6 +117,21 @@ export function syncPresetFiles(config, options = {}) {
                     }
                     existingIds.add(record.id);
                     result.imported.push(record.id);
+                } else if (shouldImportLoosePresetFile(file, options) && isLoosePresetPayload(record)) {
+                    const stat = fs.statSync(filePath);
+                    const importRecord = buildLoosePresetImportRecord({
+                        id,
+                        filename: file,
+                        preset: record,
+                        createdAt: stat.mtime.toISOString()
+                    });
+                    if (importPosition === 'append') {
+                        config.imports.presetFiles.push(importRecord);
+                    } else {
+                        config.imports.presetFiles.unshift(importRecord);
+                    }
+                    existingIds.add(importRecord.id);
+                    result.imported.push(importRecord.id);
                 }
             } catch (error) {
                 result.skipped.push({ id, reason: error.message });
@@ -85,6 +140,7 @@ export function syncPresetFiles(config, options = {}) {
 
         for (const record of config.imports.presetFiles) {
             if (!record?.id) continue;
+            if (record.sourceType === 'disk-preset' || record.fileBackedOnly === true) continue;
             const filePath = join(presetsDir, `${record.id}.json`);
             try {
                 fs.writeFileSync(filePath, JSON.stringify(record, null, 2), 'utf8');

@@ -1547,7 +1547,7 @@ ensureBindingConfig(config);
 // 清理旧版 ST 预设水印（temperature/top_p/UUID identifiers 等无用水印）
 stripLegacyPresetMetadata(config);
 // 从 data/presets/ 同步预设文件到 config（支持备份独立恢复）
-syncPresetFiles(config);
+syncPresetFiles(config, { importLoosePresets: true, importPosition: 'append' });
 const logger = new Logger({
     logRetentionDays: config.server?.logRetentionDays,
     logCleanupIntervalMs: config.server?.logCleanupIntervalMs

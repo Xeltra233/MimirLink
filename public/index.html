@@ -13609,16 +13609,25 @@ input[type="radio"] {
         async function batchDeletePresetImports() {
             if (selectedPresetImportIds.size === 0) { showToast('请先勾选要删除的预设', true); return; }
             if (!confirm(`确定删除 ${selectedPresetImportIds.size} 个预设导入文件？此操作不可撤销。`)) return;
-            let deleted = 0;
-            for (const id of selectedPresetImportIds) {
-                try { await deletePresetImportFile(id, true); deleted++; } catch {}
-            }
-            selectedPresetImportIds.clear();
-            if (selectedPresetImportRecordId && !getCurrentPresetImportRecords().some(r => r.id === selectedPresetImportRecordId)) {
+            const ids = [...selectedPresetImportIds];
+            try {
+                const { res, data } = await fetchJsonSafe('/api/preset/imports/batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids })
+                });
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || (data.failed?.[0]?.error) || '批量删除失败');
+                }
+                selectedPresetImportIds.clear();
                 selectedPresetImportRecordId = '';
+                await loadConfig();
+                await loadRegexRules();
+                updatePresetImportSelectionUi();
+                showToast(data.message || `已删除 ${data.deletedIds?.length || 0} 个文件`);
+            } catch (e) {
+                showToast(`批量删除失败: ${e.message}`, true);
             }
-            updatePresetImportSelectionUi();
-            showToast(`已删除 ${deleted} 个文件`);
         }
 
         async function batchExportPresetImports() {
@@ -14886,18 +14895,28 @@ input[type="radio"] {
         async function batchDeleteWorldBooks() {
             if (selectedWorldBookIds.size === 0) { showToast('请先勾选要删除的世界书', true); return; }
             if (!confirm(`确定要删除选中的 ${selectedWorldBookIds.size} 个世界书吗？`)) return;
-            let success = 0;
-            for (const filename of selectedWorldBookIds) {
-                try {
-                    const res = await fetch(`/api/worldbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-                    const data = await res.json();
-                    if (data.success) success++;
-                } catch (e) {}
+            const filenames = [...selectedWorldBookIds];
+            try {
+                const { res, data } = await fetchJsonSafe('/api/worldbooks/batch-delete', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filenames })
+                });
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || (data.failed?.[0]?.error) || '批量删除失败');
+                }
+                showToast(data.message || `已删除 ${data.deleted?.length || 0} 个世界书`);
+                selectedWorldBookIds.clear();
+                if (data.deleted?.includes(currentWorldBookFilename)) {
+                    currentWorldBookFilename = null;
+                    currentWorldBookData = null;
+                    renderWorldBookEditor();
+                }
+                await loadWorldBooks();
+                renderWorldBookManagerList();
+            } catch (e) {
+                showToast(`批量删除失败: ${e.message}`, true);
             }
-            showToast(`已删除 ${success} 个世界书`);
-            selectedWorldBookIds.clear();
-            await loadWorldBooks();
-            renderWorldBookManagerList();
         }
 
         function batchExportWorldBooks() {
