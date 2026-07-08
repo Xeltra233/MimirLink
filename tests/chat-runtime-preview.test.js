@@ -18,7 +18,8 @@ import {
     appendMentionTaskToPromptMessages,
     buildAIToolContext,
     buildVoicePrefaceText,
-    generateMentionTextFromPrompt
+    generateMentionTextFromPrompt,
+    sendGroupMentionFromPrompt
 } from '../src/tools.js';
 
 function jsonResponse(payload, init = {}) {
@@ -285,6 +286,45 @@ test('generateMentionTextFromPrompt uses injected prompt messages and preserves 
     assert.match(calls[0].messages[1].content, /管理员要求: 问问他是谁/);
 });
 
+test('sendGroupMentionFromPrompt applies output processor before sending visible mention text', async () => {
+    const sentMessages = [];
+    const processedInputs = [];
+    const aiClient = {
+        async chat() {
+            return '  raw SECRET reply  ';
+        },
+        getVisibleResponseContent(result) {
+            return typeof result === 'string' ? result : '';
+        }
+    };
+    const bot = {
+        async sendGroupMessage(groupId, message) {
+            sentMessages.push({ groupId, message });
+        }
+    };
+
+    const result = await sendGroupMentionFromPrompt({
+        aiClient,
+        bot,
+        groupId: '123',
+        targetUserId: '456',
+        targetName: 'Target',
+        promptText: 'Say hello',
+        outputProcessor(text) {
+            processedInputs.push(text);
+            return text.replace('raw SECRET', 'clean');
+        }
+    });
+
+    assert.deepEqual(processedInputs, ['raw SECRET reply']);
+    assert.equal(result.generatedMessage, 'clean reply');
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].groupId, '123');
+    assert.equal(sentMessages[0].message[0].type, 'at');
+    assert.equal(sentMessages[0].message[0].data.qq, '456');
+    assert.equal(sentMessages[0].message[1].data.text, ' clean reply');
+});
+
 test('buildAIToolContext send_group_mention uses unified mentionGenerator when provided', async () => {
     const mentionCalls = [];
     const toolContext = buildAIToolContext({
@@ -326,6 +366,48 @@ test('buildAIToolContext send_group_mention uses unified mentionGenerator when p
         targetUserId: '456',
         generatedMessage: '统一链路生成的回复'
     });
+});
+
+test('buildAIToolContext send_group_mention applies mention output processor on direct sender path', async () => {
+    const sentMessages = [];
+    const processedInputs = [];
+    const toolContext = buildAIToolContext({
+        config: {
+            ai: {
+                tools: {
+                    sendMention: { enabled: true }
+                }
+            }
+        },
+        aiClient: {
+            async chat() {
+                return 'raw SECRET tool reply';
+            },
+            getVisibleResponseContent(result) {
+                return typeof result === 'string' ? result : '';
+            }
+        },
+        bot: {
+            async sendGroupMessage(groupId, message) {
+                sentMessages.push({ groupId, message });
+            }
+        },
+        defaultGroupId: '123',
+        defaultTargetUserId: '456',
+        mentionOutputProcessor(text) {
+            processedInputs.push(text);
+            return text.replace('raw SECRET', 'clean');
+        }
+    });
+
+    const result = await toolContext.handlers.send_group_mention({
+        prompt: 'Say hello'
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.generatedMessage, 'clean tool reply');
+    assert.deepEqual(processedInputs, ['raw SECRET tool reply']);
+    assert.equal(sentMessages[0].message[1].data.text, ' clean tool reply');
 });
 
 test('buildAIToolContext send_group_mention still rejects @all and empty prompt', async () => {

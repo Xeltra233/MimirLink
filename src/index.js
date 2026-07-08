@@ -1247,6 +1247,14 @@ function extractTextAfterMentionCommand(event, command, mentionedParticipantId) 
     return sanitizeContent(messageText);
 }
 
+function processMentionOutputText(text) {
+    const visibleText = sanitizeContent(text);
+    if (!visibleText) {
+        return '';
+    }
+    return sanitizeContent(regexProcessor.processOutput(visibleText));
+}
+
 async function generateContextualMentionReply({
     event,
     targetUserId,
@@ -1343,14 +1351,17 @@ async function generateContextualMentionReply({
         }
     });
 
+    const generatedMessage = sanitizeContent(mentionResult.generatedMessage);
+    const messageToSend = sendMessage ? processMentionOutputText(generatedMessage) : generatedMessage;
+
     if (sendMessage) {
-        await bot.sendGroupMessage(event.group_id, buildMentionMessage(targetUserId, mentionResult.generatedMessage));
+        await bot.sendGroupMessage(event.group_id, buildMentionMessage(targetUserId, messageToSend));
     }
 
     return {
         groupId: String(event.group_id),
         targetUserId: String(targetUserId),
-        generatedMessage: sanitizeContent(mentionResult.generatedMessage),
+        generatedMessage: messageToSend,
         usedPromptBuilder: !!mentionResult.usedPromptBuilder,
         finalMessageCount: mentionResult.finalMessageCount || 0,
         durationMs: mentionResult.durationMs || 0,
@@ -1372,7 +1383,7 @@ async function generateAdminMentionReply(event, mentionedParticipant, promptText
         });
         return result.generatedMessage;
     }, timeoutMs);
-    return sanitizeContent(reply);
+    return processMentionOutputText(reply);
 }
 
 function buildReplyReference(items) {

@@ -4081,7 +4081,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 targetUserId,
                 targetName,
                 promptText: String(message || '').trim(),
-                aiOptions: buildProviderAIOverrides()
+                aiOptions: buildProviderAIOverrides(),
+                outputProcessor: (text) => typeof regexProcessor?.processOutput === 'function'
+                    ? regexProcessor.processOutput(text)
+                    : text
             }), timeoutMs);
             logger.info(`[API ${req.requestId || 'no-id'}] 主动@测试完成`, {
                 groupId: String(groupId),

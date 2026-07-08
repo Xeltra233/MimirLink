@@ -59,7 +59,7 @@ async function startTestServer(sessionManager, options = {}) {
         },
         worldBookManager: options.worldBookManager || { scanWorldBooks: async () => {}, readWorldBook() { return null; }, getCurrentWorldBook() { return null; } },
         sessionManager,
-        regexProcessor: { updateConfig() {} },
+        regexProcessor: options.regexProcessor || { updateConfig() {} },
         aiClient: { ...defaultAiClient, ...(options.aiClient || {}) },
         promptBuilder: { updateConfig() {} },
         logger: { info() {}, warn() {}, error() {}, debug() {} },
@@ -509,6 +509,56 @@ test('mention test route generates AI content, sends structured at message, and 
         assert.equal(atAllRes.status, 400);
         assert.equal(atAllData.success, false);
         assert.equal(atAllData.error, '不支持向 @全体成员 主动发送消息');
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+});
+
+test('mention test route applies output regex processing before sending', async () => {
+    const { manager } = createTempManager();
+    const sentMessages = [];
+    const { server, baseUrl } = await startTestServer(manager, {
+        aiClient: {
+            updateConfig() {},
+            async chat() {
+                return 'raw SECRET route reply';
+            }
+        },
+        regexProcessor: {
+            updateConfig() {},
+            processOutput(text) {
+                return String(text || '').replace('raw SECRET', 'clean');
+            }
+        },
+        bot: {
+            async sendGroupMessage(groupId, message) {
+                sentMessages.push({ groupId, message });
+                return { message_id: 2 };
+            }
+        }
+    });
+
+    try {
+        const res = await fetch(`${baseUrl}/api/test/mention`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                groupId: '123456',
+                targetUserId: '654321',
+                targetName: 'Target',
+                message: 'Say hello'
+            })
+        });
+        const data = await res.json();
+
+        assert.equal(res.status, 200);
+        assert.equal(data.success, true);
+        assert.equal(data.generatedMessage, 'clean route reply');
+        assert.equal(sentMessages.length, 1);
+        assert.deepEqual(sentMessages[0].message, [
+            { type: 'at', data: { qq: '654321' } },
+            { type: 'text', data: { text: ' clean route reply' } }
+        ]);
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

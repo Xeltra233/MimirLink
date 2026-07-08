@@ -1445,7 +1445,7 @@ export async function generateMentionTextFromPrompt({ aiClient, groupId, targetU
     };
 }
 
-export async function sendGroupMentionFromPrompt({ aiClient, bot, groupId, targetUserId, targetName, promptText, buildPromptMessages = null, aiOptions = undefined }) {
+export async function sendGroupMentionFromPrompt({ aiClient, bot, groupId, targetUserId, targetName, promptText, buildPromptMessages = null, aiOptions = undefined, outputProcessor = null }) {
     const normalizedGroupId = toComparableId(groupId);
     const normalizedTargetUserId = toComparableId(targetUserId);
     if (!normalizedGroupId) {
@@ -1465,12 +1465,20 @@ export async function sendGroupMentionFromPrompt({ aiClient, bot, groupId, targe
         aiOptions
     });
 
-    await bot.sendGroupMessage(normalizedGroupId, buildMentionMessage(normalizedTargetUserId, generated.generatedMessage));
+    const generatedMessage = typeof outputProcessor === 'function'
+        ? sanitizeText(outputProcessor(generated.generatedMessage))
+        : generated.generatedMessage;
+
+    if (!generatedMessage) {
+        throw new Error('AI generated empty mention message after output processing');
+    }
+
+    await bot.sendGroupMessage(normalizedGroupId, buildMentionMessage(normalizedTargetUserId, generatedMessage));
 
     return {
         groupId: normalizedGroupId,
         targetUserId: normalizedTargetUserId,
-        generatedMessage: generated.generatedMessage,
+        generatedMessage,
         prompt: generated.prompt,
         usedPromptBuilder: generated.usedPromptBuilder,
         finalMessageCount: generated.finalMessageCount,
@@ -1568,7 +1576,7 @@ export async function buildRealtimeGroundingMessage({ config = {}, query = '', l
     }
 }
 
-export function buildAIToolContext({ config = {}, aiClient, bot, logger, defaultGroupId = null, defaultTargetUserId = null, defaultTargetName = null, allowSendMention = true, mentionGenerator = null } = {}) {
+export function buildAIToolContext({ config = {}, aiClient, bot, logger, defaultGroupId = null, defaultTargetUserId = null, defaultTargetName = null, allowSendMention = true, mentionGenerator = null, mentionOutputProcessor = null } = {}) {
     const webSearchConfig = config.ai?.tools?.webSearch || {};
     const textToolFallbackConfig = config.ai?.tools?.textToolFallback || {};
     const tools = buildAIToolDefinitions(config, { allowSendMention });
@@ -1773,7 +1781,8 @@ export function buildAIToolContext({ config = {}, aiClient, bot, logger, default
                             groupId,
                             targetUserId,
                             targetName: defaultTargetName,
-                            promptText: prompt
+                            promptText: prompt,
+                            outputProcessor: mentionOutputProcessor
                         });
 
                     logger?.info?.('[工具] send_group_mention 完成', {

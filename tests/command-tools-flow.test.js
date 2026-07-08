@@ -418,6 +418,30 @@ test('QQ emoji reaction supports numeric ids and aliases while preserving switch
     assert.ok(source.includes('bot.setMsgEmojiLike(event.message_id, emojiId)'));
 });
 
+test('admin /at command routes generated mention text through output regex processing before sending', () => {
+    const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+    const generateStart = source.indexOf('async function generateAdminMentionReply');
+    const generateEnd = source.indexOf('function buildReplyReference', generateStart);
+    const handleStart = source.indexOf('async function handleAdminMentionCommand');
+    const handleEnd = source.indexOf('async function handleAdminPokeCommand');
+
+    assert.notEqual(generateStart, -1);
+    assert.notEqual(generateEnd, -1);
+    assert.notEqual(handleStart, -1);
+    assert.notEqual(handleEnd, -1);
+
+    const generateSource = source.slice(generateStart, generateEnd);
+    const handleSource = source.slice(handleStart, handleEnd);
+
+    assert.equal(
+        /processMentionOutputText|regexProcessor\.processOutput/.test(generateSource),
+        true,
+        'generateAdminMentionReply must run generated text through output regex processing'
+    );
+    assert.match(handleSource, /generateAdminMentionReply/);
+    assert.match(handleSource, /buildMentionMessage\(mentionedParticipant\.participantId,\s*messageText\)/);
+});
+
 test('web_search covers 100+ varied search rounds and only returns grounding data', async () => {
     assert.ok(VARIED_SEARCH_SCENARIOS.length >= 100);
     assert.ok(SEARCH_QUERY_GROUPS.life_small_questions.length >= 15);
