@@ -13462,9 +13462,6 @@ input[type="radio"] {
         }
 
         function syncActivePresetDraftIntoRuntimeBinding(newConfig) {
-            if (selectedPresetImportRecordId) {
-                return;
-            }
             const activeSource = getActiveRuntimePresetSource();
             const savedPreset = structuredClone(newConfig.preset || {});
             if (activeSource.kind === 'character' && activeSource.characterName && newConfig.bindings?.characters?.[activeSource.characterName]) {
@@ -13478,6 +13475,21 @@ input[type="radio"] {
                     preset: savedPreset
                 };
             }
+        }
+
+        function buildPresetSavePayload() {
+            const selectedRecord = getSelectedPresetImportRecord();
+            const activeSource = getActiveRuntimePresetSource();
+            const sourcePreset = selectedRecord?.importedPreset || activeSource.preset || currentConfig?.preset || {};
+            return {
+                ...structuredClone(sourcePreset),
+                enabled: document.getElementById('config-preset-enabled').checked,
+                name: document.getElementById('config-preset-name').value,
+                prompts: structuredClone(presetDraft.prompts),
+                regexRules: Array.isArray(sourcePreset.regexRules)
+                    ? structuredClone(sourcePreset.regexRules)
+                    : (currentConfig.preset?.regexRules || [])
+            };
         }
 
         function applySelectedPresetSource() {
@@ -17535,12 +17547,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         model: summaryModelSelection.model
                     }
                 },
-                preset: {
-                    enabled: document.getElementById('config-preset-enabled').checked,
-                    name: document.getElementById('config-preset-name').value,
-                    prompts: structuredClone(presetDraft.prompts),
-                    regexRules: currentConfig.preset?.regexRules || []
-                },
+                preset: buildPresetSavePayload(),
                 mcp: {
                     enabled: document.getElementById('config-mcp-enabled').checked,
                     path: document.getElementById('config-mcp-path').value.trim() || '/mcp'

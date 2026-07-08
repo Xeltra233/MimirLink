@@ -46,3 +46,16 @@ test('config UI uses batch delete endpoints for preset imports and worldbooks', 
     assert.equal(source.includes('await deletePresetImportFile(id, true);'), false);
     assert.equal(source.includes("fetch(`/api/worldbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' });\n                    const data = await res.json();\n                    if (data.success) success++;"), false);
 });
+
+test('saving an imported preset writes it back to the active runtime binding', () => {
+    const syncStart = source.indexOf('function syncActivePresetDraftIntoRuntimeBinding(newConfig)');
+    const syncEnd = source.indexOf('function buildPresetSavePayload()', syncStart);
+    assert.ok(syncStart >= 0);
+    assert.ok(syncEnd > syncStart);
+    const syncBody = source.slice(syncStart, syncEnd);
+    assert.equal(syncBody.includes('if (selectedPresetImportRecordId)'), false);
+    assert.ok(source.includes('function buildPresetSavePayload()'));
+    assert.ok(source.includes('const selectedRecord = getSelectedPresetImportRecord();'));
+    assert.ok(source.includes('const sourcePreset = selectedRecord?.importedPreset || activeSource.preset || currentConfig?.preset || {};'));
+    assert.ok(source.includes('preset: buildPresetSavePayload(),'));
+});
