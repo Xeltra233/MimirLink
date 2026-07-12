@@ -6545,6 +6545,66 @@
             background: transparent;
         }
 
+
+        /* 人物档案列表：恢复网格结构，用户名强制横向 */
+        #participant-profiles .participant-profile-item,
+        .participant-profile-item {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            align-items: stretch !important;
+            justify-content: start !important;
+            gap: 6px !important;
+            text-align: left !important;
+            min-width: 0 !important;
+        }
+
+        #participant-profiles .participant-profile-item-header,
+        .participant-profile-item-header {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) auto !important;
+            align-items: center !important;
+            gap: 8px !important;
+            width: 100% !important;
+            min-width: 0 !important;
+        }
+
+        #participant-profiles .participant-profile-item-name,
+        #participant-profiles .participant-profile-item-name.name,
+        .participant-profile-item-name,
+        .participant-profile-item-name.name {
+            display: block !important;
+            width: auto !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            writing-mode: horizontal-tb !important;
+            text-orientation: mixed !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            word-break: normal !important;
+            overflow-wrap: normal !important;
+            line-height: 1.35 !important;
+            text-align: left !important;
+        }
+
+        #participant-profiles .participant-profile-item-id,
+        .participant-profile-item-id {
+            flex: 0 0 auto !important;
+            white-space: nowrap !important;
+            writing-mode: horizontal-tb !important;
+        }
+
+        #participant-profiles .participant-profile-item-meta,
+        #participant-profiles .participant-profile-item-scope,
+        .participant-profile-item-meta,
+        .participant-profile-item-scope {
+            writing-mode: horizontal-tb !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+            text-align: left !important;
+        }
+
         #tasks .task-status-banner {
             margin-bottom: 12px;
             padding: 12px 16px;
@@ -6907,685 +6967,3505 @@
         }
 
         /* Gemini workbench redesign override: start */
-        :root, body[data-theme='light'], body[data-theme='rose'] {
-    --bg: #f8fafc !important;
-    --bg-elevated: #ffffff !important;
-    --bg-inset: #f1f5f9 !important;
-    --text: #0f172a !important;
-    --text-muted: #64748b !important;
-    --text-faint: #94a3b8 !important;
-    --accent: #2563eb !important;
-    --accent-soft: #eff6ff !important;
-    --accent-hover: #1d4ed8 !important;
-    --btn-primary: #0f172a !important;
-    --btn-primary-hover: #1e293b !important;
-    --btn-ghost: transparent !important;
-    --btn-ghost-hover: #f1f5f9 !important;
-    --btn-ghost-text: #334155 !important;
-    --success: #059669 !important;
-    --warning: #d97706 !important;
-    --error: #dc2626 !important;
-    --info: #2563eb !important;
-    --border: #e2e8f0 !important;
-    --border-strong: #cbd5e1 !important;
-    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
-    --shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1) !important;
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1) !important;
-    --radius: 6px !important;
-    --radius-lg: 8px !important;
-}
+        :root, body[data-theme='light'], body:not([data-theme]) {
+            --glass-bg: rgba(255, 255, 255, 0.52) !important;
+            --glass-bg-strong: rgba(255, 255, 255, 0.68) !important;
+            --glass-bg-soft: rgba(255, 255, 255, 0.38) !important;
+            --glass-border: rgba(255, 255, 255, 0.55) !important;
+            --glass-border-strong: rgba(255, 255, 255, 0.72) !important;
+            --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.78) !important;
+            --glass-blur: 18px !important;
+            --glass-blur-sm: 12px !important;
+            --bg: transparent !important;
+            --bg-elevated: var(--glass-bg-strong) !important;
+            --bg-inset: rgba(37, 99, 235, 0.05) !important;
+            --text: #0f172a !important;
+            --text-muted: #475569 !important;
+            --text-faint: #94a3b8 !important;
+            --accent: #2563eb !important;
+            --accent-soft: rgba(37, 99, 235, 0.12) !important;
+            --accent-hover: #1d4ed8 !important;
+            --btn-primary: #2563eb !important;
+            --btn-primary-hover: #1d4ed8 !important;
+            --btn-ghost: rgba(255, 255, 255, 0.42) !important;
+            --btn-ghost-hover: rgba(255, 255, 255, 0.58) !important;
+            --btn-ghost-text: #1e293b !important;
+            --success: #16a34a !important;
+            --warning: #d97706 !important;
+            --error: #dc2626 !important;
+            --info: #0ea5e9 !important;
+            --border: rgba(148, 163, 184, 0.28) !important;
+            --border-strong: rgba(100, 116, 139, 0.38) !important;
+            --shadow-sm: 0 2px 10px rgba(37, 99, 235, 0.08) !important;
+            --shadow: 0 12px 32px rgba(37, 99, 235, 0.12) !important;
+            --shadow-md: 0 20px 50px rgba(15, 23, 42, 0.14) !important;
+            --radius: 12px !important;
+            --radius-lg: 16px !important;
+            --app-bg:
+                radial-gradient(980px 520px at 8% -12%, rgba(56, 189, 248, 0.34), transparent 58%),
+                radial-gradient(860px 480px at 92% -8%, rgba(167, 139, 250, 0.30), transparent 55%),
+                radial-gradient(720px 420px at 50% 100%, rgba(244, 114, 182, 0.16), transparent 60%),
+                linear-gradient(165deg, #dbeafe 0%, #eef2ff 42%, #fdf2f8 100%) !important;
+        }
 
-body[data-theme='dark'] {
-    --bg: #0f172a !important;
-    --bg-elevated: #1e293b !important;
-    --bg-inset: #020617 !important;
-    --text: #f8fafc !important;
-    --text-muted: #94a3b8 !important;
-    --text-faint: #64748b !important;
-    --accent: #3b82f6 !important;
-    --accent-soft: #1e3a8a !important;
-    --accent-hover: #60a5fa !important;
-    --btn-primary: #f8fafc !important;
-    --btn-primary-hover: #e2e8f0 !important;
-    --btn-ghost: transparent !important;
-    --btn-ghost-hover: #334155 !important;
-    --btn-ghost-text: #e2e8f0 !important;
-    --success: #10b981 !important;
-    --warning: #f59e0b !important;
-    --error: #ef4444 !important;
-    --info: #3b82f6 !important;
-    --border: #334155 !important;
-    --border-strong: #475569 !important;
-}
+        body[data-theme='dark'] {
+            --glass-bg: rgba(15, 23, 42, 0.48) !important;
+            --glass-bg-strong: rgba(15, 23, 42, 0.62) !important;
+            --glass-bg-soft: rgba(15, 23, 42, 0.34) !important;
+            --glass-border: rgba(148, 163, 184, 0.22) !important;
+            --glass-border-strong: rgba(165, 180, 252, 0.34) !important;
+            --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+            --glass-blur: 18px !important;
+            --glass-blur-sm: 12px !important;
+            --bg: transparent !important;
+            --bg-elevated: var(--glass-bg-strong) !important;
+            --bg-inset: rgba(2, 6, 23, 0.45) !important;
+            --text: #f8fafc !important;
+            --text-muted: #94a3b8 !important;
+            --text-faint: #64748b !important;
+            --accent: #60a5fa !important;
+            --accent-soft: rgba(96, 165, 250, 0.16) !important;
+            --accent-hover: #93c5fd !important;
+            --btn-primary: #3b82f6 !important;
+            --btn-primary-hover: #60a5fa !important;
+            --btn-ghost: rgba(148, 163, 184, 0.12) !important;
+            --btn-ghost-hover: rgba(148, 163, 184, 0.2) !important;
+            --btn-ghost-text: #e2e8f0 !important;
+            --success: #4ade80 !important;
+            --warning: #fbbf24 !important;
+            --error: #f87171 !important;
+            --info: #38bdf8 !important;
+            --border: rgba(148, 163, 184, 0.18) !important;
+            --border-strong: rgba(148, 163, 184, 0.30) !important;
+            --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.28) !important;
+            --shadow: 0 12px 32px rgba(0, 0, 0, 0.36) !important;
+            --shadow-md: 0 20px 56px rgba(0, 0, 0, 0.45) !important;
+            --app-bg:
+                radial-gradient(980px 520px at 10% -12%, rgba(59, 130, 246, 0.28), transparent 58%),
+                radial-gradient(860px 480px at 92% -6%, rgba(168, 85, 247, 0.24), transparent 55%),
+                radial-gradient(700px 420px at 50% 110%, rgba(14, 165, 233, 0.14), transparent 60%),
+                linear-gradient(180deg, #020617 0%, #0b1220 48%, #111827 100%) !important;
+        }
 
-body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-    font-size: 13px !important;
-    line-height: 1.5 !important;
-    background: var(--bg) !important;
-    color: var(--text) !important;
-    letter-spacing: 0 !important;
-}
+        body[data-theme='rose'] {
+            --glass-bg: rgba(255, 255, 255, 0.54) !important;
+            --glass-bg-strong: rgba(255, 255, 255, 0.70) !important;
+            --glass-bg-soft: rgba(255, 241, 245, 0.40) !important;
+            --glass-border: rgba(255, 255, 255, 0.58) !important;
+            --glass-border-strong: rgba(255, 255, 255, 0.74) !important;
+            --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.80) !important;
+            --glass-blur: 18px !important;
+            --glass-blur-sm: 12px !important;
+            --bg: transparent !important;
+            --bg-elevated: var(--glass-bg-strong) !important;
+            --bg-inset: rgba(244, 114, 182, 0.08) !important;
+            --text: #2d1d23 !important;
+            --text-muted: #7a5d67 !important;
+            --text-faint: #a88a93 !important;
+            --accent: #d94f70 !important;
+            --accent-soft: rgba(217, 79, 112, 0.12) !important;
+            --accent-hover: #c03d5d !important;
+            --btn-primary: #d94f70 !important;
+            --btn-primary-hover: #c03d5d !important;
+            --btn-ghost: rgba(255, 255, 255, 0.36) !important;
+            --btn-ghost-hover: rgba(255, 255, 255, 0.52) !important;
+            --btn-ghost-text: #2d1d23 !important;
+            --success: #358562 !important;
+            --warning: #b7791f !important;
+            --error: #c2410c !important;
+            --info: #6b5b63 !important;
+            --border: rgba(226, 200, 208, 0.42) !important;
+            --border-strong: rgba(216, 160, 176, 0.5) !important;
+            --shadow-sm: 0 2px 10px rgba(45, 29, 35, 0.06) !important;
+            --shadow: 0 12px 32px rgba(45, 29, 35, 0.08) !important;
+            --shadow-md: 0 20px 50px rgba(45, 29, 35, 0.12) !important;
+            --app-bg:
+                radial-gradient(980px 520px at 10% -12%, rgba(244, 114, 182, 0.34), transparent 58%),
+                radial-gradient(860px 480px at 92% -8%, rgba(251, 146, 60, 0.20), transparent 55%),
+                radial-gradient(700px 420px at 45% 105%, rgba(192, 132, 252, 0.16), transparent 60%),
+                linear-gradient(165deg, #ffe4e6 0%, #fff1f5 45%, #fdf2f8 100%) !important;
+        }
 
-h1, h2, h3, h4, h5, h6 {
-    font-weight: 600 !important;
-    color: var(--text) !important;
-    margin-bottom: 12px !important;
-    letter-spacing: 0 !important;
-}
-h2 { font-size: 16px !important; letter-spacing: -0.01em !important; border: none !important; padding: 0 !important; }
-h3 { font-size: 14px !important; }
+        html {
+            background: var(--app-bg) !important;
+            min-height: 100% !important;
+        }
 
-.container { background: var(--bg) !important; }
+        body {
+            background: var(--app-bg) !important;
+            background-attachment: fixed !important;
+            color: var(--text) !important;
+        }
 
-header {
-    height: 48px !important;
-    padding: 0 16px !important;
-    background: var(--bg-elevated) !important;
-    border-bottom: 1px solid var(--border) !important;
-    box-shadow: var(--shadow-sm) !important;
-    display: flex !important;
-    align-items: center !important;
-}
-header h1 { font-size: 15px !important; margin: 0 !important; display: flex !important; align-items: center !important; gap: 8px !important; }
-header h1 span {
-    font-size: 10px !important;
-    padding: 2px 6px !important;
-    background: var(--accent-soft) !important;
-    color: var(--accent) !important;
-    border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent) !important;
-    border-radius: 4px !important;
-    text-transform: uppercase !important;
-    box-shadow: none !important;
-}
+        .container {
+            background: transparent !important;
+        }
 
-.status-bar { gap: 8px !important; }
-.status-item, .global-search-trigger, .theme-toggle {
-    height: 28px !important;
-    min-height: 28px !important;
-    padding: 0 10px !important;
-    font-size: 12px !important;
-    border-radius: var(--radius) !important;
-    background: var(--bg-inset) !important;
-    border: 1px solid var(--border) !important;
-    color: var(--text) !important;
-    font-weight: 500 !important;
-    transition: all 0.15s ease !important;
-    display: inline-flex !important;
-    align-items: center !important;
-    box-shadow: none !important;
-}
-.status-item:hover, .global-search-trigger:hover, .theme-toggle:hover {
-    background: var(--bg-elevated) !important;
-    border-color: var(--border-strong) !important;
-}
+        header {
+            height: auto !important;
+            min-height: 56px !important;
+            padding: 10px 18px !important;
+            background: var(--glass-bg-strong) !important;
+            border-bottom: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.25) !important;
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.25) !important;
+        }
 
-.shell-layout { background: var(--bg) !important; }
-.tabs {
-    width: 180px !important;
-    flex: 0 0 180px !important;
-    background: var(--bg-elevated) !important;
-    border-right: 1px solid var(--border) !important;
-    padding: 12px 8px !important;
-    gap: 4px !important;
-}
-.tab {
-    font-size: 13px !important;
-    padding: 8px 12px !important;
-    border-radius: var(--radius) !important;
-    min-height: 32px !important;
-    color: var(--text-muted) !important;
-    border: none !important;
-    background: transparent !important;
-    font-weight: 500 !important;
-    transition: all 0.15s ease !important;
-    display: flex !important;
-    align-items: center !important;
-}
-.tab:hover {
-    background: var(--bg-inset) !important;
-    color: var(--text) !important;
-    transform: none !important;
-}
-.tab.active {
-    background: var(--accent-soft) !important;
-    color: var(--accent) !important;
-    font-weight: 600 !important;
-    border-left: none !important;
-    box-shadow: none !important;
-}
+        header h1 span {
+            background: color-mix(in srgb, var(--accent) 16%, transparent) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent) !important;
+            box-shadow: none !important;
+        }
 
-.shell-layout > .panel:not(#prompt-range) {
-    padding: 20px 24px !important;
-    max-width: 1600px !important;
-    margin: 0 auto !important;
-}
-.card, .range-workbench-config, .range-board-canvas, .range-observer-lane, .range-observer-card, .range-observer-preview, .range-trace-detail-shell, .dashboard-onboarding-card, .dashboard-chart-panel, .preset-drawer, .preset-editor-shell, .model-service-panel, .preset-ai-panel, .runtime-preview-shell {
-    background-image: none !important;
-}
-.card {
-    padding: 16px !important;
-    border-radius: var(--radius-lg) !important;
-    border: 1px solid var(--border) !important;
-    background: var(--bg-elevated) !important;
-    box-shadow: var(--shadow-sm) !important;
-    margin-bottom: 16px !important;
-    transition: box-shadow 0.2s ease, border-color 0.2s ease !important;
-}
-.card:hover {
-    box-shadow: var(--shadow) !important;
-    border-color: var(--border-strong) !important;
-    transform: none !important;
-}
+        .status-item,
+        .global-search-trigger,
+        .theme-toggle {
+            background: var(--glass-bg-soft) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) !important;
+        }
 
-.form-group { margin-bottom: 12px !important; min-width: 0 !important; width: 100% !important; box-sizing: border-box !important; }
-.form-group label {
-    font-size: 12px !important;
-    font-weight: 500 !important;
-    color: var(--text-muted) !important;
-    margin-bottom: 6px !important;
-    text-transform: none !important;
-    display: block !important;
-}
-input, select, textarea {
-    font-size: 13px !important;
-    padding: 6px 10px !important;
-    border-radius: var(--radius) !important;
-    border: 1px solid var(--border) !important;
-    background: var(--bg-elevated) !important;
-    color: var(--text) !important;
-    min-height: 32px !important;
-    transition: all 0.15s ease !important;
-    box-shadow: var(--shadow-sm) !important;
-    width: 100% !important;
-    box-sizing: border-box !important;
-}
-input:focus, select:focus, textarea:focus {
-    border-color: var(--accent) !important;
-    box-shadow: 0 0 0 2px var(--accent-soft) !important;
-    outline: none !important;
-}
-#participant-profiles textarea#participant-profile-content {
-    min-height: clamp(420px, 58vh, 720px) !important;
-    line-height: 1.6 !important;
-    resize: vertical !important;
-}
-#config-memory-db-path {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-    font-size: 12px !important;
-    word-break: break-all !important;
-}
+        .status-item:hover,
+        .global-search-trigger:hover,
+        .theme-toggle:hover {
+            background: var(--glass-bg) !important;
+            border-color: var(--glass-border-strong) !important;
+        }
 
-button {
-    font-size: 13px !important;
-    padding: 6px 14px !important;
-    border-radius: var(--radius) !important;
-    min-height: 32px !important;
-    font-weight: 500 !important;
-    background: var(--btn-primary) !important;
-    color: var(--bg-elevated) !important;
-    border: 1px solid transparent !important;
-    box-shadow: var(--shadow-sm) !important;
-    transition: all 0.15s ease !important;
-    cursor: pointer !important;
-}
-button:hover { background: var(--btn-primary-hover) !important; }
-button.secondary {
-    background: var(--bg-elevated) !important;
-    border-color: var(--border) !important;
-    color: var(--text) !important;
-}
-button.secondary:hover {
-    background: var(--bg-inset) !important;
-    border-color: var(--border-strong) !important;
-}
+        .theme-dropdown {
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-md) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) !important;
+            backdrop-filter: blur(var(--glass-blur)) !important;
+        }
 
-.config-subgrid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)) !important; gap: 16px !important; }
-#dashboard .dashboard-top-grid { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)) !important; gap: 16px !important; }
-#dashboard .dashboard-stat-card {
-    padding: 16px !important;
-    border-top: none !important;
-    border-left: 4px solid var(--border-strong) !important;
-    min-height: 80px !important;
-    background: var(--bg-elevated) !important;
-    border-radius: var(--radius-lg) !important;
-    border-right: 1px solid var(--border) !important;
-    border-bottom: 1px solid var(--border) !important;
-    border-top: 1px solid var(--border) !important;
-}
-#dashboard .dashboard-stat-card:nth-child(1) { border-left-color: var(--info) !important; }
-#dashboard .dashboard-stat-card:nth-child(2) { border-left-color: var(--success) !important; }
-#dashboard .dashboard-stat-card:nth-child(3) { border-left-color: var(--warning) !important; }
-#dashboard .dashboard-stat-card:nth-child(4) { border-left-color: var(--accent) !important; }
-#dashboard .dashboard-stat-value { font-size: 24px !important; font-weight: 700 !important; letter-spacing: -0.02em !important; color: var(--text) !important; font-family: inherit !important; }
-#dashboard .dashboard-stat-label { font-size: 12px !important; font-weight: 600 !important; color: var(--text-muted) !important; text-transform: uppercase !important; }
-#dashboard .dashboard-onboarding-card { border-left: 4px solid var(--accent) !important; background: var(--bg-elevated) !important; border-radius: var(--radius-lg) !important; }
-#dashboard .dashboard-chart-card { border-radius: var(--radius-lg) !important; border: 1px solid var(--border) !important; box-shadow: var(--shadow-sm) !important; }
-#dashboard .dashboard-chart-panel { background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; }
-#dashboard .dashboard-mini-stat { background: var(--bg-inset) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; box-shadow: none !important; padding: 10px !important; }
+        .shell-layout {
+            background: transparent !important;
+        }
 
-#tasks .task-card {
-    border-radius: var(--radius-lg) !important;
-    border: 1px solid var(--border) !important;
-    border-left: 4px solid var(--border-strong) !important;
-    background: var(--bg-elevated) !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-#tasks .task-card.is-active {
-    border-left-color: var(--accent) !important;
-    background: var(--bg-elevated) !important;
-    box-shadow: var(--shadow) !important;
-}
-#tasks .task-status-banner { border-radius: var(--radius-lg) !important; border: 1px solid var(--border) !important; background: var(--bg-elevated) !important; }
-#tasks .task-status-banner.is-active { border-left: 4px solid var(--accent) !important; }
-#tasks .task-progress-item { border-radius: var(--radius) !important; border: 1px solid var(--border) !important; background: var(--bg-inset) !important; }
+        .tabs {
+            width: 196px !important;
+            flex: 0 0 196px !important;
+            background: var(--glass-bg) !important;
+            border-right: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.2) !important;
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.2) !important;
+            padding: 14px 10px !important;
+            gap: 4px !important;
+        }
 
-#config .config-subtabs {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-lg) !important;
-    padding: 4px !important;
-    display: flex !important;
-    flex-wrap: wrap !important;
-    margin-bottom: 20px !important;
-    box-shadow: var(--shadow-sm) !important;
-    backdrop-filter: none !important;
-    gap: 4px !important;
-}
-#config .config-subtab {
-    border-radius: var(--radius) !important;
-    border: none !important;
-    margin: 0 !important;
-    padding: 6px 14px !important;
-    font-size: 13px !important;
-    min-height: 30px !important;
-    background: transparent !important;
-    color: var(--text-muted) !important;
-    font-weight: 500 !important;
-}
-#config .config-subtab.active {
-    background: var(--bg-inset) !important;
-    color: var(--text) !important;
-    font-weight: 600 !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-#config .card { border-top: none !important; border-radius: var(--radius-lg) !important; box-shadow: var(--shadow-sm) !important; }
-#config .config-subpanel[data-config-panel='overview'] .dashboard-quick-link { border-radius: var(--radius) !important; border: 1px solid var(--border) !important; background: var(--bg-elevated) !important; box-shadow: var(--shadow-sm) !important; }
-#config .config-subpanel[data-config-panel='overview'] .dashboard-quick-link:hover { border-color: var(--accent) !important; transform: translateY(-1px) !important; box-shadow: var(--shadow) !important; }
+        .tab {
+            border-radius: 12px !important;
+            border: 1px solid transparent !important;
+            background: transparent !important;
+            color: var(--text-muted) !important;
+            min-height: 36px !important;
+        }
 
-.range-layout-with-sidebar {
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-lg) !important;
-    overflow: hidden !important;
-    background: var(--border) !important;
-    gap: 1px !important;
-}
-.range-col {
-    background: var(--bg-elevated) !important;
-    border: none !important;
-    border-radius: 0 !important;
-    box-shadow: none !important;
-    opacity: 1 !important;
-}
-.range-chat-header, .range-mobile-tools-header {
-    background: var(--bg-elevated) !important;
-    border-bottom: 1px solid var(--border) !important;
-    padding: 10px 16px !important;
-    min-height: 40px !important;
-    backdrop-filter: none !important;
-}
-.range-chat-header-label {
-    font-size: 13px !important;
-    font-weight: 600 !important;
-    color: var(--text) !important;
-    text-transform: none !important;
-    letter-spacing: 0 !important;
-}
-.range-workbench-scroll { background: var(--bg-elevated) !important; padding: 16px !important; gap: 16px !important; }
-.range-workbench-config .card.range-card-padded {
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 16px !important;
-    box-shadow: var(--shadow-sm) !important;
-    opacity: 1 !important;
-}
-.range-board-canvas { background: var(--bg) !important; padding: 20px !important; box-shadow: none !important; }
-.range-board-canvas::before, .range-board-canvas::after { display: none !important; }
-.range-board-floating-panel {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-md) !important;
-    padding: 16px !important;
-    color: var(--text) !important;
-    backdrop-filter: none !important;
-}
-.range-board-floating-title { color: var(--text) !important; font-size: 14px !important; font-weight: 600 !important; }
-.range-board-floating-meta { color: var(--text-muted) !important; font-size: 12px !important; }
-.range-observer-lanes { gap: 16px !important; padding: 0 !important; }
-.range-observer-lane {
-    background: transparent !important;
-    border: none !important;
-    box-shadow: none !important;
-    padding: 0 !important;
-    gap: 12px !important;
-    backdrop-filter: none !important;
-}
-.range-observer-lane-head {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 10px 12px !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-.range-observer-lane-title { color: var(--text) !important; font-size: 13px !important; font-weight: 600 !important; }
-.range-observer-lane-meta { color: var(--text-muted) !important; font-size: 12px !important; }
-.range-observer-card {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    box-shadow: var(--shadow-sm) !important;
-    padding: 12px !important;
-    min-height: auto !important;
-    display: flex !important;
-    flex-direction: column !important;
-    gap: 12px !important;
-}
-.range-observer-card::before, .range-observer-card::after { display: none !important; }
-.range-observer-card:hover { transform: translateY(-2px) !important; border-color: var(--border-strong) !important; box-shadow: var(--shadow) !important; }
-.range-observer-card.is-selected { border-color: var(--accent) !important; box-shadow: 0 0 0 2px var(--accent-soft) !important; }
-.range-observer-card-head { padding: 0 !important; background: transparent !important; border-bottom: none !important; min-height: auto !important; }
-.range-observer-card-title { color: var(--text) !important; font-size: 14px !important; font-weight: 600 !important; }
-.range-observer-preview {
-    margin: 0 !important;
-    padding: 12px !important;
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-    font-size: 12px !important;
-    box-shadow: inset var(--shadow-sm) !important;
-    color: var(--text) !important;
-}
-.range-observer-preview::before { color: var(--text-muted) !important; font-size: 11px !important; }
-.range-observer-steps { padding: 0 !important; gap: 8px !important; grid-template-columns: 1fr !important; }
-.range-observer-step {
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 8px 10px !important;
-    min-height: auto !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-.range-observer-step:hover { transform: translateY(-1px) !important; border-color: var(--border-strong) !important; box-shadow: var(--shadow) !important; }
-.range-workbench-detail { background: var(--bg-elevated) !important; border-left: none !important; padding: 0 !important; gap: 0 !important; }
-.range-workbench-detail::before { display: none !important; }
-#range-info-panel > .card {
-    border-radius: 0 !important;
-    border: none !important;
-    border-bottom: 1px solid var(--border) !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    padding: 16px !important;
-    opacity: 1 !important;
-}
-#range-info-panel > .card:first-of-type { border-color: var(--border) !important; background: transparent !important; box-shadow: none !important; }
-#range-info-panel .range-panel-h3 { color: var(--text) !important; font-size: 14px !important; }
-.range-trace-detail-shell {
-    background: var(--bg) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 12px !important;
-    box-shadow: inset var(--shadow-sm) !important;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-    font-size: 12px !important;
-    color: var(--text) !important;
-}
-.range-trace-detail-title { color: var(--text) !important; font-size: 14px !important; font-weight: 600 !important; }
-.range-trace-diagnostic-item { background: var(--bg-elevated) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; padding: 6px 10px !important; }
-.range-trace-diagnostic-key { color: var(--text-muted) !important; font-size: 12px !important; }
-.range-trace-diagnostic-value { color: var(--text) !important; font-size: 13px !important; }
-.range-detail-chat { background: var(--bg) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important; box-shadow: inset var(--shadow-sm) !important; }
+        .tab:hover {
+            background: var(--glass-bg-soft) !important;
+            color: var(--text) !important;
+            border-color: var(--glass-border) !important;
+            transform: none !important;
+        }
 
-.list-item, .participant-profile-item, .variable-item, .model-provider-item {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius) !important;
-    padding: 12px 16px !important;
-    margin-bottom: 8px !important;
-    box-shadow: var(--shadow-sm) !important;
-}
-.list-item:hover, .participant-profile-item:hover, .variable-item:hover, .model-provider-item:hover {
-    transform: translateY(-1px) !important;
-    border-color: var(--border-strong) !important;
-    background: var(--bg-elevated) !important;
-    box-shadow: var(--shadow) !important;
-}
-.list-item.selected, .participant-profile-item.selected, .variable-item.selected, .model-provider-item.active {
-    border-color: var(--accent) !important;
-    background: var(--accent-soft) !important;
-    box-shadow: 0 0 0 1px var(--accent) !important;
-}
+        .tab.active {
+            background: color-mix(in srgb, var(--accent) 12%, var(--glass-bg-strong)) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--glass-border)) !important;
+            box-shadow: var(--glass-highlight), 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent) !important;
+            font-weight: 600 !important;
+            border-left: 3px solid var(--accent) !important;
+            padding-left: 10px !important;
+        }
 
-.save-row {
-    background: var(--bg-elevated) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-lg) !important;
-    box-shadow: var(--shadow-md) !important;
-    backdrop-filter: none !important;
-    padding: 16px 20px !important;
-    bottom: 24px !important;
-}
+        .shell-layout > .panel:not(#prompt-range) {
+            background: transparent !important;
+        }
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 4px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+        .card,
+        .dashboard-onboarding-card,
+        .dashboard-stat-card,
+        .dashboard-chart-card,
+        .dashboard-chart-panel,
+        .dashboard-mini-stat,
+        .task-card,
+        .task-status-banner,
+        .task-progress-item,
+        .model-provider-item,
+        .dashboard-quick-link,
+        .preset-drawer,
+        .preset-editor-shell,
+        .model-service-panel,
+        .preset-ai-panel,
+        .runtime-preview-shell {
+            background: var(--glass-bg-strong) !important;
+            background-image: none !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: var(--radius-lg) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.15) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.15) !important;
+        }
 
-.modal { border-radius: var(--radius-lg) !important; padding: 24px !important; box-shadow: var(--shadow-md) !important; border: 1px solid var(--border) !important; }
+        .card:hover,
+        .dashboard-stat-card:hover,
+        .task-card:hover,
+        .dashboard-quick-link:hover {
+            border-color: var(--glass-border-strong) !important;
+            box-shadow: var(--glass-highlight), var(--shadow) !important;
+        }
 
-/* Targeted control and range readability fixes */
-input[type="checkbox"],
-input[type="radio"] {
-    appearance: auto !important;
-    width: 16px !important;
-    height: 16px !important;
-    min-width: 16px !important;
-    min-height: 16px !important;
-    max-width: 16px !important;
-    max-height: 16px !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border-radius: 4px !important;
-    box-shadow: none !important;
-    accent-color: var(--accent) !important;
-    flex: 0 0 16px !important;
-    display: inline-block !important;
-    vertical-align: -2px !important;
-}
+        #dashboard .dashboard-stat-card {
+            border-left: 4px solid var(--border-strong) !important;
+        }
 
-input[type="radio"] {
-    border-radius: 999px !important;
-}
+        #dashboard .dashboard-stat-card:nth-child(1) { border-left-color: var(--info) !important; }
+        #dashboard .dashboard-stat-card:nth-child(2) { border-left-color: var(--success) !important; }
+        #dashboard .dashboard-stat-card:nth-child(3) { border-left-color: var(--warning) !important; }
+        #dashboard .dashboard-stat-card:nth-child(4) { border-left-color: var(--accent) !important; }
 
-.checkbox-label,
-.range-checkbox-label {
-    display: inline-flex !important;
-    align-items: center !important;
-    gap: 8px !important;
-    min-height: 24px !important;
-    line-height: 1.35 !important;
-}
+        #dashboard .dashboard-onboarding-card {
+            border-left: 4px solid var(--accent) !important;
+        }
 
-.checkbox-label input[type="checkbox"],
-.checkbox-label input[type="radio"],
-.range-checkbox-label input[type="checkbox"],
-.range-checkbox-label input[type="radio"] {
-    margin: 0 !important;
-}
+        #config .config-subtabs {
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) !important;
+        }
 
-#prompt-range {
-    color: var(--text) !important;
-}
+        #config .config-subtab.active {
+            background: color-mix(in srgb, var(--accent) 12%, var(--glass-bg)) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent) !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
 
-#prompt-range .range-board-canvas {
-    background: #f8fafc !important;
-    color: var(--text) !important;
-    box-sizing: border-box !important;
-}
+        input,
+        select,
+        textarea {
+            background: var(--glass-bg-soft) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+            backdrop-filter: blur(8px) !important;
+        }
 
-#prompt-range .range-layout-with-sidebar {
-    grid-template-columns: auto minmax(250px, 270px) minmax(0, 1fr) minmax(280px, 300px) !important;
-}
+        input:focus,
+        select:focus,
+        textarea:focus {
+            border-color: color-mix(in srgb, var(--accent) 55%, var(--glass-border)) !important;
+            box-shadow: 0 0 0 3px var(--accent-soft), var(--glass-highlight) !important;
+            outline: none !important;
+            background: var(--glass-bg) !important;
+        }
 
-#prompt-range .range-observer-lanes {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-    grid-template-columns: minmax(0, 1fr) !important;
-    grid-auto-columns: minmax(0, min(430px, 100%)) !important;
-}
+        button {
+            border-radius: var(--radius) !important;
+            box-shadow: var(--shadow-sm) !important;
+            transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease !important;
+        }
 
-#prompt-range .range-observer-lane,
-#prompt-range .range-observer-card,
-#prompt-range .range-observer-step,
-#prompt-range .range-io-grid,
-#prompt-range .range-io-block {
-    min-width: 0 !important;
-    max-width: 100% !important;
-    box-sizing: border-box !important;
-}
+        button.secondary,
+        button[class*="secondary"] {
+            background: var(--glass-bg) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--text) !important;
+            box-shadow: var(--glass-highlight) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) !important;
+        }
 
-#prompt-range .range-observer-lane {
-    width: auto !important;
-    justify-self: stretch !important;
-}
+        button.secondary:hover,
+        button[class*="secondary"]:hover {
+            background: var(--glass-bg-strong) !important;
+            border-color: var(--glass-border-strong) !important;
+        }
 
-#prompt-range .range-observer-card,
-#prompt-range .range-observer-step {
-    width: 100% !important;
-}
+        .modal,
+        .modal-content,
+        .toast,
+        .global-search-modal,
+        .global-search-panel {
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-md) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.2) !important;
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.2) !important;
+        }
 
-#prompt-range .range-workbench-config,
-#prompt-range .range-workbench-board,
-#prompt-range .range-workbench-detail,
-#prompt-range .range-chat-header,
-#prompt-range .range-mobile-tools-header,
-#prompt-range .range-observer-lane,
-#prompt-range .range-observer-lane-head,
-#prompt-range .range-observer-card,
-#prompt-range .range-observer-step,
-#prompt-range .range-detail-chat,
-#prompt-range .range-trace-detail-shell {
-    color: var(--text) !important;
-}
+        /* range denser surfaces: keep readability higher */
+        .range-col,
+        .range-chat-header,
+        .range-mobile-tools-header,
+        .range-workbench-scroll,
+        .range-board-canvas,
+        .range-observer-lane,
+        .range-observer-card,
+        .range-trace-detail-shell {
+            background: color-mix(in srgb, var(--glass-bg-strong) 88%, var(--text) 4%) !important;
+            border-color: var(--glass-border) !important;
+            -webkit-backdrop-filter: blur(10px) !important;
+            backdrop-filter: blur(10px) !important;
+        }
 
-#prompt-range .range-section-label,
-#prompt-range .range-panel-h3,
-#prompt-range .range-chat-header-label,
-#prompt-range .range-observer-lane-title,
-#prompt-range .range-observer-card-title,
-#prompt-range .range-observer-step-title,
-#prompt-range .range-trace-node-title,
-#prompt-range .range-trace-detail-title {
-    color: #0f172a !important;
-}
+        .range-layout-with-sidebar {
+            background: color-mix(in srgb, var(--glass-border) 55%, transparent) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--shadow-sm) !important;
+        }
 
-#prompt-range .hint-text,
-#prompt-range .meta-inline,
-#prompt-range .range-corpus-status-text,
-#prompt-range .range-observer-lane-meta,
-#prompt-range .range-observer-card-meta,
-#prompt-range .range-observer-step-meta,
-#prompt-range .range-observer-step-summary,
-#prompt-range .range-trace-node-meta,
-#prompt-range .range-trace-node-summary,
-#prompt-range .range-trace-detail-meta,
-#prompt-range .range-board-floating-meta {
-    color: #475569 !important;
-}
+        @media (max-width: 768px) {
+            .tabs {
+                width: 100% !important;
+                flex: 0 0 auto !important;
+                border-right: none !important;
+                border-bottom: 1px solid var(--glass-border) !important;
+                -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+                backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            }
+            .tab.active {
+                border-left-width: 0 !important;
+                padding-left: 16px !important;
+            }
+        }
 
-#prompt-range .range-board-floating-panel,
-#prompt-range .range-trace-node {
-    background: #ffffff !important;
-    border-color: #dbe3ee !important;
-    color: #0f172a !important;
-    box-shadow: var(--shadow-sm) !important;
-}
+        @media (prefers-reduced-motion: reduce) {
+            button,
+            .card,
+            .tab,
+            .status-item,
+            .global-search-trigger,
+            .theme-toggle {
+                transition: none !important;
+            }
+        }
+        /* Glass System Final Layer: end */
 
-#prompt-range .range-observer-preview {
-    background: #111827 !important;
-    border-color: #1f2937 !important;
-    color: #f8fafc !important;
-}
+        /* Shell Layout Polish Layer: start */
+        header {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            flex-wrap: wrap !important;
+            gap: 10px 16px !important;
+            height: auto !important;
+            min-height: 58px !important;
+            max-height: none !important;
+            padding: 10px 18px !important;
+            row-gap: 10px !important;
+        }
 
-#prompt-range .range-observer-preview::before {
-    color: #93c5fd !important;
-}
+        header > h1,
+        header .app-brand {
+            flex: 0 1 auto !important;
+            min-width: 0 !important;
+            max-width: min(420px, 100%) !important;
+            margin: 0 !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 10px !important;
+            font-size: 15px !important;
+            line-height: 1.2 !important;
+            white-space: nowrap !important;
+        }
 
-@media (max-width: 768px) {
-    .tabs {
-        flex-direction: row !important;
-        width: 100% !important;
-        flex: 0 0 auto !important;
-        overflow-x: auto !important;
-        overflow-y: hidden !important;
-        white-space: nowrap !important;
-        border-right: none !important;
-        border-bottom: 1px solid var(--border) !important;
-        padding: 8px !important;
-    }
-    .tab {
-        display: inline-flex !important;
-        flex: 0 0 auto !important;
-        border-bottom: none !important;
-        border-right: none !important;
-        border-left: none !important;
-        padding: 8px 16px !important;
-        min-height: 36px !important;
-    }
-    .tab.active {
-        background: var(--accent-soft) !important;
-        border-radius: var(--radius) !important;
-    }
-    .shell-layout { flex-direction: column !important; }
-    .shell-layout > .panel { padding: 16px !important; }
-    header { height: auto !important; padding: 12px 16px !important; flex-wrap: wrap !important; }
-    .status-bar { width: 100% !important; justify-content: flex-start !important; }
-    #config-memory-db-path { width: 100% !important; }
-    .range-layout-with-sidebar { grid-template-columns: 1fr !important; }
-    #config .config-subtabs {
-        position: static !important;
-        display: grid !important;
-        grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)) !important;
-        align-items: stretch !important;
-        flex-wrap: initial !important;
-        gap: 6px !important;
-        min-height: 120px !important;
-        height: auto !important;
-        max-height: none !important;
-        margin: 12px 0 20px !important;
-        padding: 6px !important;
-        overflow: visible !important;
-        white-space: normal !important;
-        scrollbar-width: thin !important;
-    }
-    #config .config-subtab {
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-        flex: none !important;
-        width: 100% !important;
-        min-width: 0 !important;
-        min-height: 32px !important;
-        padding: 6px 8px !important;
-        white-space: nowrap !important;
-        line-height: 1.2 !important;
-    }
-}
+        header .app-badge {
+            display: inline-flex !important;
+            align-items: center !important;
+            font-size: 10px !important;
+            padding: 3px 8px !important;
+            border-radius: 999px !important;
+            letter-spacing: 0.04em !important;
+            text-transform: uppercase !important;
+            background: color-mix(in srgb, var(--accent) 16%, transparent) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent) !important;
+            box-shadow: none !important;
+            white-space: nowrap !important;
+        }
+
+        .status-bar {
+            display: flex !important;
+            flex: 1 1 520px !important;
+            min-width: min(100%, 420px) !important;
+            max-width: 100% !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            flex-wrap: wrap !important;
+            gap: 8px 10px !important;
+        }
+
+        .status-group {
+            display: inline-flex !important;
+            align-items: center !important;
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+            min-width: 0 !important;
+        }
+
+        .status-group-runtime {
+            flex: 1 1 auto !important;
+            justify-content: flex-end !important;
+        }
+
+        .status-group-actions {
+            flex: 0 0 auto !important;
+            justify-content: flex-end !important;
+            margin-left: 2px !important;
+            padding-left: 8px !important;
+            border-left: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent) !important;
+        }
+
+        .status-item,
+        .global-search-trigger,
+        .theme-toggle,
+        .logout-btn {
+            height: 32px !important;
+            min-height: 32px !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        .status-item {
+            min-width: 0 !important;
+            max-width: min(240px, 100%) !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            white-space: nowrap !important;
+            gap: 6px !important;
+            padding: 0 10px !important;
+        }
+
+        .status-item-character {
+            max-width: min(180px, 28vw) !important;
+        }
+
+        .status-item-llm {
+            max-width: none !important;
+            padding: 0 4px !important;
+            background: transparent !important;
+            border-color: transparent !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+        }
+
+        .status-item-llm:hover {
+            background: transparent !important;
+            border-color: transparent !important;
+        }
+
+        .status-item-llm #llm-toggle-btn {
+            height: 28px !important;
+            min-height: 28px !important;
+            padding: 0 10px !important;
+            border-radius: 999px !important;
+            font-size: 12px !important;
+            font-weight: 600 !important;
+            box-shadow: var(--shadow-sm) !important;
+        }
+
+        .global-search-trigger {
+            gap: 6px !important;
+            padding: 0 10px !important;
+            white-space: nowrap !important;
+        }
+
+        .global-search-trigger span {
+            background: color-mix(in srgb, var(--glass-bg-soft) 70%, transparent) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--text-muted) !important;
+            font-size: 10px !important;
+            padding: 1px 5px !important;
+        }
+
+        .logout-btn {
+            padding: 0 12px !important;
+            background: var(--glass-bg-soft) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--text-muted) !important;
+            font-size: 12px !important;
+            font-weight: 500 !important;
+            border-radius: var(--radius) !important;
+            box-shadow: var(--glass-highlight) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            cursor: pointer !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            white-space: nowrap !important;
+        }
+
+        .logout-btn:hover {
+            background: var(--glass-bg) !important;
+            border-color: var(--glass-border-strong) !important;
+            color: var(--text) !important;
+        }
+
+        .shell-layout {
+            display: flex !important;
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            min-width: 0 !important;
+            overflow: hidden !important;
+            align-items: stretch !important;
+            background: transparent !important;
+        }
+
+        .tabs {
+            display: flex !important;
+            flex-direction: column !important;
+            align-content: stretch !important;
+            align-items: stretch !important;
+            width: 208px !important;
+            flex: 0 0 208px !important;
+            min-width: 208px !important;
+            max-width: 208px !important;
+            min-height: 0 !important;
+            height: 100% !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            overscroll-behavior: contain !important;
+            scrollbar-width: thin !important;
+            padding: 12px 10px 16px !important;
+            gap: 4px !important;
+            position: sticky !important;
+            top: 0 !important;
+            align-self: stretch !important;
+        }
+
+        .tab {
+            width: 100% !important;
+            min-height: 38px !important;
+            padding: 8px 12px !important;
+            justify-content: flex-start !important;
+            gap: 8px !important;
+            line-height: 1.2 !important;
+            letter-spacing: 0 !important;
+            border-radius: 12px !important;
+            position: relative !important;
+        }
+
+        .tab:hover {
+            transform: none !important;
+        }
+
+        .tab.active {
+            background: color-mix(in srgb, var(--accent) 14%, var(--glass-bg-strong)) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--glass-border)) !important;
+            border-left: 3px solid var(--accent) !important;
+            box-shadow: var(--glass-highlight), 0 6px 16px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+            font-weight: 650 !important;
+            padding-left: 11px !important;
+        }
+
+        .shell-layout > .panel {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            min-height: 0 !important;
+            height: 100% !important;
+            overflow-x: hidden !important;
+            overflow-y: auto !important;
+            overscroll-behavior: contain !important;
+            scrollbar-gutter: stable !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
+
+        .shell-layout > .panel:not(#prompt-range) {
+            padding: 18px 22px 40px !important;
+            max-width: 1600px !important;
+            margin: 0 auto !important;
+            width: 100% !important;
+            background: transparent !important;
+        }
+
+        #prompt-range.panel.active,
+        #logs.panel.active {
+            overflow: hidden !important;
+            height: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        #logs.panel.active {
+            width: 100% !important;
+        }
+
+        @media (max-width: 1180px) {
+            header {
+                padding: 10px 14px !important;
+            }
+
+            header .app-badge {
+                display: none !important;
+            }
+
+            .status-bar {
+                flex: 1 1 100% !important;
+                justify-content: space-between !important;
+            }
+
+            .status-group-runtime,
+            .status-group-actions {
+                justify-content: flex-start !important;
+            }
+
+            .status-group-actions {
+                margin-left: 0 !important;
+                padding-left: 0 !important;
+                border-left: none !important;
+            }
+
+            .status-item-character {
+                max-width: min(150px, 34vw) !important;
+            }
+
+            .tabs {
+                width: 188px !important;
+                flex: 0 0 188px !important;
+                min-width: 188px !important;
+                max-width: 188px !important;
+                padding: 10px 8px 14px !important;
+            }
+
+            .shell-layout > .panel:not(#prompt-range) {
+                padding: 16px 16px 36px !important;
+            }
+        }
+
+        @media (max-width: 900px) {
+            .status-item-character {
+                display: none !important;
+            }
+
+            .global-search-trigger span {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            header {
+                align-items: flex-start !important;
+                padding: 12px 12px !important;
+            }
+
+            header > h1,
+            header .app-brand {
+                max-width: 100% !important;
+            }
+
+            .status-bar {
+                width: 100% !important;
+                min-width: 0 !important;
+                justify-content: flex-start !important;
+            }
+
+            .status-group,
+            .status-group-runtime,
+            .status-group-actions {
+                width: 100% !important;
+                justify-content: flex-start !important;
+            }
+
+            .status-group-actions {
+                border-left: none !important;
+                margin-left: 0 !important;
+                padding-left: 0 !important;
+            }
+
+            .shell-layout {
+                flex-direction: column !important;
+                overflow: hidden !important;
+            }
+
+            .tabs {
+                position: relative !important;
+                top: auto !important;
+                width: 100% !important;
+                min-width: 0 !important;
+                max-width: none !important;
+                flex: 0 0 auto !important;
+                height: auto !important;
+                max-height: none !important;
+                flex-direction: row !important;
+                flex-wrap: nowrap !important;
+                overflow-x: auto !important;
+                overflow-y: hidden !important;
+                overscroll-behavior-x: contain !important;
+                padding: 10px 10px 12px !important;
+                gap: 8px !important;
+                border-right: none !important;
+                border-bottom: 1px solid var(--glass-border) !important;
+                scrollbar-width: thin !important;
+            }
+
+            .tab {
+                width: auto !important;
+                flex: 0 0 auto !important;
+                min-width: max-content !important;
+                min-height: 34px !important;
+                white-space: nowrap !important;
+                padding: 8px 12px !important;
+            }
+
+            .tab.active {
+                border-left-width: 0 !important;
+                padding-left: 12px !important;
+                box-shadow: var(--glass-highlight), inset 0 -2px 0 var(--accent) !important;
+            }
+
+            .shell-layout > .panel {
+                flex: 1 1 auto !important;
+                height: auto !important;
+                min-height: 0 !important;
+            }
+
+            .shell-layout > .panel:not(#prompt-range) {
+                padding: 14px 12px 48px !important;
+            }
+
+            #prompt-range.panel.active,
+            #logs.panel.active {
+                height: 100% !important;
+            }
+        }
+
+        /* Card Accent Restyle: start */
+        /* ???????????????????? */
+        #dashboard .dashboard-stat-card,
+        #dashboard .dashboard-onboarding-card,
+        #dashboard .dashboard-mini-stat,
+        #tasks .task-card,
+        #tasks .task-card.is-active,
+        #tasks .task-status-banner,
+        #tasks .task-status-banner.is-active {
+            border-left: 1px solid var(--glass-border) !important;
+            border-left-color: var(--glass-border) !important;
+            border-left-width: 1px !important;
+            border-left-style: solid !important;
+            position: relative !important;
+            overflow: hidden !important;
+        }
+
+        #dashboard .dashboard-stat-card:nth-child(1),
+        #dashboard .dashboard-stat-card:nth-child(2),
+        #dashboard .dashboard-stat-card:nth-child(3),
+        #dashboard .dashboard-stat-card:nth-child(4),
+        #dashboard .dashboard-onboarding-card {
+            border-left-color: var(--glass-border) !important;
+        }
+
+        #dashboard .dashboard-stat-card::before,
+        #dashboard .dashboard-onboarding-card::before,
+        #dashboard .dashboard-mini-stat::before,
+        #dashboard .dashboard-mini-stat::after,
+        #tasks .task-card::before,
+        #tasks .task-card.is-active::before,
+        #tasks .task-status-banner::before,
+        #tasks .task-status-banner.is-active::before {
+            content: none !important;
+            display: none !important;
+        }
+
+        #dashboard .dashboard-mini-stat {
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 14px !important;
+        }
+        /* Card Accent Restyle: end */
+
+
+        /* Panel Layout Polish Layer: start */
+        /* Task4: ??????????????????/???? */
+
+        /* ===== Dashboard ===== */
+        #dashboard.panel.active {
+            padding-top: 16px !important;
+        }
+
+        #dashboard .dashboard-layout {
+            display: grid !important;
+            gap: 16px !important;
+        }
+
+        #dashboard .dashboard-top-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+            align-items: stretch !important;
+        }
+
+        #dashboard .dashboard-onboarding-card {
+            margin-bottom: 0 !important;
+        }
+
+        #dashboard .dashboard-onboarding-head {
+            align-items: center !important;
+            gap: 12px !important;
+        }
+
+        #dashboard .dashboard-stat-card {
+            min-height: 92px !important;
+            display: flex !important;
+            flex-direction: column !important;
+            justify-content: space-between !important;
+            gap: 8px !important;
+        }
+
+        #dashboard .dashboard-charts-grid,
+        #dashboard .dashboard-bottom-grid,
+        #dashboard .dashboard-secondary-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)) !important;
+            gap: 14px !important;
+        }
+
+        #dashboard .card {
+            margin-bottom: 0 !important;
+        }
+
+        /* ===== Config ===== */
+        #config .config-page-head {
+            margin-bottom: 10px !important;
+        }
+
+        #config .config-subtabs {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 5 !important;
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 6px !important;
+            padding: 8px !important;
+            margin-bottom: 16px !important;
+            border-radius: 14px !important;
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) !important;
+        }
+
+        #config .config-subtab {
+            border-radius: 10px !important;
+            padding: 7px 12px !important;
+            min-height: 32px !important;
+        }
+
+        #config .config-subtab.active {
+            background: color-mix(in srgb, var(--accent) 12%, var(--glass-bg)) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent) !important;
+        }
+
+        #config .grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)) !important;
+            gap: 16px !important;
+            align-items: start !important;
+        }
+
+        #config .card {
+            margin-bottom: 0 !important;
+            height: 100% !important;
+        }
+
+        #config .config-subpanel {
+            display: grid !important;
+            gap: 16px !important;
+        }
+
+        /* ===== Range / ?? ===== */
+        #prompt-range.panel.active {
+            padding: 0 !important;
+            overflow: hidden !important;
+            background: transparent !important;
+        }
+
+        #prompt-range .range-layout-with-sidebar {
+            --range-sidebar-width: 56px;
+            --range-config-width: 270px;
+            --range-detail-width: 320px;
+            display: grid !important;
+            grid-template-columns:
+                var(--range-sidebar-width)
+                var(--range-config-width)
+                minmax(0, 1fr)
+                var(--range-detail-width) !important;
+            gap: 12px !important;
+            padding: 12px !important;
+            height: 100% !important;
+            min-height: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            align-items: stretch !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            overflow: hidden !important;
+        }
+
+        #prompt-range .range-layout-with-sidebar.config-collapsed {
+            --range-config-width: 56px;
+        }
+
+        #prompt-range .range-session-sidebar,
+        #prompt-range .range-workbench-config,
+        #prompt-range .range-workbench-board,
+        #prompt-range .range-workbench-detail,
+        #prompt-range .range-col {
+            min-width: 0 !important;
+            min-height: 0 !important;
+            width: auto !important;
+            max-width: none !important;
+            height: 100% !important;
+            border-radius: 16px !important;
+            border: 1px solid var(--glass-border) !important;
+            background: color-mix(in srgb, var(--glass-bg-strong) 92%, var(--text) 3%) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            overflow: hidden !important;
+            opacity: 1 !important;
+            -webkit-backdrop-filter: blur(12px) saturate(1.12) !important;
+            backdrop-filter: blur(12px) saturate(1.12) !important;
+        }
+
+        #prompt-range .range-session-sidebar {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 8px !important;
+            padding: 10px 8px !important;
+            position: relative !important;
+        }
+
+        #prompt-range .range-session-sidebar.collapsed {
+            width: auto !important;
+            min-width: 0 !important;
+            padding: 10px 6px !important;
+        }
+
+        #prompt-range .range-session-sidebar-head {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 6px !important;
+            padding: 4px 2px 8px !important;
+            border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent) !important;
+        }
+
+        #prompt-range .range-sidebar-title {
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-workbench-config,
+        #prompt-range .range-workbench-board {
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        #prompt-range .range-workbench-detail {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 0 !important;
+        }
+
+        #prompt-range .range-chat-header,
+        #prompt-range .range-mobile-tools-header {
+            flex-shrink: 0 !important;
+            min-height: 48px !important;
+            padding: 10px 14px !important;
+            gap: 8px !important;
+            border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+            background: color-mix(in srgb, var(--glass-bg) 70%, transparent) !important;
+            box-shadow: none !important;
+            -webkit-backdrop-filter: blur(10px) !important;
+            backdrop-filter: blur(10px) !important;
+        }
+
+        #prompt-range .range-chat-header-label {
+            font-size: 12px !important;
+            font-weight: 700 !important;
+            letter-spacing: 0.02em !important;
+            text-transform: none !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-workbench-scroll {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow-y: auto !important;
+            overscroll-behavior: contain !important;
+            padding: 12px !important;
+            gap: 12px !important;
+            background: transparent !important;
+            display: flex !important;
+            flex-direction: column !important;
+        }
+
+        #prompt-range .range-workbench-config .card.range-card-padded,
+        #prompt-range .range-workbench-config .card {
+            background: color-mix(in srgb, var(--glass-bg) 88%, transparent) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 12px !important;
+            box-shadow: var(--glass-highlight) !important;
+            padding: 12px !important;
+            opacity: 1 !important;
+            margin-bottom: 0 !important;
+        }
+
+        #prompt-range .range-workbench-config .card.range-card-padded:nth-child(n+3) {
+            opacity: 1 !important;
+        }
+
+        #prompt-range .range-board-canvas {
+            flex: 1 1 auto !important;
+            min-height: 0 !important;
+            height: auto !important;
+            max-height: none !important;
+            overflow: auto !important;
+            overscroll-behavior: contain !important;
+            padding: 16px !important;
+            background:
+                radial-gradient(720px 280px at 12% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+                radial-gradient(640px 240px at 88% 8%, color-mix(in srgb, var(--info, #3b82f6) 8%, transparent), transparent 55%),
+                color-mix(in srgb, var(--glass-bg-soft) 80%, transparent) !important;
+            background-size: auto !important;
+            box-shadow: none !important;
+        }
+
+        #prompt-range .range-board-canvas::before,
+        #prompt-range .range-board-canvas::after {
+            display: none !important;
+        }
+
+        #prompt-range .range-board-floating-panel {
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 14px !important;
+            box-shadow: var(--glass-highlight), var(--shadow) !important;
+            padding: 14px !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) !important;
+        }
+
+        #prompt-range .range-board-floating-title {
+            color: var(--text) !important;
+            font-size: 14px !important;
+            font-weight: 700 !important;
+        }
+
+        #prompt-range .range-board-floating-meta {
+            color: var(--text-muted) !important;
+            font-size: 12px !important;
+        }
+
+        #prompt-range .range-observer-lanes {
+            gap: 14px !important;
+            padding: 0 !important;
+        }
+
+        #prompt-range .range-observer-lane {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            gap: 10px !important;
+            backdrop-filter: none !important;
+        }
+
+        #prompt-range .range-observer-lane::before {
+            display: none !important;
+        }
+
+        #prompt-range .range-observer-lane-head {
+            background: color-mix(in srgb, var(--glass-bg) 85%, transparent) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 12px !important;
+            padding: 10px 12px !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
+
+        #prompt-range .range-observer-lane-title {
+            color: var(--text) !important;
+            font-size: 13px !important;
+            font-weight: 700 !important;
+        }
+
+        #prompt-range .range-observer-lane-meta {
+            color: var(--text-muted) !important;
+            font-size: 12px !important;
+        }
+
+        #prompt-range .range-observer-card {
+            background: var(--glass-bg-strong) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 14px !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+            padding: 12px !important;
+            min-height: auto !important;
+            gap: 10px !important;
+        }
+
+        #prompt-range .range-observer-card::before,
+        #prompt-range .range-observer-card::after {
+            display: none !important;
+        }
+
+        #prompt-range .range-observer-card:hover {
+            transform: translateY(-1px) !important;
+            border-color: var(--glass-border-strong) !important;
+            box-shadow: var(--glass-highlight), var(--shadow) !important;
+        }
+
+        #prompt-range .range-observer-preview,
+        #prompt-range .range-trace-detail-shell,
+        #prompt-range .range-detail-chat {
+            background: color-mix(in srgb, var(--glass-bg-soft) 90%, transparent) !important;
+            border: 1px solid var(--glass-border) !important;
+            border-radius: 12px !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
+
+        #prompt-range #range-info-panel > .card {
+            border-radius: 0 !important;
+            border: none !important;
+            border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            padding: 14px !important;
+            margin-bottom: 0 !important;
+            opacity: 1 !important;
+        }
+
+        #prompt-range #range-info-panel > .card:last-child {
+            border-bottom: none !important;
+        }
+
+        #prompt-range .range-config-toggle {
+            width: 34px !important;
+            height: 34px !important;
+            min-height: 34px !important;
+            min-width: 34px !important;
+            border-radius: 10px !important;
+            border: 1px solid var(--glass-border) !important;
+            background: var(--glass-bg-soft) !important;
+            box-shadow: var(--glass-highlight) !important;
+            color: var(--text) !important;
+        }
+
+        /* ?????????????????????? */
+        @media (min-width: 769px) {
+            #prompt-range .range-mobile-tabs {
+                display: none !important;
+            }
+            #prompt-range .range-sidebar-overlay {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 1400px) {
+            #prompt-range .range-layout-with-sidebar {
+                --range-sidebar-width: 52px;
+                --range-config-width: 240px;
+                --range-detail-width: 280px;
+                gap: 10px !important;
+                padding: 10px !important;
+            }
+            #prompt-range .range-layout-with-sidebar.config-collapsed {
+                --range-config-width: 52px;
+            }
+        }
+
+        /* ????????????????????/?? */
+        @media (max-width: 1280px) {
+            #prompt-range .range-layout-with-sidebar {
+                --range-config-width: 220px;
+                --range-detail-width: 0px;
+                grid-template-columns:
+                    var(--range-sidebar-width)
+                    var(--range-config-width)
+                    minmax(0, 1fr) !important;
+            }
+            #prompt-range .range-workbench-detail,
+            #prompt-range #range-info-panel {
+                display: none !important;
+            }
+        }
+
+        @media (max-width: 1180px) {
+            #prompt-range .range-layout-with-sidebar {
+                --range-detail-width: 0px;
+                grid-template-columns:
+                    var(--range-sidebar-width)
+                    var(--range-config-width)
+                    minmax(0, 1fr) !important;
+            }
+            #prompt-range .range-workbench-detail,
+            #prompt-range #range-info-panel {
+                display: none !important;
+            }
+            #dashboard .dashboard-top-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+        }
+
+        @media (max-width: 900px) {
+            #dashboard .dashboard-top-grid {
+                grid-template-columns: 1fr !important;
+            }
+            #config .grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        @media (max-width: 768px) {
+            #prompt-range .range-layout-with-sidebar {
+                display: flex !important;
+                flex-direction: column !important;
+                gap: 10px !important;
+                padding: 10px !important;
+                overflow: auto !important;
+            }
+            #prompt-range .range-session-sidebar,
+            #prompt-range .range-workbench-config,
+            #prompt-range .range-workbench-board,
+            #prompt-range .range-workbench-detail,
+            #prompt-range .range-col {
+                height: auto !important;
+                min-height: 0 !important;
+            }
+            #prompt-range .range-workbench-board {
+                min-height: 55vh !important;
+            }
+            #prompt-range .range-board-canvas,
+            #prompt-range .range-workbench-scroll {
+                height: auto !important;
+                max-height: none !important;
+            }
+        }
+        /* Panel Layout Polish Layer: end */
+
+        /* Interaction Polish Layer: start */
+        /* Task5: ?? hover / focus-visible / active / disabled / ?? */
+
+        :root {
+            --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 28%, transparent);
+            --focus-outline: 2px solid color-mix(in srgb, var(--accent) 78%, white 8%);
+            --interactive-transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, transform 0.12s ease, opacity 0.15s ease;
+        }
+
+        button,
+        .tab,
+        .status-item,
+        .global-search-trigger,
+        .theme-toggle,
+        .logout-btn,
+        .config-subtab,
+        .range-mobile-tab,
+        .range-board-pill,
+        .range-config-toggle,
+        .card,
+        .dashboard-stat-card,
+        .dashboard-quick-link,
+        .task-card,
+        .range-observer-card,
+        .list-item,
+        .participant-profile-item,
+        .variable-item,
+        .model-provider-item,
+        input,
+        select,
+        textarea {
+            transition: var(--interactive-transition) !important;
+        }
+
+        /* ??? */
+        button:not(.secondary):not(.theme-toggle):not(.global-search-trigger):not(.logout-btn):not(.tab):not(.config-subtab):not(.range-mobile-tab):not(.range-board-pill):not(.range-config-toggle):not(.range-sidebar-toggle-btn):not(.range-sidebar-new-btn) {
+            background: var(--btn-primary) !important;
+            color: color-mix(in srgb, var(--bg-elevated) 12%, white 88%) !important;
+            border: 1px solid color-mix(in srgb, var(--btn-primary) 80%, transparent) !important;
+            box-shadow: var(--shadow-sm) !important;
+        }
+
+        button:not(.secondary):not(.theme-toggle):not(.global-search-trigger):not(.logout-btn):hover {
+            background: var(--btn-primary-hover) !important;
+            box-shadow: var(--shadow) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        button:not(.secondary):not(.theme-toggle):not(.global-search-trigger):not(.logout-btn):active {
+            transform: translateY(0) scale(0.98) !important;
+            box-shadow: var(--shadow-sm) !important;
+        }
+
+        /* ??? / ???? */
+        button.secondary,
+        button[class*="secondary"],
+        .global-search-trigger,
+        .theme-toggle,
+        .logout-btn,
+        .range-config-toggle,
+        .range-sidebar-new-btn {
+            background: var(--glass-bg) !important;
+            border: 1px solid var(--glass-border) !important;
+            color: var(--text) !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
+
+        button.secondary:hover,
+        button[class*="secondary"]:hover,
+        .global-search-trigger:hover,
+        .theme-toggle:hover,
+        .logout-btn:hover,
+        .range-config-toggle:hover {
+            background: var(--glass-bg-strong) !important;
+            border-color: var(--glass-border-strong) !important;
+            color: var(--text) !important;
+            transform: translateY(-1px) !important;
+            box-shadow: var(--glass-highlight), var(--shadow-sm) !important;
+        }
+
+        button.secondary:active,
+        button[class*="secondary"]:active,
+        .global-search-trigger:active,
+        .theme-toggle:active,
+        .logout-btn:active {
+            transform: translateY(0) scale(0.98) !important;
+        }
+
+        /* ????????? */
+        button.danger,
+        button[class*="danger"] {
+            background: color-mix(in srgb, var(--error) 88%, black 4%) !important;
+            border-color: color-mix(in srgb, var(--error) 70%, transparent) !important;
+            color: #fff !important;
+        }
+        button.danger:hover,
+        button[class*="danger"]:hover {
+            background: color-mix(in srgb, var(--error) 96%, black 2%) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        /* disabled */
+        button:disabled,
+        button[disabled],
+        button[aria-disabled='true'],
+        input:disabled,
+        select:disabled,
+        textarea:disabled {
+            opacity: 0.55 !important;
+            cursor: not-allowed !important;
+            transform: none !important;
+            box-shadow: none !important;
+            filter: grayscale(0.08) !important;
+            pointer-events: none !important;
+        }
+
+        /* ?? focus */
+        input:focus,
+        select:focus,
+        textarea:focus {
+            outline: none !important;
+            border-color: color-mix(in srgb, var(--accent) 58%, var(--glass-border)) !important;
+            box-shadow: var(--focus-ring), var(--glass-highlight) !important;
+            background: var(--glass-bg) !important;
+        }
+
+        /* ?? focus-visible??? Gemini outline:none */
+        :where(button, a, input, select, textarea, .tab, .config-subtab, .global-search-trigger, .theme-toggle, .logout-btn, .range-mobile-tab, .range-board-pill, .range-config-toggle, [tabindex]):focus-visible {
+            outline: var(--focus-outline) !important;
+            outline-offset: 2px !important;
+            box-shadow: var(--focus-ring) !important;
+        }
+
+        :where(button, a, input, select, textarea, .tab, .config-subtab, .global-search-trigger, .theme-toggle, .logout-btn, [tabindex]):focus:not(:focus-visible) {
+            outline: none !important;
+        }
+
+        /* Tabs */
+        .tab {
+            cursor: pointer !important;
+        }
+        .tab:hover {
+            background: var(--glass-bg-soft) !important;
+            color: var(--text) !important;
+            border-color: var(--glass-border) !important;
+            transform: none !important;
+        }
+        .tab:active {
+            transform: scale(0.99) !important;
+        }
+        .tab.active {
+            cursor: default !important;
+        }
+
+        /* Config subtabs */
+        #config .config-subtab:hover {
+            background: var(--glass-bg-soft) !important;
+            color: var(--text) !important;
+        }
+        #config .config-subtab.active {
+            background: color-mix(in srgb, var(--accent) 12%, var(--glass-bg)) !important;
+            color: var(--accent) !important;
+            border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent) !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
+
+        /* Cards / list items */
+        .card,
+        .dashboard-stat-card,
+        .dashboard-quick-link,
+        .task-card,
+        .range-observer-card,
+        .list-item,
+        .participant-profile-item,
+        .variable-item,
+        .model-provider-item {
+            will-change: transform, box-shadow, border-color;
+        }
+
+        .card:hover,
+        .dashboard-stat-card:hover,
+        .dashboard-quick-link:hover,
+        .task-card:hover,
+        .range-observer-card:hover,
+        .list-item:hover,
+        .participant-profile-item:hover,
+        .variable-item:hover,
+        .model-provider-item:hover {
+            border-color: var(--glass-border-strong) !important;
+            box-shadow: var(--glass-highlight), var(--shadow) !important;
+        }
+
+        .card:not(.tilt-card):hover,
+        .dashboard-stat-card:not(.tilt-card):hover,
+        .dashboard-quick-link:not(.tilt-card):hover,
+        .task-card:not(.tilt-card):hover,
+        .range-observer-card:not(.tilt-card):hover,
+        .list-item:not(.tilt-card):hover,
+        .participant-profile-item:not(.tilt-card):hover,
+        .variable-item:not(.tilt-card):hover,
+        .model-provider-item:not(.tilt-card):hover {
+            transform: translateY(-1px) !important;
+        }
+
+        .card:active,
+        .dashboard-quick-link:active,
+        .task-card:active,
+        .range-observer-card:active,
+        .list-item:active {
+            transform: translateY(0) !important;
+        }
+
+        /* 轻微鼠标跟随倾斜 */
+        .tilt-card {
+            transform-style: preserve-3d !important;
+            transform: perspective(900px) rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateY(var(--tilt-lift, 0px)) !important;
+            transition: transform 0.12s ease-out, box-shadow 0.15s ease, border-color 0.15s ease !important;
+            will-change: transform !important;
+        }
+
+        .tilt-card.is-tilting {
+            transition: transform 0.06s linear, box-shadow 0.15s ease, border-color 0.15s ease !important;
+        }
+
+        .tilt-card::after {
+            content: '' !important;
+            position: absolute !important;
+            inset: 0 !important;
+            border-radius: inherit !important;
+            pointer-events: none !important;
+            background: radial-gradient(
+                420px circle at var(--tilt-px, 50%) var(--tilt-py, 50%),
+                rgba(255,255,255,0.18),
+                transparent 55%
+            ) !important;
+            opacity: 0 !important;
+            transition: opacity 0.15s ease !important;
+            z-index: 1 !important;
+        }
+
+        .tilt-card.is-tilting::after {
+            opacity: 1 !important;
+        }
+
+        .tilt-card > * {
+            position: relative !important;
+            z-index: 2 !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .tilt-card,
+            .tilt-card.is-tilting {
+                transform: none !important;
+                transition: none !important;
+            }
+            .tilt-card::after {
+                display: none !important;
+            }
+        }
+
+        @media (hover: none), (pointer: coarse) {
+            .tilt-card,
+            .tilt-card.is-tilting {
+                transform: none !important;
+            }
+            .tilt-card::after {
+                display: none !important;
+            }
+        }
+
+        /* ???? / ???????? */
+        .theme-dropdown button:hover,
+        .theme-dropdown button:focus-visible {
+            background: color-mix(in srgb, var(--accent) 10%, var(--glass-bg)) !important;
+            color: var(--accent) !important;
+        }
+
+        .theme-dropdown button.is-active,
+        .theme-dropdown button[aria-selected='true'] {
+            background: color-mix(in srgb, var(--accent) 14%, var(--glass-bg-strong)) !important;
+            color: var(--accent) !important;
+            font-weight: 600 !important;
+        }
+
+        /* range ??? */
+        .range-board-pill:hover,
+        .range-mobile-tab:hover {
+            background: var(--glass-bg-soft) !important;
+            border-color: var(--glass-border) !important;
+            color: var(--text) !important;
+        }
+        .range-board-pill.active,
+        .range-mobile-tab.active {
+            background: color-mix(in srgb, var(--accent) 14%, var(--glass-bg-strong)) !important;
+            color: var(--accent) !important;
+            border-color: color-mix(in srgb, var(--accent) 28%, var(--glass-border)) !important;
+        }
+
+        /* ??????????? */
+        .panel.active {
+            animation: panel-enter 180ms ease !important;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            button,
+            .tab,
+            .status-item,
+            .global-search-trigger,
+            .theme-toggle,
+            .logout-btn,
+            .config-subtab,
+            .card,
+            .dashboard-stat-card,
+            .dashboard-quick-link,
+            .task-card,
+            .range-observer-card,
+            .list-item,
+            input,
+            select,
+            textarea,
+            .panel.active {
+                transition: none !important;
+                animation: none !important;
+                transform: none !important;
+            }
+        }
+
+        /* Glass Transparency Boost: start */
+        /* 彩色氛围底 + 半透明玻璃：靠颜色层次体现透明感，而不是黑白实心 */
+
+        html, body {
+            background: var(--app-bg) !important;
+            background-attachment: fixed !important;
+        }
+
+        .container,
+        .shell-layout,
+        .shell-layout > .panel,
+        #dashboard.panel.active,
+        #config.panel.active,
+        #tasks.panel.active {
+            background: transparent !important;
+        }
+
+        header {
+            background: color-mix(in srgb, var(--glass-bg-strong) 88%, transparent) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.35) !important;
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.35) !important;
+            border-bottom: 1px solid color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+            box-shadow: var(--glass-highlight), 0 8px 24px color-mix(in srgb, var(--accent) 10%, transparent) !important;
+        }
+
+        .tabs {
+            background: color-mix(in srgb, var(--glass-bg) 86%, transparent) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3) !important;
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.3) !important;
+            border-right: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent) !important;
+        }
+
+        .card,
+        .dashboard-onboarding-card,
+        .dashboard-stat-card,
+        .dashboard-chart-card,
+        .dashboard-chart-panel,
+        .dashboard-mini-stat,
+        .task-card,
+        .task-status-banner,
+        .task-progress-item,
+        .model-provider-item,
+        .dashboard-quick-link,
+        .preset-drawer,
+        .preset-editor-shell,
+        .model-service-panel,
+        .preset-ai-panel,
+        .runtime-preview-shell,
+        #config .card,
+        #config .config-subtabs {
+            background: color-mix(in srgb, var(--glass-bg-strong) 82%, transparent) !important;
+            background-image: none !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 88%, transparent) !important;
+            box-shadow: var(--glass-highlight), 0 10px 28px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.25) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.25) !important;
+        }
+
+        .status-item,
+        .global-search-trigger,
+        .theme-toggle,
+        .logout-btn,
+        button.secondary,
+        button[class*="secondary"] {
+            background: color-mix(in srgb, var(--glass-bg-soft) 88%, transparent) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.2) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.2) !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent) !important;
+        }
+
+        input,
+        select,
+        textarea {
+            background: color-mix(in srgb, var(--glass-bg-soft) 86%, transparent) !important;
+            -webkit-backdrop-filter: blur(10px) saturate(1.15) !important;
+            backdrop-filter: blur(10px) saturate(1.15) !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent) !important;
+        }
+
+        .theme-dropdown,
+        .modal,
+        .modal-content,
+        .toast,
+        .global-search-modal,
+        .global-search-panel {
+            background: color-mix(in srgb, var(--glass-bg-strong) 86%, transparent) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(1.3) !important;
+            backdrop-filter: blur(var(--glass-blur)) saturate(1.3) !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+        }
+
+        .tab.active,
+        #config .config-subtab.active,
+        .range-board-pill.active,
+        .range-mobile-tab.active {
+            background: color-mix(in srgb, var(--accent) 14%, var(--glass-bg-strong)) !important;
+            color: var(--accent) !important;
+            border-color: color-mix(in srgb, var(--accent) 28%, var(--glass-border)) !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
+
+        .tab.active {
+            border-left: 3px solid var(--accent) !important;
+        }
+
+        #prompt-range .range-session-sidebar,
+        #prompt-range .range-workbench-config,
+        #prompt-range .range-workbench-board,
+        #prompt-range .range-workbench-detail,
+        #prompt-range .range-col {
+            background: color-mix(in srgb, var(--glass-bg-strong) 80%, transparent) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.22) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.22) !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+        }
+
+        #prompt-range .range-board-canvas {
+            background:
+                radial-gradient(720px 280px at 12% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 60%),
+                radial-gradient(640px 240px at 88% 8%, color-mix(in srgb, var(--info, #0ea5e9) 14%, transparent), transparent 55%),
+                color-mix(in srgb, var(--glass-bg-soft) 70%, transparent) !important;
+        }
+
+        #prompt-range .range-observer-card,
+        #prompt-range .range-observer-preview,
+        #prompt-range .range-trace-detail-shell,
+        #prompt-range .range-detail-chat,
+        #prompt-range .range-board-floating-panel {
+            background: color-mix(in srgb, var(--glass-bg-strong) 78%, transparent) !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+            box-shadow: var(--glass-highlight), 0 10px 24px color-mix(in srgb, var(--accent) 10%, transparent) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-observer-step {
+            background: color-mix(in srgb, var(--glass-bg) 82%, transparent) !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-observer-step.is-completed {
+            border-color: color-mix(in srgb, var(--accent) 30%, var(--glass-border)) !important;
+            background: color-mix(in srgb, var(--accent) 8%, var(--glass-bg)) !important;
+        }
+
+        #prompt-range .range-observer-card.is-selected {
+            border-color: color-mix(in srgb, var(--accent) 42%, var(--glass-border)) !important;
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 16%, transparent), var(--glass-highlight) !important;
+        }
+
+        #dashboard .dashboard-legend-item {
+            background: color-mix(in srgb, var(--glass-bg-strong) 84%, transparent) !important;
+            border-color: color-mix(in srgb, var(--glass-border) 85%, transparent) !important;
+        }
+
+        #dashboard .dashboard-donut-center {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+        }
+
+        #dashboard .dashboard-line-path {
+            filter: drop-shadow(0 2px 6px color-mix(in srgb, var(--accent) 24%, transparent)) !important;
+        }
+        /* Glass Transparency Boost: end */
+
+        /* Alignment Layout Polish: start */
+        /* 统一左右分区 + 上下分层，减少散乱对齐 */
+
+        /* ===== Shell: 顶栏左右对齐 ===== */
+        header {
+            display: grid !important;
+            grid-template-columns: minmax(180px, auto) minmax(0, 1fr) !important;
+            align-items: center !important;
+            column-gap: 16px !important;
+            row-gap: 10px !important;
+        }
+
+        header > h1,
+        header .app-brand {
+            justify-self: start !important;
+            align-self: center !important;
+        }
+
+        .status-bar {
+            justify-self: end !important;
+            width: 100% !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            gap: 10px !important;
+        }
+
+        .status-group-runtime {
+            justify-content: flex-end !important;
+        }
+
+        .status-group-actions {
+            justify-content: flex-end !important;
+            margin-left: 0 !important;
+        }
+
+        /* ===== 面板标题行：左标题 / 右操作 ===== */
+        .shell-layout > .panel > h2,
+        #dashboard > h2,
+        #tasks > h2,
+        #config > h2,
+        #characters > h2,
+        #sessions > h2,
+        #knowledge > h2,
+        #logs > h2 {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 12px !important;
+            margin: 0 0 14px !important;
+            min-height: 36px !important;
+            line-height: 1.25 !important;
+        }
+
+        .section-head,
+        .dashboard-onboarding-head,
+        .card > .section-head,
+        #config .section-head,
+        #dashboard .dashboard-card-head {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 12px !important;
+            flex-wrap: wrap !important;
+        }
+
+        .section-head > :first-child,
+        .dashboard-onboarding-head > :first-child {
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+        }
+
+        .section-head > :last-child,
+        .dashboard-onboarding-head > div:last-child {
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+            margin-left: auto !important;
+        }
+
+        /* ===== 仪表盘：上下分层 + 卡片内对齐 ===== */
+        #dashboard .dashboard-layout {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 16px !important;
+            align-items: start !important;
+        }
+
+        #dashboard .dashboard-top-grid {
+            display: grid !important;
+            grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+            align-items: stretch !important;
+        }
+
+        #dashboard .dashboard-stat-card {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            justify-content: space-between !important;
+            text-align: left !important;
+            min-height: 104px !important;
+            padding: 16px !important;
+            gap: 10px !important;
+        }
+
+        #dashboard .dashboard-stat-label {
+            margin: 0 !important;
+            text-align: left !important;
+        }
+
+        #dashboard .dashboard-stat-value,
+        #dashboard .dashboard-status-row {
+            margin-top: auto !important;
+            text-align: left !important;
+            justify-content: flex-start !important;
+        }
+
+        #dashboard .dashboard-stat-note {
+            text-align: left !important;
+        }
+
+        #dashboard .dashboard-charts-grid,
+        #dashboard .dashboard-bottom-grid,
+        #dashboard .dashboard-secondary-grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 14px !important;
+            align-items: stretch !important;
+        }
+
+        #dashboard .dashboard-chart-card,
+        #dashboard .dashboard-chart-panel,
+        #dashboard .card {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+        }
+
+        #dashboard .dashboard-line-labels,
+        #dashboard .dashboard-line-legend,
+        #dashboard .dashboard-legend {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 8px !important;
+            flex-wrap: wrap !important;
+        }
+
+        /* ===== 配置页：表单左右对齐 ===== */
+        #config .grid {
+            display: grid !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            gap: 16px !important;
+            align-items: start !important;
+        }
+
+        #config .card {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+            align-items: stretch !important;
+        }
+
+        #config .card h3,
+        #config .card > h3 {
+            margin: 0 0 4px !important;
+            text-align: left !important;
+        }
+
+        #config .form-group,
+        #config .field,
+        #config .config-field,
+        #config label.field-row,
+        #config .setting-row {
+            display: grid !important;
+            grid-template-columns: minmax(108px, 150px) minmax(0, 1fr) !important;
+            align-items: center !important;
+            column-gap: 12px !important;
+            row-gap: 6px !important;
+            margin-bottom: 10px !important;
+            width: 100% !important;
+        }
+
+        #config .form-group.full,
+        #config .field.full,
+        #config .config-field.full {
+            grid-column: 1 / -1 !important;
+            grid-template-columns: minmax(108px, 180px) minmax(0, 1fr) !important;
+        }
+
+        #config .config-subgrid,
+        #config .config-subsection {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 8px !important;
+            align-items: start !important;
+            width: 100% !important;
+        }
+
+        #config .config-card-header {
+            display: flex !important;
+            align-items: flex-start !important;
+            justify-content: space-between !important;
+            gap: 12px !important;
+            margin-bottom: 8px !important;
+            text-align: left !important;
+        }
+
+        #config .form-group > label,
+        #config .field > label,
+        #config .config-field > label,
+        #config .setting-row > label {
+            margin: 0 !important;
+            text-align: left !important;
+            justify-self: start !important;
+            color: var(--text-muted) !important;
+            font-size: 13px !important;
+            line-height: 1.35 !important;
+        }
+
+        #config .form-group > input,
+        #config .form-group > select,
+        #config .form-group > textarea,
+        #config .field > input,
+        #config .field > select,
+        #config .field > textarea,
+        #config .config-field > input,
+        #config .config-field > select,
+        #config .config-field > textarea,
+        #config .setting-row > input,
+        #config .setting-row > select,
+        #config .setting-row > textarea,
+        #config .form-group > .control,
+        #config .setting-row > .control {
+            width: 100% !important;
+            max-width: 100% !important;
+            justify-self: stretch !important;
+            margin: 0 !important;
+        }
+
+        /* 复选框行：整行横向，不要被压成竖排 */
+        #config .form-group:has(input[type="checkbox"]),
+        #config .setting-row:has(input[type="checkbox"]),
+        #config .field:has(input[type="checkbox"]),
+        #config .form-group:has(.checkbox-label) {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 10px !important;
+            grid-template-columns: none !important;
+            min-height: 36px !important;
+            width: 100% !important;
+        }
+
+        #config .form-group:has(input[type="checkbox"]) > label,
+        #config .form-group:has(.checkbox-label) > label,
+        #config .checkbox-label {
+            display: inline-flex !important;
+            align-items: center !important;
+            flex-direction: row !important;
+            gap: 8px !important;
+            width: auto !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            white-space: normal !important;
+            writing-mode: horizontal-tb !important;
+            text-orientation: mixed !important;
+            word-break: normal !important;
+            overflow-wrap: normal !important;
+            line-height: 1.4 !important;
+        }
+
+        #config .form-group:has(input[type="checkbox"]) input[type="checkbox"],
+        #config .setting-row:has(input[type="checkbox"]) input[type="checkbox"],
+        #config .field:has(input[type="checkbox"]) input[type="checkbox"],
+        #config .checkbox-label input[type="checkbox"] {
+            width: 16px !important;
+            height: 16px !important;
+            min-width: 16px !important;
+            margin: 0 !important;
+            flex: 0 0 auto !important;
+            justify-self: start !important;
+        }
+
+        #config .form-group:has(textarea),
+        #config .field:has(textarea),
+        #config .config-field:has(textarea) {
+            grid-template-columns: 1fr !important;
+            align-items: start !important;
+        }
+
+        /* ===== 通用卡片 / 列表左右结构 ===== */
+        .card h3,
+        .card h4 {
+            text-align: left !important;
+        }
+
+        .list-item,
+        .model-provider-item,
+        .variable-item {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 12px !important;
+            text-align: left !important;
+        }
+
+        .list-item > :first-child,
+        .model-provider-item > :first-child {
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+            text-align: left !important;
+        }
+
+        .list-item > :last-child,
+        .model-provider-item .actions {
+            margin-left: auto !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            gap: 8px !important;
+            flex: 0 0 auto !important;
+        }
+
+        /* 任务页恢复原结构：不要被通用左右对齐规则改成横排 */
+        #tasks .task-status-banner {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 14px !important;
+            text-align: left !important;
+        }
+
+        #tasks .task-status-body {
+            flex: 1 1 auto !important;
+            min-width: 0 !important;
+            text-align: left !important;
+        }
+
+        #tasks .task-status-actions {
+            margin-left: auto !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: flex-end !important;
+            gap: 8px !important;
+            flex: 0 0 auto !important;
+        }
+
+        #tasks .task-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)) !important;
+            gap: 16px !important;
+            align-items: stretch !important;
+        }
+
+        #tasks .task-card {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            justify-content: flex-start !important;
+            gap: 14px !important;
+            height: 100% !important;
+            text-align: left !important;
+        }
+
+        #tasks .task-card > :first-child,
+        #tasks .task-card-icon {
+            flex: 0 0 auto !important;
+            margin-left: 0 !important;
+        }
+
+        #tasks .task-card-body {
+            display: flex !important;
+            flex-direction: column !important;
+            gap: 12px !important;
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+            width: 100% !important;
+        }
+
+        #tasks .task-card-head {
+            display: flex !important;
+            align-items: flex-start !important;
+            justify-content: space-between !important;
+            gap: 12px !important;
+            width: 100% !important;
+        }
+
+        #tasks .task-card-head > :first-child {
+            min-width: 0 !important;
+            flex: 1 1 auto !important;
+            text-align: left !important;
+        }
+
+        #tasks .task-card-head > button,
+        #tasks .task-card-head > :last-child {
+            margin-left: auto !important;
+            flex: 0 0 auto !important;
+        }
+
+        #tasks .task-card-content,
+        #tasks .task-empty,
+        #tasks .task-progress-list,
+        #tasks .task-progress-item {
+            width: 100% !important;
+            text-align: left !important;
+        }
+
+        #tasks .task-progress-item {
+            display: grid !important;
+            gap: 8px !important;
+            align-items: stretch !important;
+            justify-content: stretch !important;
+        }
+
+        #tasks .task-progress-head {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: space-between !important;
+            gap: 10px !important;
+        }
+
+        /* tabs 左对齐文字 */
+        .tabs .tab {
+            display: flex !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            text-align: left !important;
+            gap: 8px !important;
+        }
+
+        /* ===== 响应式：窄屏改上下堆叠，宽屏保持左右 ===== */
+        @media (max-width: 1280px) {
+            #dashboard .dashboard-top-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            #dashboard .dashboard-charts-grid,
+            #dashboard .dashboard-bottom-grid,
+            #dashboard .dashboard-secondary-grid,
+            #config .grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        @media (max-width: 900px) {
+            header {
+                grid-template-columns: 1fr !important;
+                align-items: start !important;
+            }
+            header > h1,
+            header .app-brand,
+            .status-bar {
+                justify-self: stretch !important;
+            }
+            .status-bar,
+            .status-group-runtime,
+            .status-group-actions {
+                justify-content: flex-start !important;
+            }
+            #config .form-group,
+            #config .field,
+            #config .config-field,
+            #config .setting-row {
+                grid-template-columns: 1fr !important;
+                align-items: start !important;
+            }
+            #dashboard .dashboard-top-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
+        /* Alignment Layout Polish: end */
+
+        /* Config Neutral Palette Polish: start */
+        /* 配置页去掉刺眼深蓝块，改成克制中性色 + 轻 accent */
+
+        #config .config-subtabs {
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, transparent) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            box-shadow: var(--glass-highlight) !important;
+        }
+
+        #config .config-subtab {
+            background: transparent !important;
+            color: var(--text-muted) !important;
+            border: 1px solid transparent !important;
+            box-shadow: none !important;
+        }
+
+        #config .config-subtab:hover {
+            background: color-mix(in srgb, var(--text) 5%, transparent) !important;
+            color: var(--text) !important;
+            border-color: color-mix(in srgb, var(--border) 80%, transparent) !important;
+        }
+
+        #config .config-subtab.active {
+            background: color-mix(in srgb, var(--text) 7%, var(--glass-bg-strong)) !important;
+            color: var(--text) !important;
+            border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55) !important;
+            font-weight: 600 !important;
+        }
+
+        /* 配置总览快捷入口：不要实心蓝按钮 */
+        #config .dashboard-quick-link,
+        #config button.dashboard-quick-link,
+        #config .config-subpanel[data-config-panel="overview"] .dashboard-quick-link,
+        #config .config-subpanel[data-config-panel="overview"] .dashboard-quick-link:first-child {
+            background: color-mix(in srgb, var(--glass-bg-strong) 88%, transparent) !important;
+            color: var(--text) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 90%, transparent) !important;
+            box-shadow: var(--glass-highlight), 0 6px 18px rgba(15, 23, 42, 0.05) !important;
+            text-align: left !important;
+        }
+
+        #config .dashboard-quick-link:hover,
+        #config button.dashboard-quick-link:hover {
+            background: color-mix(in srgb, var(--text) 4%, var(--glass-bg-strong)) !important;
+            border-color: color-mix(in srgb, var(--border-strong) 75%, transparent) !important;
+            color: var(--text) !important;
+            transform: translateY(-1px) !important;
+        }
+
+        #config .dashboard-quick-link:focus-visible {
+            outline: 2px solid color-mix(in srgb, var(--text) 35%, transparent) !important;
+            outline-offset: 2px !important;
+        }
+
+        #config .config-subpanel[data-config-panel="overview"] .dashboard-quick-link:first-child::after {
+            content: none !important;
+            display: none !important;
+            background: none !important;
+            color: transparent !important;
+        }
+
+        #config .config-subsection-title {
+            color: var(--text) !important;
+        }
+
+        #config .config-subsection-title::before {
+            background: color-mix(in srgb, var(--text) 28%, transparent) !important;
+        }
+
+        #config .config-card-header h3,
+        #config .card h3 {
+            color: var(--text) !important;
+        }
+
+        #config .config-card-intro,
+        #config .hint-text,
+        #config .config-page-intro {
+            color: var(--text-muted) !important;
+        }
+
+        #config .model-provider-item.active {
+            border-color: color-mix(in srgb, var(--text) 22%, var(--border)) !important;
+            background: color-mix(in srgb, var(--text) 4%, var(--glass-bg-strong)) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.5) !important;
+        }
+
+        /* 主按钮在配置页也别用高饱和蓝，改成深石板色 */
+        #config button:not(.secondary):not(.config-subtab):not(.dashboard-quick-link):not(.theme-toggle):not(.global-search-trigger):not(.logout-btn) {
+            background: #1f2937 !important;
+            border-color: #111827 !important;
+            color: #ffffff !important;
+        }
+
+        #config button:not(.secondary):not(.config-subtab):not(.dashboard-quick-link):hover {
+            background: #374151 !important;
+            border-color: #1f2937 !important;
+        }
+
+        /* 全局 accent 收敛：保留一点冷色，但不再是刺眼电光蓝 */
+        :root, body[data-theme='light'], body:not([data-theme]) {
+            --accent: #475569 !important;
+            --accent-soft: rgba(71, 85, 105, 0.12) !important;
+            --accent-hover: #334155 !important;
+            --btn-primary: #1f2937 !important;
+            --btn-primary-hover: #374151 !important;
+            --info: #64748b !important;
+        }
+
+        body[data-theme='dark'] {
+            --accent: #cbd5e1 !important;
+            --accent-soft: rgba(203, 213, 225, 0.14) !important;
+            --accent-hover: #f8fafc !important;
+            --btn-primary: #e2e8f0 !important;
+            --btn-primary-hover: #f8fafc !important;
+            --info: #94a3b8 !important;
+        }
+
+        body[data-theme='rose'] {
+            --accent: #9f6b7a !important;
+            --accent-soft: rgba(159, 107, 122, 0.12) !important;
+            --accent-hover: #7d5260 !important;
+            --btn-primary: #5c3b45 !important;
+            --btn-primary-hover: #734a56 !important;
+            --info: #a88a93 !important;
+        }
+
+        .tab.active,
+        #config .config-subtab.active,
+        .range-board-pill.active,
+        .range-mobile-tab.active {
+            background: color-mix(in srgb, var(--text) 7%, var(--glass-bg-strong)) !important;
+            color: var(--text) !important;
+            border-color: color-mix(in srgb, var(--border-strong) 70%, transparent) !important;
+        }
+
+        .tab.active {
+            border-left: 3px solid color-mix(in srgb, var(--text) 55%, transparent) !important;
+            color: var(--text) !important;
+        }
+        /* Config Neutral Palette Polish: end */
+
+        /* Select / Control Layer Polish: start */
+        /* 选择器与输入框同层：同高、同圆角、同玻璃表面、自定义箭头 */
+
+        #config input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+        #config select,
+        #config textarea,
+        .model-provider-editor input:not([type="checkbox"]):not([type="radio"]),
+        .model-provider-editor select,
+        .model-provider-editor textarea,
+        .model-service-panel input:not([type="checkbox"]):not([type="radio"]),
+        .model-service-panel select,
+        .preset-ai-panel input:not([type="checkbox"]):not([type="radio"]),
+        .preset-ai-panel select {
+            -webkit-appearance: none !important;
+            appearance: none !important;
+            min-height: 40px !important;
+            height: 40px !important;
+            padding: 8px 12px !important;
+            border-radius: 12px !important;
+            background: color-mix(in srgb, var(--glass-bg-soft) 88%, white 12%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 1px 2px rgba(15,23,42,0.03) !important;
+            -webkit-backdrop-filter: blur(10px) saturate(1.12) !important;
+            backdrop-filter: blur(10px) saturate(1.12) !important;
+            font-size: 13.5px !important;
+            line-height: 1.35 !important;
+            box-sizing: border-box !important;
+            transition: background-color .15s ease, border-color .15s ease, box-shadow .15s ease !important;
+        }
+
+        #config textarea,
+        .model-provider-editor textarea {
+            height: auto !important;
+            min-height: 88px !important;
+            padding: 10px 12px !important;
+            resize: vertical !important;
+        }
+
+        #config select,
+        .model-provider-editor select,
+        .model-service-panel select,
+        .preset-ai-panel select {
+            padding-right: 36px !important;
+            background-image:
+                linear-gradient(45deg, transparent 50%, color-mix(in srgb, var(--text-muted) 85%, transparent) 50%),
+                linear-gradient(135deg, color-mix(in srgb, var(--text-muted) 85%, transparent) 50%, transparent 50%),
+                linear-gradient(to right, transparent, transparent) !important;
+            background-position:
+                calc(100% - 16px) calc(50% - 2px),
+                calc(100% - 11px) calc(50% - 2px),
+                100% 0 !important;
+            background-size: 5px 5px, 5px 5px, 2.5em 2.5em !important;
+            background-repeat: no-repeat !important;
+            cursor: pointer !important;
+        }
+
+        #config select:hover,
+        #config input:not([type="checkbox"]):not([type="radio"]):hover,
+        .model-provider-editor select:hover,
+        .model-provider-editor input:not([type="checkbox"]):not([type="radio"]):hover {
+            border-color: color-mix(in srgb, var(--border-strong) 80%, transparent) !important;
+            background-color: color-mix(in srgb, var(--glass-bg) 90%, white 10%) !important;
+        }
+
+        #config select:focus,
+        #config select:focus-visible,
+        #config input:not([type="checkbox"]):not([type="radio"]):focus,
+        #config input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+        #config textarea:focus,
+        #config textarea:focus-visible,
+        .model-provider-editor select:focus,
+        .model-provider-editor select:focus-visible,
+        .model-provider-editor input:focus,
+        .model-provider-editor input:focus-visible {
+            outline: none !important;
+            border-color: color-mix(in srgb, var(--text) 28%, var(--border)) !important;
+            box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.62),
+                0 0 0 3px color-mix(in srgb, var(--text) 10%, transparent) !important;
+            background-color: color-mix(in srgb, var(--glass-bg-strong) 86%, white 14%) !important;
+        }
+
+        #config select:disabled,
+        #config input:disabled,
+        #config textarea:disabled {
+            opacity: 0.55 !important;
+            cursor: not-allowed !important;
+            filter: grayscale(0.05) !important;
+        }
+
+        /* option 列表尽量贴近页面文字色 */
+        #config select option,
+        .model-provider-editor select option {
+            color: #0f172a !important;
+            background: #ffffff !important;
+        }
+
+        /* 模型供应卡片内部控件也强制同层 */
+        #config .model-provider-item {
+            background: color-mix(in srgb, var(--glass-bg-strong) 86%, transparent) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            border-radius: 12px !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55) !important;
+        }
+
+        #config .model-provider-item.active {
+            background: color-mix(in srgb, var(--text) 5%, var(--glass-bg-strong)) !important;
+            border-color: color-mix(in srgb, var(--text) 18%, var(--border)) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.6), 0 0 0 1px color-mix(in srgb, var(--text) 6%, transparent) !important;
+        }
+
+        #config .model-provider-item-title .badge,
+        #config .badge {
+            background: color-mix(in srgb, var(--text) 12%, transparent) !important;
+            color: var(--text) !important;
+            border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent) !important;
+            box-shadow: none !important;
+        }
+
+        #config .model-provider-item > button.secondary,
+        #config .model-provider-item button.secondary {
+            min-height: 28px !important;
+            height: 28px !important;
+            padding: 0 10px !important;
+            border-radius: 8px !important;
+            font-size: 12px !important;
+            line-height: 1 !important;
+            background: color-mix(in srgb, var(--glass-bg) 90%, transparent) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text) !important;
+        }
+
+        #config .config-subsection-title::before {
+            width: 3px !important;
+            height: 14px !important;
+            border-radius: 999px !important;
+            background: color-mix(in srgb, var(--text) 28%, transparent) !important;
+            box-shadow: none !important;
+        }
+
+        #config .config-subsection-title {
+            color: var(--text) !important;
+            gap: 10px !important;
+        }
+        /* Select / Control Layer Polish: end */
+
+        /* Checkbox / Profile Text Horizontal Fix: start */
+        #config .config-checkbox-grid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)) !important;
+            gap: 12px 16px !important;
+            align-items: start !important;
+            width: 100% !important;
+        }
+
+        #config .config-checkbox-grid .form-group,
+        #config .form-group:has(.checkbox-label),
+        #config .form-group:has(input[type="checkbox"]) {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 10px !important;
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: 100% !important;
+            margin-bottom: 0 !important;
+            grid-template-columns: none !important;
+        }
+
+        #config .config-checkbox-grid .checkbox-label,
+        #config .checkbox-label,
+        #config .form-group:has(input[type="checkbox"]) > label,
+        #config .form-group:has(.checkbox-label) > label {
+            display: inline-flex !important;
+            flex-direction: row !important;
+            flex-wrap: nowrap !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 8px !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            height: auto !important;
+            min-height: 24px !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            white-space: normal !important;
+            writing-mode: horizontal-tb !important;
+            text-orientation: mixed !important;
+            word-break: keep-all !important;
+            overflow-wrap: normal !important;
+            line-height: 1.45 !important;
+            text-align: left !important;
+        }
+
+        #config .checkbox-label input[type="checkbox"],
+        #config .form-group:has(input[type="checkbox"]) input[type="checkbox"] {
+            width: 16px !important;
+            height: 16px !important;
+            min-width: 16px !important;
+            max-width: 16px !important;
+            margin: 0 8px 0 0 !important;
+            flex: 0 0 16px !important;
+            align-self: center !important;
+        }
+
+        /* 人物档案用户名再保险 */
+        #participant-profiles .participant-profile-item-name,
+        #participant-profiles .participant-profile-item-name.name {
+            writing-mode: horizontal-tb !important;
+            text-orientation: mixed !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-width: 0 !important;
+            word-break: normal !important;
+            overflow-wrap: normal !important;
+        }
+        /* Checkbox / Profile Text Horizontal Fix: end */
+
+        /* Range Layer Unification: start */
+        /* 靶场统一为浅色玻璃层：去掉黑底另层，文字统一深色可读 */
+
+        #prompt-range,
+        #prompt-range .range-layout,
+        #prompt-range .range-workbench-scroll {
+            color: var(--text) !important;
+            background: transparent !important;
+        }
+
+        #prompt-range .range-session-sidebar,
+        #prompt-range .range-workbench-config,
+        #prompt-range .range-workbench-board,
+        #prompt-range .range-workbench-detail,
+        #prompt-range .range-col {
+            background: color-mix(in srgb, var(--glass-bg-strong) 88%, white 12%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 90%, transparent) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.7), 0 10px 28px rgba(15,23,42,0.06) !important;
+            -webkit-backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.15) !important;
+            backdrop-filter: blur(var(--glass-blur-sm)) saturate(1.15) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-chat-header,
+        #prompt-range .range-mobile-tools-header {
+            background: color-mix(in srgb, var(--glass-bg) 90%, white 10%) !important;
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text) !important;
+            -webkit-backdrop-filter: blur(10px) !important;
+            backdrop-filter: blur(10px) !important;
+        }
+
+        #prompt-range .range-board-canvas {
+            background:
+                radial-gradient(720px 280px at 12% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%),
+                radial-gradient(640px 240px at 88% 8%, color-mix(in srgb, #64748b 8%, transparent), transparent 55%),
+                color-mix(in srgb, var(--glass-bg-soft) 82%, white 18%) !important;
+            background-size: auto !important;
+            color: var(--text) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55) !important;
+        }
+
+        #prompt-range .range-board-canvas::before,
+        #prompt-range .range-board-canvas::after {
+            display: none !important;
+        }
+
+        #prompt-range .range-board-canvas .empty-state {
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text-muted) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65), 0 10px 24px rgba(15,23,42,0.05) !important;
+        }
+        #prompt-range .range-board-canvas .empty-state::before {
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-observer-lane,
+        #prompt-range .range-observer-lane-head,
+        #prompt-range .range-observer-card,
+        #prompt-range .range-observer-preview,
+        #prompt-range .range-observer-step,
+        #prompt-range .range-board-floating-panel,
+        #prompt-range .range-trace-detail-shell,
+        #prompt-range .range-detail-chat,
+        #prompt-range .card,
+        #prompt-range .range-card-padded {
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65), 0 8px 20px rgba(15,23,42,0.05) !important;
+            color: var(--text) !important;
+            backdrop-filter: blur(10px) !important;
+            -webkit-backdrop-filter: blur(10px) !important;
+        }
+
+        #prompt-range .range-observer-lane {
+            background:
+                linear-gradient(180deg, color-mix(in srgb, var(--glass-bg-strong) 92%, white 8%), color-mix(in srgb, var(--glass-bg) 90%, white 10%)) !important;
+        }
+
+        #prompt-range .range-observer-lane-title,
+        #prompt-range .range-observer-card-title,
+        #prompt-range .range-board-floating-title,
+        #prompt-range .range-trace-detail-title,
+        #prompt-range .range-session-title,
+        #prompt-range h3,
+        #prompt-range h4,
+        #prompt-range .section-head,
+        #prompt-range .range-chat-header-label {
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-observer-lane-meta,
+        #prompt-range .range-observer-card-meta,
+        #prompt-range .range-board-floating-meta,
+        #prompt-range .range-session-meta,
+        #prompt-range .range-observer-step-meta,
+        #prompt-range .range-observer-step-summary,
+        #prompt-range .hint-text,
+        #prompt-range label,
+        #prompt-range .meta,
+        #prompt-range .empty-state {
+            color: var(--text-muted) !important;
+        }
+
+        #prompt-range .range-observer-step.is-completed {
+            background: color-mix(in srgb, var(--text) 4%, var(--glass-bg-strong)) !important;
+            border-color: color-mix(in srgb, var(--text) 16%, var(--border)) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-observer-card.is-selected {
+            border-color: color-mix(in srgb, var(--text) 22%, var(--border)) !important;
+            box-shadow: 0 0 0 2px color-mix(in srgb, var(--text) 8%, transparent), inset 0 1px 0 rgba(255,255,255,0.7) !important;
+        }
+
+        #prompt-range .range-iteration-log,
+        #prompt-range .range-corpus-lines,
+        #prompt-range .range-env-list,
+        #prompt-range pre,
+        #prompt-range code,
+        #prompt-range .range-io-block {
+            background: color-mix(in srgb, var(--glass-bg-soft) 82%, #eef2f7 18%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range input,
+        #prompt-range select,
+        #prompt-range textarea {
+            background: color-mix(in srgb, var(--glass-bg-soft) 88%, white 12%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text) !important;
+            -webkit-backdrop-filter: blur(8px) !important;
+            backdrop-filter: blur(8px) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55) !important;
+        }
+
+        #prompt-range input::placeholder,
+        #prompt-range textarea::placeholder {
+            color: var(--text-faint) !important;
+        }
+
+        #prompt-range select option {
+            color: #0f172a !important;
+            background: #ffffff !important;
+        }
+
+        #prompt-range button.secondary,
+        #prompt-range .range-board-pill,
+        #prompt-range .range-mobile-tab,
+        #prompt-range .range-config-toggle,
+        #prompt-range .range-sidebar-toggle-btn,
+        #prompt-range .range-sidebar-new-btn {
+            background: color-mix(in srgb, var(--glass-bg) 90%, white 10%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.55) !important;
+        }
+
+        #prompt-range .range-board-pill.active,
+        #prompt-range .range-mobile-tab.active {
+            background: color-mix(in srgb, var(--text) 7%, var(--glass-bg-strong)) !important;
+            color: var(--text) !important;
+            border-color: color-mix(in srgb, var(--border-strong) 75%, transparent) !important;
+        }
+
+        #prompt-range button:not(.secondary):not(.range-board-pill):not(.range-mobile-tab):not(.range-config-toggle):not(.range-sidebar-toggle-btn):not(.range-sidebar-new-btn):not(.theme-toggle):not(.range-observer-step):not(.range-session-item):not(.range-trace-node) {
+            background: #1f2937 !important;
+            border-color: #111827 !important;
+            color: #ffffff !important;
+        }
+
+        #prompt-range button.range-observer-step,
+        #prompt-range .range-observer-step {
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            color: var(--text) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65) !important;
+            text-align: left !important;
+        }
+
+        #prompt-range .range-observer-step-title {
+            color: var(--text) !important;
+        }
+        #prompt-range .range-observer-step-meta,
+        #prompt-range .range-observer-step-summary {
+            color: var(--text-muted) !important;
+        }
+
+        /* 去掉残留深色字色/反色标题 */
+        #prompt-range .range-observer-lane-title,
+        #prompt-range .range-observer-card-title {
+            color: var(--text) !important;
+        }
+        #prompt-range .range-observer-lane-meta,
+        #prompt-range .range-observer-card-meta {
+            color: var(--text-muted) !important;
+        }
+        /* Range Layer Unification: end */
+
+        /* Node Detail Layer Unification: start */
+        /* 节点详情/trace 列表单独统一，去掉残留深色主题字色和黑块 */
+
+        #prompt-range .range-workbench-detail,
+        #prompt-range .range-trace-detail-shell,
+        #prompt-range .range-detail-chat,
+        #prompt-range .range-card-padded {
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            color: var(--text) !important;
+            border-color: color-mix(in srgb, var(--border) 88%, transparent) !important;
+        }
+
+        #prompt-range .range-panel-h3,
+        #prompt-range .range-trace-detail-title,
+        #prompt-range .range-trace-node-title,
+        #prompt-range .range-trace-diagnostic-value,
+        #prompt-range .range-trace-detail-summary {
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-trace-detail-meta,
+        #prompt-range .range-trace-node-meta,
+        #prompt-range .range-trace-node-summary,
+        #prompt-range .range-trace-diagnostic-key,
+        #prompt-range .range-workbench-detail .hint-text,
+        #prompt-range .range-workbench-detail .meta-inline,
+        #prompt-range .range-workbench-detail .meta,
+        #prompt-range .range-workbench-detail summary {
+            color: var(--text-muted) !important;
+            background: transparent !important;
+        }
+
+        #prompt-range .range-workbench-detail .meta-inline,
+        #prompt-range #range-trace-summary {
+            background: color-mix(in srgb, var(--glass-bg-soft) 88%, #eef2f7 12%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 80%, transparent) !important;
+            color: var(--text-muted) !important;
+            border-radius: 999px !important;
+            padding: 4px 8px !important;
+        }
+
+        #prompt-range .range-trace-grid {
+            display: grid !important;
+            grid-template-columns: 1fr !important;
+            gap: 8px !important;
+        }
+
+        #prompt-range button.range-trace-node,
+        #prompt-range .range-trace-node {
+            display: grid !important;
+            gap: 6px !important;
+            width: 100% !important;
+            text-align: left !important;
+            padding: 10px 12px !important;
+            border-radius: 12px !important;
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range button.range-trace-node:hover,
+        #prompt-range .range-trace-node:hover {
+            background: color-mix(in srgb, var(--text) 4%, var(--glass-bg-strong)) !important;
+            border-color: color-mix(in srgb, var(--border-strong) 75%, transparent) !important;
+            transform: none !important;
+        }
+
+        #prompt-range button.range-trace-node.is-selected,
+        #prompt-range .range-trace-node.is-selected {
+            background: color-mix(in srgb, var(--text) 6%, var(--glass-bg-strong)) !important;
+            border-color: color-mix(in srgb, var(--text) 20%, var(--border)) !important;
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent), inset 0 1px 0 rgba(255,255,255,0.7) !important;
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-trace-status-pill {
+            background: color-mix(in srgb, var(--glass-bg-soft) 90%, white 10%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            color: var(--text-muted) !important;
+            border-radius: 999px !important;
+            padding: 2px 8px !important;
+            font-size: 11px !important;
+        }
+
+        #prompt-range .range-trace-status-pill.is-completed {
+            color: #15803d !important;
+            border-color: color-mix(in srgb, #16a34a 30%, var(--border)) !important;
+            background: color-mix(in srgb, #16a34a 8%, white) !important;
+        }
+
+        #prompt-range .range-trace-status-pill.is-running {
+            color: #334155 !important;
+            border-color: color-mix(in srgb, #64748b 30%, var(--border)) !important;
+            background: color-mix(in srgb, #64748b 8%, white) !important;
+        }
+
+        #prompt-range .range-trace-status-pill.is-failed {
+            color: #b91c1c !important;
+            border-color: color-mix(in srgb, #dc2626 30%, var(--border)) !important;
+            background: color-mix(in srgb, #dc2626 8%, white) !important;
+        }
+
+        #prompt-range .range-trace-detail-shell,
+        #prompt-range .range-trace-detail-block,
+        #prompt-range .range-trace-detail-io,
+        #prompt-range .range-trace-diagnostic-grid,
+        #prompt-range .range-trace-diagnostic-item {
+            color: var(--text) !important;
+            background: transparent !important;
+        }
+
+        #prompt-range .range-trace-detail-shell {
+            background: color-mix(in srgb, var(--glass-bg-soft) 86%, white 14%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            border-radius: 12px !important;
+            padding: 12px !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.6) !important;
+        }
+
+        #prompt-range .range-trace-detail-block {
+            border-top: 1px dashed color-mix(in srgb, var(--border) 90%, transparent) !important;
+            padding-top: 8px !important;
+            margin-top: 8px !important;
+        }
+
+        #prompt-range .range-trace-diagnostic-key {
+            color: var(--text-muted) !important;
+        }
+
+        #prompt-range .range-trace-diagnostic-value {
+            color: var(--text) !important;
+        }
+
+        #prompt-range .range-workbench-detail pre,
+        #prompt-range .range-workbench-detail code,
+        #prompt-range .range-workbench-detail .range-io-block,
+        #prompt-range .range-workbench-detail .range-iteration-log {
+            background: color-mix(in srgb, var(--glass-bg-soft) 84%, #eef2f7 16%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            color: var(--text) !important;
+            box-shadow: none !important;
+        }
+
+        #prompt-range .range-workbench-detail summary {
+            color: var(--text) !important;
+            font-weight: 600 !important;
+        }
+
+        #prompt-range .range-detail-chat {
+            background: color-mix(in srgb, var(--glass-bg-soft) 88%, white 12%) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            color: var(--text-muted) !important;
+        }
+
+        /* 防止通用主按钮规则再次把 trace 节点刷成黑底白字 */
+        #prompt-range button.range-trace-node,
+        #prompt-range button.range-observer-step {
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            color: var(--text) !important;
+            border: 1px solid color-mix(in srgb, var(--border) 88%, transparent) !important;
+        }
+        /* Node Detail Layer Unification: end */
+
+        /* Range Sidebar Expand Fix: start */
+        /* 先快速拉出侧栏宽度，内容保持完整宽度被裁切；到位后再淡入 */
+
+        #prompt-range .range-layout-with-sidebar {
+            --range-sidebar-width: 56px;
+            --range-sidebar-expanded-width: 220px;
+            transition: grid-template-columns 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+        }
+
+        #prompt-range .range-layout-with-sidebar:has(#range-session-sidebar:not(.collapsed)),
+        #prompt-range .range-layout-with-sidebar:has(.range-session-sidebar:not(.collapsed)) {
+            --range-sidebar-width: var(--range-sidebar-expanded-width);
+        }
+
+
+        #prompt-range .range-session-sidebar {
+            width: 100% !important;
+            min-width: 0 !important;
+            max-width: none !important;
+            overflow: hidden !important;
+            position: relative !important;
+            z-index: 5 !important;
+            padding: 10px 6px !important;
+        }
+
+        #prompt-range .range-session-sidebar:not(.collapsed) {
+            padding: 10px 10px 12px !important;
+        }
+
+        /* 内容始终按展开态排版，展开过程中只被 overflow 裁切，不跟着被拉宽 */
+        #prompt-range .range-session-sidebar-head,
+        #prompt-range .range-session-sidebar-list,
+        #prompt-range .range-sidebar-title,
+        #prompt-range .range-sidebar-new-btn {
+            min-width: 196px !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            visibility: hidden !important;
+            transform: none !important;
+            transition: opacity 0.16s ease !important;
+        }
+
+        #prompt-range .range-session-sidebar.collapsed .range-session-sidebar-head,
+        #prompt-range .range-session-sidebar.collapsed .range-session-sidebar-list,
+        #prompt-range .range-session-sidebar.collapsed .range-sidebar-title,
+        #prompt-range .range-session-sidebar.collapsed .range-sidebar-new-btn {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            visibility: hidden !important;
+            transition: none !important;
+        }
+
+        /* 展开到位后才显示内容 */
+        #prompt-range .range-session-sidebar.content-visible:not(.collapsed) .range-session-sidebar-head,
+        #prompt-range .range-session-sidebar.content-visible:not(.collapsed) .range-session-sidebar-list,
+        #prompt-range .range-session-sidebar.content-visible:not(.collapsed) .range-sidebar-title,
+        #prompt-range .range-session-sidebar.content-visible:not(.collapsed) .range-sidebar-new-btn {
+            opacity: 1 !important;
+            pointer-events: auto !important;
+            visibility: visible !important;
+        }
+
+        #prompt-range .range-sidebar-toggle-btn {
+            position: absolute !important;
+            top: 10px !important;
+            left: 10px !important;
+            width: 30px !important;
+            height: 30px !important;
+            min-width: 30px !important;
+            min-height: 30px !important;
+            z-index: 20 !important;
+            pointer-events: auto !important;
+            opacity: 1 !important;
+            visibility: visible !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-radius: 999px !important;
+            border: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            background: color-mix(in srgb, var(--glass-bg-strong) 90%, white 10%) !important;
+            color: var(--text) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.65) !important;
+        }
+
+        #prompt-range .range-session-sidebar-head {
+            min-height: 42px !important;
+            padding: 8px 10px 8px 46px !important;
+            border-bottom: 1px solid color-mix(in srgb, var(--border) 85%, transparent) !important;
+            box-sizing: border-box !important;
+        }
+
+        #prompt-range .range-session-sidebar-list {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: stretch !important;
+            align-content: flex-start !important;
+            justify-content: flex-start !important;
+            gap: 8px !important;
+            padding: 8px 4px !important;
+            overflow: auto !important;
+            min-height: 0 !important;
+            flex: 1 1 auto !important;
+            box-sizing: border-box !important;
+            grid-template-rows: none !important;
+            grid-auto-rows: auto !important;
+        }
+
+        #prompt-range .range-session-item {
+            display: block !important;
+            writing-mode: horizontal-tb !important;
+            text-align: left !important;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+            min-width: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            flex: 0 0 auto !important;
+            align-self: flex-start !important;
+            padding: 10px 28px 10px 12px !important;
+            box-sizing: border-box !important;
+            position: relative !important;
+        }
+
+        #prompt-range .range-session-title {
+            writing-mode: horizontal-tb !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+            line-height: 1.35 !important;
+            padding-right: 4px !important;
+        }
+
+        #prompt-range .range-session-meta {
+            writing-mode: horizontal-tb !important;
+            white-space: nowrap !important;
+            overflow: hidden !important;
+            text-overflow: ellipsis !important;
+            overflow-wrap: normal !important;
+            word-break: normal !important;
+            line-height: 1.35 !important;
+            margin-top: 4px !important;
+        }
+
+        #prompt-range .range-session-time {
+            float: none !important;
+            display: inline !important;
+            margin-left: 6px !important;
+        }
+
+        #prompt-range .range-session-del {
+            position: absolute !important;
+            top: 8px !important;
+            right: 8px !important;
+            width: 20px !important;
+            height: 20px !important;
+            line-height: 20px !important;
+        }
+
+        @media (max-width: 1100px) {
+            #prompt-range .range-layout-with-sidebar {
+                --range-sidebar-expanded-width: 210px;
+            }
+            #prompt-range .range-session-sidebar-head,
+            #prompt-range .range-session-sidebar-list,
+            #prompt-range .range-sidebar-title,
+            #prompt-range .range-sidebar-new-btn {
+                min-width: 170px !important;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            #prompt-range .range-layout-with-sidebar {
+                transition: none !important;
+            }
+            #prompt-range .range-session-sidebar-head,
+            #prompt-range .range-session-sidebar-list,
+            #prompt-range .range-sidebar-title,
+            #prompt-range .range-sidebar-new-btn {
+                transition: none !important;
+            }
+        }
+        /* Range Sidebar Expand Fix: end */
+
+        /* Range Board Responsive Fix: start */
+        /* 侧栏展开后画布应变窄自适应，避免观察卡固定宽把内容截断 */
+
+        #prompt-range .range-workbench-board,
+        #prompt-range .range-board-canvas,
+        #prompt-range .range-workbench-scroll {
+            min-width: 0 !important;
+            max-width: 100% !important;
+        }
+
+        #prompt-range .range-board-canvas {
+            width: 100% !important;
+            overflow-x: auto !important;
+            overflow-y: auto !important;
+            box-sizing: border-box !important;
+        }
+
+        #prompt-range .range-observer-lanes {
+            display: grid !important;
+            grid-auto-flow: row !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            grid-auto-columns: minmax(0, 1fr) !important;
+            min-width: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            gap: 14px !important;
+            padding: 4px 2px 16px !important;
+            box-sizing: border-box !important;
+        }
+
+        #prompt-range .range-observer-lane {
+            min-width: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: 0 !important;
+            box-sizing: border-box !important;
+        }
+
+        #prompt-range .range-observer-card {
+            min-width: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: 0 !important;
+            box-sizing: border-box !important;
+        }
+
+        #prompt-range .range-observer-card-head,
+        #prompt-range .range-observer-preview,
+        #prompt-range .range-observer-steps,
+        #prompt-range .range-io-block {
+            min-width: 0 !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        #prompt-range .range-observer-steps {
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)) !important;
+        }
+
+        #prompt-range .range-observer-preview,
+        #prompt-range .range-io-block,
+        #prompt-range .range-observer-step-summary {
+            overflow-wrap: anywhere !important;
+            word-break: break-word !important;
+        }
+
+        /* 侧栏展开时，优先保证画布：略收配置/详情宽度 */
+        #prompt-range .range-layout-with-sidebar:has(#range-session-sidebar:not(.collapsed)),
+        #prompt-range .range-layout-with-sidebar:has(.range-session-sidebar:not(.collapsed)) {
+            --range-sidebar-width: 220px;
+            --range-config-width: 240px;
+            --range-detail-width: 280px;
+        }
+
+        #prompt-range .range-layout-with-sidebar:has(#range-session-sidebar:not(.collapsed)).config-collapsed,
+        #prompt-range .range-layout-with-sidebar:has(.range-session-sidebar:not(.collapsed)).config-collapsed {
+            --range-config-width: 56px;
+        }
+
+        @media (max-width: 1280px) {
+            #prompt-range .range-layout-with-sidebar:has(#range-session-sidebar:not(.collapsed)),
+            #prompt-range .range-layout-with-sidebar:has(.range-session-sidebar:not(.collapsed)) {
+                --range-sidebar-width: 200px;
+                --range-config-width: 220px;
+                --range-detail-width: 260px;
+            }
+        }
+        /* Range Board Responsive Fix: end */
+
+        /* Dashboard Donut Polish: start */
+        /* 干净实心扇形：无镜片高光、无漂移感，中性配色 */
+
+        #dashboard .dashboard-donut-wrap,
+        #dashboard #dashboard-donut-panel {
+            display: flex !important;
+            flex-direction: column !important;
+            align-items: center !important;
+            justify-content: flex-start !important;
+            gap: 14px !important;
+            text-align: center !important;
+        }
+
+        #dashboard .dashboard-donut-chart,
+        #dashboard .dashboard-donut-chart-svg {
+            position: relative !important;
+            width: 176px !important;
+            height: 176px !important;
+            margin: 4px auto 0 !important;
+            border-radius: 50% !important;
+            overflow: hidden !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            filter: none !important;
+            flex: 0 0 auto !important;
+            transform: none !important;
+        }
+
+        #dashboard .dashboard-donut-svg {
+            display: block !important;
+            width: 100% !important;
+            height: 100% !important;
+            overflow: visible !important;
+            filter: none !important;
+        }
+
+        /* 彻底去掉白色镜片伪元素 */
+        #dashboard .dashboard-donut-chart::before,
+        #dashboard .dashboard-donut-chart::after,
+        #dashboard .dashboard-donut-chart-svg::before,
+        #dashboard .dashboard-donut-chart-svg::after {
+            content: none !important;
+            display: none !important;
+            background: none !important;
+            box-shadow: none !important;
+            border: none !important;
+        }
+
+        #dashboard .dashboard-donut-center {
+            position: absolute !important;
+            inset: 0 !important;
+            display: grid !important;
+            place-items: center !important;
+            text-align: center !important;
+            background: transparent !important;
+            border: none !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            filter: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            z-index: 2 !important;
+            padding: 0 34px !important;
+            pointer-events: none !important;
+            transform: none !important;
+        }
+
+        #dashboard .dashboard-donut-center > div {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            filter: none !important;
+            transform: none !important;
+        }
+
+        #dashboard .dashboard-donut-center strong {
+            display: block !important;
+            color: #5b6775 !important;
+            font-size: 1.28rem !important;
+            line-height: 1.1 !important;
+            font-weight: 700 !important;
+        }
+
+        #dashboard .dashboard-donut-center span {
+            display: block !important;
+            color: #8b94a1 !important;
+            font-size: 0.78rem !important;
+            margin-top: 4px !important;
+        }
+
+        #dashboard .dashboard-legend {
+            width: 100% !important;
+            max-width: 280px !important;
+            margin: 0 auto !important;
+        }
+
+        #dashboard .dashboard-legend-item {
+            background: #f8fafc !important;
+            border: 1px solid #eef2f7 !important;
+            box-shadow: none !important;
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            color: #5b6775 !important;
+        }
+
+        #dashboard .dashboard-donut-track {
+            fill: none !important;
+            stroke: #ececec !important;
+            stroke-width: 26 !important;
+        }
+
+        #dashboard .dashboard-donut-arc {
+            fill: none !important;
+            stroke-linecap: butt !important;
+            filter: none !important;
+            opacity: 1 !important;
+            transform: rotate(-90deg) !important;
+            transform-origin: 50% 50% !important;
+        }
+
+        /* 中心孔：用 SVG 遮罩式实心圆，不要玻璃高光 */
+        #dashboard .dashboard-donut-hole {
+            fill: #fbfcfe !important;
+            stroke: #ececec !important;
+            stroke-width: 1 !important;
+        }
+        /* Dashboard Donut Polish: end */
+
+
+
+
+
+
+
+
+
+
+        /* Interaction Polish Layer: end */
+
+
+        /* Shell Layout Polish Layer: end */
+
+
         /* Gemini workbench redesign override: end */
+
+        /* Logs scrollbar glass polish: start */
+        #logs,
+        #logs *,
+        .log-xterm-wrapper,
+        .log-xterm-wrapper .xterm,
+        .log-xterm-wrapper .xterm-viewport {
+            scrollbar-width: thin !important;
+            scrollbar-color: rgba(148, 163, 184, 0.55) rgba(15, 23, 42, 0.35) !important;
+        }
+
+        #logs::-webkit-scrollbar,
+        .log-xterm-wrapper::-webkit-scrollbar,
+        .log-xterm-wrapper .xterm-viewport::-webkit-scrollbar,
+        .shell-layout > .panel::-webkit-scrollbar,
+        .tabs::-webkit-scrollbar,
+        .list::-webkit-scrollbar {
+            width: 10px !important;
+            height: 10px !important;
+        }
+
+        #logs::-webkit-scrollbar-track,
+        .log-xterm-wrapper::-webkit-scrollbar-track,
+        .log-xterm-wrapper .xterm-viewport::-webkit-scrollbar-track,
+        .shell-layout > .panel::-webkit-scrollbar-track,
+        .tabs::-webkit-scrollbar-track,
+        .list::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.22) !important;
+            border-radius: 999px !important;
+            box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.12) !important;
+        }
+
+        #logs::-webkit-scrollbar-thumb,
+        .log-xterm-wrapper::-webkit-scrollbar-thumb,
+        .log-xterm-wrapper .xterm-viewport::-webkit-scrollbar-thumb,
+        .shell-layout > .panel::-webkit-scrollbar-thumb,
+        .tabs::-webkit-scrollbar-thumb,
+        .list::-webkit-scrollbar-thumb {
+            background: linear-gradient(180deg, rgba(165, 180, 252, 0.62), rgba(100, 116, 139, 0.58)) !important;
+            border: 2px solid transparent !important;
+            background-clip: padding-box !important;
+            border-radius: 999px !important;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28) !important;
+            min-height: 36px !important;
+        }
+
+        #logs::-webkit-scrollbar-thumb:hover,
+        .log-xterm-wrapper::-webkit-scrollbar-thumb:hover,
+        .log-xterm-wrapper .xterm-viewport::-webkit-scrollbar-thumb:hover,
+        .shell-layout > .panel::-webkit-scrollbar-thumb:hover,
+        .tabs::-webkit-scrollbar-thumb:hover,
+        .list::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(180deg, rgba(191, 219, 254, 0.78), rgba(129, 140, 248, 0.72)) !important;
+            background-clip: padding-box !important;
+        }
+
+        #logs::-webkit-scrollbar-corner,
+        .log-xterm-wrapper::-webkit-scrollbar-corner,
+        .log-xterm-wrapper .xterm-viewport::-webkit-scrollbar-corner {
+            background: transparent !important;
+        }
+
+        .log-xterm-wrapper {
+            overflow: hidden !important;
+            border-radius: 14px !important;
+            border: 1px solid color-mix(in srgb, var(--glass-border) 70%, rgba(148, 163, 184, 0.35)) !important;
+            box-shadow: var(--glass-highlight), 0 10px 28px rgba(15, 23, 42, 0.18) !important;
+            background: #0d1117 !important;
+        }
+
+        .log-xterm-wrapper .xterm {
+            padding: 10px 6px 10px 10px !important;
+            height: 100% !important;
+        }
+
+        .log-xterm-wrapper .xterm-viewport {
+            overflow-y: auto !important;
+            background-color: transparent !important;
+        }
+
+        .log-xterm-wrapper .xterm-screen {
+            background: transparent !important;
+        }
+        /* Logs scrollbar glass polish: end */
 
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
@@ -7596,59 +10476,54 @@ input[type="radio"] {
 <body>
     <div class="container">
         <header>
-            <h1 style="display: flex; align-items: center; gap: 15px;">
-    🧠 MimirLink
-    <span style="
-        font-size: 0.45em;
-        padding: 4px 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border-radius: 20px;
-        font-weight: 600;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-        letter-spacing: 1px;
-    ">Lifecycle Runtime</span>
-</h1>
+            <h1 class="app-brand">
+                🧠 MimirLink
+                <span class="app-badge">Lifecycle Runtime</span>
+            </h1>
             <div class="status-bar">
-                <div class="status-item">
-                    <span class="status-dot" id="onebot-status"></span>
-                    <span id="onebot-status-text">OneBot 检查中</span>
-                </div>
-                <div class="status-item">
-                    <button id="llm-toggle-btn" onclick="toggleLlm()" style="padding:4px 10px;border-radius:6px;font-size:0.8rem;cursor:pointer;border:1px solid var(--border);background:var(--success);color:white;">LLM 开启</button>
-                </div>
-                <div class="status-item">
-                    <span id="current-character">未择角色</span>
-                </div>
-                <div class="theme-picker" id="theme-picker">
-                    <button class="theme-toggle" id="theme-toggle" title="切换主题">🎨</button>
-                    <div class="theme-dropdown" id="theme-dropdown">
-                        <button data-theme="light" onclick="setTheme('light')">☀️ 浅色</button>
-                        <button data-theme="dark" onclick="setTheme('dark')">🌙 深色</button>
-                        <button data-theme="rose" onclick="setTheme('rose')">🌸 玫红</button>
+                <div class="status-group status-group-runtime">
+                    <div class="status-item">
+                        <span class="status-dot" id="onebot-status"></span>
+                        <span id="onebot-status-text">OneBot 检查中</span>
+                    </div>
+                    <div class="status-item status-item-llm">
+                        <button id="llm-toggle-btn" onclick="toggleLlm()" style="padding:4px 10px;border-radius:6px;font-size:0.8rem;cursor:pointer;border:1px solid var(--border);background:var(--success);color:white;">LLM 开启</button>
+                    </div>
+                    <div class="status-item status-item-character">
+                        <span id="current-character">未择角色</span>
                     </div>
                 </div>
-                <button type="button" class="global-search-trigger" onclick="openGlobalSearch()">🔎 全局搜索 <span>Ctrl K</span></button>
-                <button onclick="logout()" style="padding: 6px 12px; background: transparent; border: 1px solid var(--border); color: var(--text-muted); font-size: 0.85rem;">🚪 登出</button>
+                <div class="status-group status-group-actions">
+                    <div class="theme-picker" id="theme-picker">
+                        <button class="theme-toggle" id="theme-toggle" title="切换主题">🎨</button>
+                        <div class="theme-dropdown" id="theme-dropdown">
+                            <button data-theme="light" onclick="setTheme('light')">☀️ 浅色</button>
+                            <button data-theme="dark" onclick="setTheme('dark')">🌙 深色</button>
+                            <button data-theme="rose" onclick="setTheme('rose')">🌸 玫红</button>
+                        </div>
+                    </div>
+                    <button type="button" class="global-search-trigger" onclick="openGlobalSearch()">🔎 全局搜索 <span>Ctrl K</span></button>
+                    <button type="button" class="logout-btn" onclick="logout()">🚪 登出</button>
+                </div>
             </div>
         </header>
 
         <div class="shell-layout">
-            <div class="tabs">
-            <div class="tab active" data-panel="dashboard">📊 仪表</div>
-            <div class="tab" data-panel="tasks">📋 任务</div>
-            <div class="tab" data-panel="characters">👤 角色</div>
-            <div class="tab" data-panel="worldbooks">📚 世界</div>
-            <div class="tab" data-panel="prompt-range">🎯 靶场</div>
-            <div class="tab" data-panel="sessions">💬 会话</div>
-            <div class="tab" data-panel="participant-profiles">👥 人物档案</div>
-            <div class="tab" data-panel="variables">🧮 变量管理</div>
-            <div class="tab" data-panel="knowledge">🧠 知识</div>
-            <div class="tab" data-panel="regex">🔧 规则编辑</div>
-            <div class="tab" data-panel="tts">🔊 语音合成</div>
-            <div class="tab" data-panel="config">⚙️ 配置</div>
-            <div class="tab" data-panel="logs">📝 日志</div>
-        </div>
+            <nav class="tabs" aria-label="主导航">
+                <div class="tab active" data-panel="dashboard" role="button" tabindex="0">📊 仪表</div>
+                <div class="tab" data-panel="tasks" role="button" tabindex="0">📋 任务</div>
+                <div class="tab" data-panel="characters" role="button" tabindex="0">👤 角色</div>
+                <div class="tab" data-panel="worldbooks" role="button" tabindex="0">📚 世界</div>
+                <div class="tab" data-panel="prompt-range" role="button" tabindex="0">🎯 靶场</div>
+                <div class="tab" data-panel="sessions" role="button" tabindex="0">💬 会话</div>
+                <div class="tab" data-panel="participant-profiles" role="button" tabindex="0">👥 人物档案</div>
+                <div class="tab" data-panel="variables" role="button" tabindex="0">🧮 变量管理</div>
+                <div class="tab" data-panel="knowledge" role="button" tabindex="0">🧠 知识</div>
+                <div class="tab" data-panel="regex" role="button" tabindex="0">🔧 规则编辑</div>
+                <div class="tab" data-panel="tts" role="button" tabindex="0">🔊 语音合成</div>
+                <div class="tab" data-panel="config" role="button" tabindex="0">⚙️ 配置</div>
+                <div class="tab" data-panel="logs" role="button" tabindex="0">📝 日志</div>
+            </nav>
 
         <!-- 仪表-->
         <div class="panel active" id="dashboard">
@@ -9835,6 +12710,101 @@ input[type="radio"] {
         }
 
         // 初始
+
+        // 卡片轻微鼠标跟随倾斜
+        function initCardTiltEffect() {
+            if (window.__cardTiltInited) return;
+            window.__cardTiltInited = true;
+
+            const SELECTOR = [
+                '.card:not(.dashboard-chart-panel):not(.dashboard-donut-wrap):not(.dashboard-donut-chart)',
+                '.dashboard-stat-card',
+                '.task-card',
+                '.range-observer-card',
+                '.model-provider-item',
+                '.participant-profile-item',
+                '.list-item'
+            ].join(',');
+
+            const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+            const coarsePointer = () => window.matchMedia('(hover: none), (pointer: coarse)').matches;
+            const canTilt = () => !reducedMotion() && !coarsePointer();
+
+            const markCards = (root = document) => {
+                root.querySelectorAll(SELECTOR).forEach((el) => {
+                    if (!(el instanceof HTMLElement)) return;
+                    // 避免给过小的或隐藏结构重复/误加
+                    if (el.dataset.tiltBound === '1') return;
+                    if (el.closest('.dashboard-donut-wrap, #dashboard-donut-panel, .dashboard-donut-chart, .dashboard-chart-panel')) return;
+                    if (el.closest('button, a, input, select, textarea, label')) {
+                        // 本身就是交互控件时不倾斜
+                        if (el.matches('button, a, input, select, textarea, label')) return;
+                    }
+                    el.classList.add('tilt-card');
+                    if (getComputedStyle(el).position === 'static') {
+                        el.style.position = 'relative';
+                    }
+                    el.dataset.tiltBound = '1';
+                });
+            };
+
+            const resetTilt = (el) => {
+                el.classList.remove('is-tilting');
+                el.style.setProperty('--tilt-x', '0deg');
+                el.style.setProperty('--tilt-y', '0deg');
+                el.style.setProperty('--tilt-lift', '0px');
+                el.style.setProperty('--tilt-px', '50%');
+                el.style.setProperty('--tilt-py', '50%');
+            };
+
+            const onMove = (e) => {
+                if (!canTilt()) return;
+                const el = e.currentTarget;
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 40 || rect.height < 40) return;
+                const px = (e.clientX - rect.left) / rect.width;
+                const py = (e.clientY - rect.top) / rect.height;
+                const rotateY = (px - 0.5) * 4.5; // 很轻
+                const rotateX = (0.5 - py) * 3.5;
+                el.classList.add('is-tilting');
+                el.style.setProperty('--tilt-x', `${rotateX.toFixed(2)}deg`);
+                el.style.setProperty('--tilt-y', `${rotateY.toFixed(2)}deg`);
+                el.style.setProperty('--tilt-lift', '-1px');
+                el.style.setProperty('--tilt-px', `${(px * 100).toFixed(1)}%`);
+                el.style.setProperty('--tilt-py', `${(py * 100).toFixed(1)}%`);
+            };
+
+            const onLeave = (e) => {
+                resetTilt(e.currentTarget);
+            };
+
+            const bindCard = (el) => {
+                if (el.dataset.tiltEvents === '1') return;
+                el.dataset.tiltEvents = '1';
+                el.addEventListener('pointermove', onMove, { passive: true });
+                el.addEventListener('pointerleave', onLeave, { passive: true });
+                el.addEventListener('pointercancel', onLeave, { passive: true });
+            };
+
+            const refresh = (root = document) => {
+                markCards(root);
+                root.querySelectorAll('.tilt-card').forEach(bindCard);
+            };
+
+            refresh(document);
+
+            // 动态卡片（任务/靶场/列表）也补绑定
+            const mo = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    m.addedNodes.forEach((node) => {
+                        if (!(node instanceof HTMLElement)) return;
+                        refresh(node);
+                    });
+                }
+            });
+            mo.observe(document.body, { childList: true, subtree: true });
+        }
+
         document.addEventListener('DOMContentLoaded', async () => {
             // 先检查登录状
             const authOk = await checkAuth();
@@ -9842,6 +12812,7 @@ input[type="radio"] {
             initTabs();
             initGlobalSearch();
             initTheme();
+            initCardTiltEffect();
             updateKnowledgeImportFileLabel();
             await loadStatus();
             await loadCharacters();
@@ -10847,11 +13818,11 @@ input[type="radio"] {
         }
 
         function buildDashboardLineChart(metricData) {
-            const chartHeight = 220;
-            const chartWidth = 720;
-            const paddingX = 28;
+            const chartHeight = 240;
+            const chartWidth = 760;
+            const paddingX = 22;
             const paddingTop = 18;
-            const paddingBottom = 26;
+            const paddingBottom = 20;
             const innerWidth = chartWidth - paddingX * 2;
             const innerHeight = chartHeight - paddingTop - paddingBottom;
             const timeline = Array.isArray(metricData?.timeline) ? metricData.timeline : [];
@@ -10859,51 +13830,74 @@ input[type="radio"] {
                 ? timeline.map((timestamp) => new Date(timestamp).toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' }))
                 : ['暂无数据'];
             const seriesConfig = [
-                { key: 'chat', label: '聊天', color: 'var(--accent)' },
-                { key: 'participantProfile', label: '人物档案', color: 'var(--success)' },
-                { key: 'knowledgeImport', label: '知识导入', color: 'var(--warning)' },
-                { key: 'tts', label: 'TTS', color: 'color-mix(in srgb, var(--btn-primary) 72%, white 28%)' }
+                { key: 'chat', label: '聊天', color: '#2f6fbf' },
+                { key: 'participantProfile', label: '人物档案', color: '#4b5563' },
+                { key: 'knowledgeImport', label: '知识导入', color: '#059669' },
+                { key: 'tts', label: 'TTS', color: '#d97706' }
             ];
             const normalizedSeries = seriesConfig.map((item) => {
                 const values = Array.isArray(metricData?.series?.[item.key]) && metricData.series[item.key].length > 0
                     ? metricData.series[item.key].map((value) => Number(value) || 0)
                     : labels.map(() => 0);
-                return {
-                    ...item,
-                    values
-                };
+                return { ...item, values };
             });
             const pointCount = Math.max(labels.length, ...normalizedSeries.map((item) => item.values.length), 1);
             const safeLabels = pointCount === labels.length ? labels : Array.from({ length: pointCount }, (_, index) => labels[index] || `#${index + 1}`);
             const maxValue = Math.max(...normalizedSeries.flatMap((item) => item.values), 1);
             const stepX = pointCount > 1 ? innerWidth / (pointCount - 1) : 0;
-            const horizontalGrid = [0, 0.25, 0.5, 0.75, 1].map((ratio) => {
+
+            const toPoints = (values) => Array.from({ length: pointCount }, (_, index) => {
+                const value = Number(values[index]) || 0;
+                const x = paddingX + stepX * index;
+                const y = paddingTop + innerHeight - (value / maxValue) * innerHeight;
+                return { value, x, y };
+            });
+
+            const buildSmoothPath = (points) => {
+                if (!points.length) return '';
+                if (points.length === 1) return `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+                let d = `M ${points[0].x.toFixed(2)} ${points[0].y.toFixed(2)}`;
+                for (let i = 0; i < points.length - 1; i += 1) {
+                    const p0 = points[i === 0 ? i : i - 1];
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const p3 = points[i + 2] || p2;
+                    const cp1x = p1.x + (p2.x - p0.x) / 6;
+                    const cp1y = p1.y + (p2.y - p0.y) / 6;
+                    const cp2x = p2.x - (p3.x - p1.x) / 6;
+                    const cp2y = p2.y - (p3.y - p1.y) / 6;
+                    d += ` C ${cp1x.toFixed(2)} ${cp1y.toFixed(2)}, ${cp2x.toFixed(2)} ${cp2y.toFixed(2)}, ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
+                }
+                return d;
+            };
+
+            const horizontalGrid = [0, 0.5, 1].map((ratio) => {
                 const y = paddingTop + innerHeight - innerHeight * ratio;
                 return `<line class="dashboard-line-grid" x1="${paddingX}" y1="${y.toFixed(2)}" x2="${(paddingX + innerWidth).toFixed(2)}" y2="${y.toFixed(2)}"></line>`;
             }).join('');
-            const renderedSeries = normalizedSeries.map((series) => {
-                const points = Array.from({ length: pointCount }, (_, index) => {
-                    const value = Number(series.values[index]) || 0;
-                    const x = paddingX + stepX * index;
-                    const y = paddingTop + innerHeight - (value / maxValue) * innerHeight;
-                    return { value, x, y };
-                });
-                const path = points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`).join(' ');
-                return {
-                    ...series,
-                    path,
-                    points
-                };
+
+            const renderedSeries = normalizedSeries.map((series, seriesIndex) => {
+                const points = toPoints(series.values);
+                const linePath = buildSmoothPath(points);
+                const areaPath = points.length
+                    ? `${linePath} L ${points[points.length - 1].x.toFixed(2)} ${(paddingTop + innerHeight).toFixed(2)} L ${points[0].x.toFixed(2)} ${(paddingTop + innerHeight).toFixed(2)} Z`
+                    : '';
+                return { ...series, points, linePath, areaPath, gradientId: `dash-area-${seriesIndex}` };
             });
 
             return `
-                <svg class="dashboard-line-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="最近调用趋势势图">
+                <svg class="dashboard-line-chart" viewBox="0 0 ${chartWidth} ${chartHeight}" preserveAspectRatio="none" aria-label="最近调用趋势图">
                     <defs>
-                        ${renderedSeries.map((s, i) => `<filter id="shadow-${i}"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="${s.color}" flood-opacity="0.35"/></filter>`).join('')}
+                        ${renderedSeries.map((series) => `
+                            <linearGradient id="${series.gradientId}" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0%" stop-color="${series.color}" stop-opacity="0.28"></stop>
+                                <stop offset="100%" stop-color="${series.color}" stop-opacity="0.02"></stop>
+                            </linearGradient>
+                        `).join('')}
                     </defs>
                     ${horizontalGrid}
-                    ${renderedSeries.map((series, i) => `<path class="dashboard-line-path" style="stroke:${series.color};filter:url(#shadow-${i})" d="${series.path}"></path>`).join('')}
-                    ${renderedSeries.map((series, i) => series.points.map((point) => `<circle class="dashboard-line-dot" style="stroke:${series.color};filter:url(#shadow-${i})" cx="${point.x.toFixed(2)}" cy="${point.y.toFixed(2)}" r="4"></circle>`).join('')).join('')}
+                    ${renderedSeries.map((series) => series.areaPath ? `<path class="dashboard-line-area" d="${series.areaPath}" fill="url(#${series.gradientId})"></path>` : '').join('')}
+                    ${renderedSeries.map((series) => `<path class="dashboard-line-path" style="stroke:${series.color}" d="${series.linePath}"></path>`).join('')}
                 </svg>
                 <div class="dashboard-line-labels">
                     ${safeLabels.map((label) => `<span>${escapeHtml(label)}</span>`).join('')}
@@ -10986,7 +13980,7 @@ input[type="radio"] {
                     note: status?.globalMemory?.storage?.type ? `存储 ${escapeHtml(status.globalMemory.storage.type)}` : '等待存储信息', accent: 'var(--btn-primary)'
                 }
             ].map((item) => `
-                <div class="dashboard-mini-stat" style="border-left:3px solid ${item.accent};box-shadow:0 2px 12px rgba(0,0,0,0.06),0 1px 3px rgba(0,0,0,0.04),inset 0 0 0 1px color-mix(in srgb,${item.accent} 12%,transparent 88%)">
+                <div class="dashboard-mini-stat" style="--mini-accent:${item.accent};box-shadow:var(--glass-highlight), var(--shadow-sm); border:1px solid var(--glass-border);">
                     <div class="dashboard-mini-stat-label">${item.label}</div>
                     <div class="dashboard-mini-stat-value" style="color:${item.accent}">${item.value}</div>
                     <div class="dashboard-mini-stat-note">${item.note}</div>
@@ -11006,37 +14000,59 @@ input[type="radio"] {
         }
 
         function renderDashboardDatabaseDonut(donutPanel, composition) {
-            const segmentsData = [
-                { key: 'messages', label: '消息', value: Number(composition?.messages) || 0, color: 'var(--accent)' },
-                { key: 'summaries', label: '摘要', value: Number(composition?.summaries) || 0, color: 'var(--success)' },
-                { key: 'participantProfiles', label: '人物档案', value: Number(composition?.participantProfiles) || 0, color: 'var(--warning)' },
-                { key: 'fixedKnowledge', label: '固定知识', value: Number(composition?.fixedKnowledge) || 0, color: 'var(--text-muted)' },
-                { key: 'dynamicKnowledge', label: '动态知识', value: Number(composition?.dynamicKnowledge) || 0, color: 'var(--btn-primary)' }
-            ].filter((item) => item.value > 0);
+            // 彩色但不要纯：低饱和 + 明度拉开 + 色相区分
+            // 不是纯灰，也不是荧光纯色
+            const palette = [
+                { key: 'messages', label: '消息', color: '#2f6fbf' },            // 蓝
+                { key: 'summaries', label: '摘要', color: '#d97706' },            // 橙
+                { key: 'participantProfiles', label: '人物档案', color: '#7c3aed' }, // 紫
+                { key: 'fixedKnowledge', label: '固定知识', color: '#059669' },   // 绿
+                { key: 'dynamicKnowledge', label: '动态知识', color: '#dc2626' }  // 红
+            ];
 
+            const valueMap = {
+                messages: Number(composition?.messages) || 0,
+                summaries: Number(composition?.summaries) || 0,
+                participantProfiles: Number(composition?.participantProfiles) || 0,
+                fixedKnowledge: Number(composition?.fixedKnowledge) || 0,
+                dynamicKnowledge: Number(composition?.dynamicKnowledge) || 0
+            };
+
+            const allSegments = palette.map((item) => ({
+                ...item,
+                value: valueMap[item.key] || 0
+            }));
+
+            // 扇区只画有值项；颜色固定绑定类别，保证色相稳定
+            const segmentsData = allSegments.filter((item) => item.value > 0);
             if (segmentsData.length === 0) {
                 donutPanel.innerHTML = '<div class="empty-state">暂无可用的业务构成数据</div>';
                 return;
             }
 
-            const totalValue = segmentsData.reduce((sum, item) => sum + item.value, 0);
-            const segments = [];
-            let currentAngle = 0;
-            segmentsData.forEach((item, index) => {
-                const angle = totalValue > 0 ? (item.value / totalValue) * 360 : 0;
-                const start = currentAngle;
-                const end = index === segmentsData.length - 1 ? 360 : currentAngle + angle;
-                currentAngle = end;
-                segments.push(`${item.color} ${start.toFixed(2)}deg ${end.toFixed(2)}deg`);
+            const totalValue = segmentsData.reduce((sum, item) => sum + item.value, 0) || 1;
+            const cx = 110;
+            const cy = 110;
+            const radius = 78;
+            const stroke = 26;
+            const circumference = 2 * Math.PI * radius;
+            let offset = 0;
+            const arcs = segmentsData.map((item) => {
+                const ratio = totalValue > 0 ? item.value / totalValue : 0;
+                const length = circumference * ratio;
+                const visible = Math.max(length - 1.2, 0);
+                const dashArray = `${visible.toFixed(2)} ${(circumference - visible).toFixed(2)}`;
+                const dashOffset = (-offset).toFixed(2);
+                offset += length;
+                return { ...item, ratio, dashArray, dashOffset };
             });
-            if (currentAngle < 360) {
-                segments.push(`var(--border) ${currentAngle.toFixed(2)}deg 360deg`);
-            }
 
             const topSegment = [...segmentsData].sort((a, b) => b.value - a.value)[0];
             const topRatio = totalValue > 0 ? `${((topSegment.value / totalValue) * 100).toFixed(1)}%` : '0.0%';
-            const legend = segmentsData.map((item) => {
-                const ratio = totalValue > 0 ? ((item.value / totalValue) * 100).toFixed(1) : '0.0';
+
+            // 图例始终展示完整 5 色，方便看到完整色相与饱和度层次
+            const legend = allSegments.map((item) => {
+                const ratio = totalValue > 0 && item.value > 0 ? ((item.value / totalValue) * 100).toFixed(1) : '0.0';
                 return `
                     <div class="dashboard-legend-item">
                         <div class="dashboard-legend-label">
@@ -11049,11 +14065,22 @@ input[type="radio"] {
             }).join('');
 
             donutPanel.innerHTML = `
-                <div class="dashboard-donut-chart" style="background: conic-gradient(${segments.join(', ')});">
+                <div class="dashboard-donut-chart dashboard-donut-chart-svg">
+                    <svg viewBox="0 0 220 220" class="dashboard-donut-svg" aria-label="数据构成扇形图">
+                        <circle class="dashboard-donut-track" cx="${cx}" cy="${cy}" r="${radius}"></circle>
+                        ${arcs.map((item) => `
+                            <circle
+                                class="dashboard-donut-arc"
+                                cx="${cx}" cy="${cy}" r="${radius}"
+                                style="stroke:${item.color}; stroke-dasharray:${item.dashArray}; stroke-dashoffset:${item.dashOffset}; stroke-width:${stroke};"
+                            ></circle>
+                        `).join('')}
+                        <circle class="dashboard-donut-hole" cx="${cx}" cy="${cy}" r="${Math.max(radius - stroke / 2 - 2, 40)}"></circle>
+                    </svg>
                     <div class="dashboard-donut-center">
                         <div>
                             <strong>${topRatio}</strong>
-                            <span>${escapeHtml(topSegment.label)}占比最高</span>
+                            <span>${escapeHtml(topSegment.label)}最高</span>
                         </div>
                     </div>
                 </div>
@@ -16211,7 +19238,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                             </div>
                             <div class="model-provider-item-meta">${escapeHtml(getAIProviderTypeLabel(entry.provider))} · ${enabledCount}/${models.length} 模型</div>
                         </div>
-                        <button class="secondary" style="font-size:0.68rem;padding:2px 6px;white-space:nowrap;" onclick="event.stopPropagation();testProviderConnect('${escapeHtml(entry.id)}', this)">测</button>
+                        <button class="secondary" style="font-size:0.68rem;padding:2px 6px;white-space:nowrap;" onclick="event.stopPropagation();testProviderConnect('${escapeHtml(entry.id)}', this)">测试</button>
                     </div>
                 `;
             }).join('');
@@ -20992,6 +24019,19 @@ ACTION: DONE
             localStorage.setItem(RANGE_SESSION_SIDEBAR_KEY, collapsed ? '1' : '0');
         }
 
+        function syncRangeSidebarContentVisible() {
+            const sidebar = RE.sessionSidebar;
+            if (!sidebar) return;
+            if (sidebar.classList.contains('collapsed')) {
+                sidebar.classList.remove('content-visible');
+            } else {
+                sidebar.classList.add('content-visible');
+            }
+            const btn = sidebar.querySelector('.range-sidebar-toggle-btn');
+            if (btn) btn.title = sidebar.classList.contains('collapsed') ? '展开侧边栏' : '收起侧边栏';
+        }
+
+
         // ====== 移动端方法 ======
         const isMobileRange = () => window.matchMedia('(max-width: 768px)').matches;
 
@@ -21094,11 +24134,32 @@ ACTION: DONE
         function toggleRangeSessionSidebar(forceExpanded = false) {
             const sidebar = RE.sessionSidebar;
             if (!sidebar) return;
+            if (sidebar._contentRevealTimer) {
+                clearTimeout(sidebar._contentRevealTimer);
+                sidebar._contentRevealTimer = null;
+            }
             const nextCollapsed = forceExpanded ? false : !sidebar.classList.contains('collapsed');
             setRangeSidebarCollapsed(nextCollapsed);
-            sidebar.classList.toggle('collapsed', nextCollapsed);
             const btn = sidebar.querySelector('.range-sidebar-toggle-btn');
-            if (btn) btn.title = nextCollapsed ? '展开侧边栏' : '收起侧边栏';
+
+            if (nextCollapsed) {
+                // 关闭：内容立刻隐藏，再收宽度
+                sidebar.classList.remove('content-visible');
+                sidebar.classList.add('collapsed');
+                if (btn) btn.title = '展开侧边栏';
+            } else {
+                // 打开：先拉出宽度，到位后再淡入内容
+                sidebar.classList.remove('content-visible');
+                sidebar.classList.remove('collapsed');
+                if (btn) btn.title = '收起侧边栏';
+                const revealDelay = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 170;
+                sidebar._contentRevealTimer = setTimeout(() => {
+                    if (!sidebar.classList.contains('collapsed')) {
+                        sidebar.classList.add('content-visible');
+                    }
+                    sidebar._contentRevealTimer = null;
+                }, revealDelay);
+            }
             updateRangeSidebarOverlay();
         }
 

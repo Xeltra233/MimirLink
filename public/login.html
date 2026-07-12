@@ -1,293 +1,108 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>登录 - MimirLink</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .login-container {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
-            padding: 40px;
-            width: 100%;
-            max-width: 400px;
-            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-        
-        .logo {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        
-        .logo h1 {
-            color: #e94560;
-            font-size: 28px;
-            font-weight: 700;
-            letter-spacing: 2px;
-        }
-        
-        .logo p {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 14px;
-            margin-top: 8px;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        .form-group label {
-            display: block;
-            color: rgba(255, 255, 255, 0.8);
-            font-size: 14px;
-            margin-bottom: 8px;
-            font-weight: 500;
-        }
-        
-        .form-group input {
-            width: 100%;
-            padding: 14px 16px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 10px;
-            color: #fff;
-            font-size: 16px;
-            transition: all 0.3s ease;
-        }
-        
-        .form-group input:focus {
-            outline: none;
-            border-color: #e94560;
-            background: rgba(255, 255, 255, 0.12);
-            box-shadow: 0 0 0 3px rgba(233, 69, 96, 0.2);
-        }
-        
-        .form-group input::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-
-        .remember-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: -4px;
-            margin-bottom: 18px;
-            color: rgba(255, 255, 255, 0.75);
-            font-size: 14px;
-        }
-
-        .remember-row input {
-            width: auto;
-            accent-color: #e94560;
-        }
-        
-        .login-btn {
-            width: 100%;
-            padding: 14px;
-            background: linear-gradient(135deg, #e94560 0%, #c73659 100%);
-            border: none;
-            border-radius: 10px;
-            color: #fff;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            margin-top: 10px;
-        }
-        
-        .login-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 10px 20px rgba(233, 69, 96, 0.3);
-        }
-        
-        .login-btn:active {
-            transform: translateY(0);
-        }
-        
-        .login-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .error-message {
-            background: rgba(239, 68, 68, 0.2);
-            border: 1px solid rgba(239, 68, 68, 0.3);
-            color: #fca5a5;
-            padding: 12px 16px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            font-size: 14px;
-            display: none;
-        }
-        
-        .error-message.show {
-            display: block;
-        }
-        
-        .footer {
-            text-align: center;
-            margin-top: 30px;
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 12px;
-        }
-        
-        .footer a {
-            color: #e94560;
-            text-decoration: none;
-        }
-        
-        .footer a:hover {
-            text-decoration: underline;
-        }
-        
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            25% { transform: translateX(-5px); }
-            75% { transform: translateX(5px); }
-        }
-        
-        .shake {
-            animation: shake 0.3s ease-in-out;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 - MimirLink</title>
+<style>
+:root{
+  --glass-bg:rgba(255,255,255,.48);
+  --glass-bg-strong:rgba(255,255,255,.62);
+  --glass-bg-soft:rgba(255,255,255,.34);
+  --glass-border:rgba(255,255,255,.55);
+  --glass-border-strong:rgba(255,255,255,.72);
+  --glass-highlight:inset 0 1px 0 rgba(255,255,255,.75);
+  --text:#0f172a;
+  --text-muted:#475569;
+  --text-faint:#94a3b8;
+  --accent:#2563eb;
+  --error:#dc2626;
+  --btn-primary:#2563eb;
+  --btn-primary-hover:#1d4ed8;
+  --shadow-sm:0 2px 10px rgba(37,99,235,.10);
+  --shadow:0 12px 30px rgba(37,99,235,.14);
+  --shadow-md:0 20px 50px rgba(15,23,42,.16);
+  --radius:12px;
+  --focus-ring:0 0 0 3px rgba(37,99,235,.18);
+  --app-bg:
+    radial-gradient(980px 520px at 8% -12%, rgba(56,189,248,.34), transparent 58%),
+    radial-gradient(860px 480px at 92% -8%, rgba(167,139,250,.30), transparent 55%),
+    radial-gradient(720px 420px at 50% 100%, rgba(244,114,182,.16), transparent 60%),
+    linear-gradient(165deg, #dbeafe 0%, #eef2ff 42%, #fdf2f8 100%);
+  --interactive-transition:background-color .15s ease,border-color .15s ease,box-shadow .15s ease,transform .12s ease,opacity .15s ease;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{min-height:100%;background:var(--app-bg);background-attachment:fixed;color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}
+.login-container{width:100%;max-width:420px;padding:36px 34px 28px;border-radius:20px;background:rgba(255,255,255,.48);border:1px solid rgba(255,255,255,.55);box-shadow:var(--glass-highlight),var(--shadow-md);-webkit-backdrop-filter:blur(20px) saturate(1.35);backdrop-filter:blur(20px) saturate(1.35)}
+.logo{text-align:center;margin-bottom:28px}
+.logo h1{display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;color:var(--text);font-size:28px;font-weight:700}
+.app-badge{display:inline-flex;align-items:center;font-size:10px;padding:3px 8px;border-radius:999px;letter-spacing:.04em;text-transform:uppercase;background:rgba(37,99,235,.12);color:var(--accent);border:1px solid rgba(37,99,235,.22)}
+.logo p{color:var(--text-muted);font-size:14px;margin-top:10px}
+.form-group{margin-bottom:18px}
+.form-group label{display:block;color:var(--text-muted);font-size:13px;margin-bottom:8px;font-weight:600}
+.form-group input{width:100%;min-height:44px;padding:12px 14px;background:rgba(255,255,255,.34);border:1px solid rgba(255,255,255,.55);border-radius:12px;color:var(--text);font-size:15px;box-shadow:var(--glass-highlight);-webkit-backdrop-filter:blur(10px) saturate(1.2);backdrop-filter:blur(10px) saturate(1.2);transition:var(--interactive-transition)}
+.form-group input:hover{border-color:rgba(37,99,235,.35);background:rgba(255,255,255,.46)}
+.form-group input:focus{outline:none;border-color:rgba(37,99,235,.55);background:rgba(255,255,255,.56);box-shadow:var(--focus-ring),var(--glass-highlight)}
+.form-group input:focus-visible{outline:2px solid rgba(37,99,235,.72);outline-offset:2px}
+.form-group input::placeholder{color:var(--text-faint)}
+.remember-row{display:flex;align-items:center;gap:10px;margin-top:-2px;margin-bottom:18px;color:var(--text-muted);font-size:14px;user-select:none}
+.remember-row input{width:auto;accent-color:#2563eb}
+.login-btn{width:100%;min-height:46px;padding:12px 16px;background:var(--btn-primary);border:1px solid #1d4ed8;border-radius:12px;color:#fff;font-size:15px;font-weight:600;cursor:pointer;box-shadow:var(--shadow-sm);transition:var(--interactive-transition);margin-top:4px}
+.login-btn:hover{background:var(--btn-primary-hover);transform:translateY(-1px);box-shadow:var(--shadow)}
+.login-btn:active{transform:translateY(0) scale(.98)}
+.login-btn:focus-visible{outline:2px solid rgba(37,99,235,.72);outline-offset:2px;box-shadow:var(--focus-ring)}
+.login-btn:disabled{opacity:.55;cursor:not-allowed;transform:none;box-shadow:none}
+.error-message{background:rgba(220,38,38,.12);border:1px solid rgba(220,38,38,.28);color:#b91c1c;padding:12px 14px;border-radius:12px;margin-bottom:18px;font-size:14px;display:none}
+.error-message.show{display:block}
+.footer{text-align:center;margin-top:26px;color:var(--text-faint);font-size:12px}
+.footer a{color:var(--accent);text-decoration:none}
+.footer a:hover{text-decoration:underline}
+@keyframes shake{0%,100%{transform:translateX(0)}25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.shake{animation:shake .3s ease-in-out}
+@media (prefers-reduced-motion:reduce){.login-btn,.form-group input{transition:none!important}.login-btn:hover,.login-btn:active{transform:none!important}.shake{animation:none!important}}
+</style>
 </head>
 <body>
-    <div class="login-container">
-        <div class="logo">
-    <h1 style="display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;">
-        🧠 MimirLink
-        <span style="
-            font-size: 0.5em;
-            padding: 4px 12px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 20px;
-            font-weight: 600;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-            letter-spacing: 1px;
-        ">Lifecycle Runtime</span>
-    </h1>
-    <p>轻量级 QQ 聊天引擎</p>
+<div class="login-container">
+<div class="logo">
+<h1>🧠 MimirLink <span class="app-badge">Lifecycle Runtime</span></h1>
+<p>轻量级 QQ 聊天引擎</p>
 </div>
-
-        <div class="error-message" id="errorMessage"></div>
-        
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">用户名</label>
-                <input type="text" id="username" name="username" placeholder="请输入用户名" required autocomplete="username">
-            </div>
-            
-            <div class="form-group">
-                <label for="password">密码</label>
-                <input type="password" id="password" name="password" placeholder="请输入密码" required autocomplete="current-password">
-            </div>
-
-            <label class="remember-row" for="rememberMe">
-                <input type="checkbox" id="rememberMe" checked>
-                <span>记住登录状态</span>
-            </label>
-            
-            <button type="submit" class="login-btn" id="loginBtn">登 录</button>
-        </form>
-        
-        <div class="footer">
-            <p>Powered by <a href="https://github.com/your-username/mimirlink" target="_blank">MimirLink Runtime</a></p>
-        </div>
-    </div>
-    
-    <script>
-        const form = document.getElementById('loginForm');
-        const errorMessage = document.getElementById('errorMessage');
-        const loginBtn = document.getElementById('loginBtn');
-        const container = document.querySelector('.login-container');
-        
-        // 检查是否已登录
-        async function checkAuth() {
-            try {
-                const res = await fetch('/api/auth/status');
-                const data = await res.json();
-                if (data.authenticated) {
-                    window.location.href = '/';
-                }
-            } catch (e) {
-                console.error('检查登录状态失败:', e);
-            }
-        }
-        
-        checkAuth();
-        
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const username = document.getElementById('username').value.trim();
-            const password = document.getElementById('password').value;
-            const rememberMe = document.getElementById('rememberMe').checked;
-            
-            if (!username || !password) {
-                showError('请输入用户名和密码');
-                return;
-            }
-            
-            loginBtn.disabled = true;
-            loginBtn.textContent = '登录中...';
-            
-            try {
-                const res = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password, rememberMe })
-                });
-                
-                const data = await res.json();
-                
-                if (data.success) {
-                    window.location.href = '/';
-                } else {
-                    showError(data.error || '登录失败');
-                    container.classList.add('shake');
-                    setTimeout(() => container.classList.remove('shake'), 300);
-                }
-            } catch (error) {
-                showError('网络错误，请稍后重试');
-            } finally {
-                loginBtn.disabled = false;
-                loginBtn.textContent = '登 录';
-            }
-        });
-        
-        function showError(msg) {
-            errorMessage.textContent = msg;
-            errorMessage.classList.add('show');
-            setTimeout(() => {
-                errorMessage.classList.remove('show');
-            }, 5000);
-        }
-        
-        // 回车提交
-        document.getElementById('password').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                form.dispatchEvent(new Event('submit'));
-            }
-        });
-    </script>
+<div class="error-message" id="errorMessage"></div>
+<form id="loginForm">
+<div class="form-group"><label for="username">用户名</label>
+<input type="text" id="username" name="username" placeholder="请输入用户名" required autocomplete="username"></div>
+<div class="form-group"><label for="password">密码</label>
+<input type="password" id="password" name="password" placeholder="请输入密码" required autocomplete="current-password"></div>
+<label class="remember-row" for="rememberMe"><input type="checkbox" id="rememberMe" checked><span>记住登录状态</span></label>
+<button type="submit" class="login-btn" id="loginBtn">登录</button>
+</form>
+<div class="footer"><p>Powered by <a href="https://github.com/your-username/mimirlink" target="_blank">MimirLink Runtime</a></p></div>
+</div>
+<script>
+const form=document.getElementById('loginForm');
+const errorMessage=document.getElementById('errorMessage');
+const loginBtn=document.getElementById('loginBtn');
+const container=document.querySelector('.login-container');
+async function checkAuth(){try{const res=await fetch('/api/auth/status');const data=await res.json();if(data.authenticated)window.location.href='/';}catch(e){console.error("检查登录状态失败",e);}}
+checkAuth();
+form.addEventListener('submit',async(e)=>{
+e.preventDefault();
+const username=document.getElementById('username').value.trim();
+const password=document.getElementById('password').value;
+const rememberMe=document.getElementById('rememberMe').checked;
+if(!username||!password){showError("请输入用户名和密码");return;}
+loginBtn.disabled=true;loginBtn.textContent="登录中...";
+try{
+const res=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password,rememberMe})});
+const data=await res.json();
+if(data.success){window.location.href='/';}else{showError(data.error||"登录失败");container.classList.add('shake');setTimeout(()=>container.classList.remove('shake'),300);}
+}catch(error){showError("网络错误，请稍后重试");}
+finally{loginBtn.disabled=false;loginBtn.textContent="登录";}
+});
+function showError(msg){errorMessage.textContent=msg;errorMessage.classList.add('show');setTimeout(()=>errorMessage.classList.remove('show'),5000);}
+document.getElementById('password').addEventListener('keypress',(e)=>{if(e.key==='Enter')form.dispatchEvent(new Event('submit'));});
+</script>
 </body>
 </html>
