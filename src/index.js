@@ -740,9 +740,37 @@ function buildThinkingPreview(text, maxLength = 24) {
         : normalized;
 }
 
+function isProviderErrorLikeReply(text) {
+    const raw = String(text || '').trim();
+    if (!raw) {
+        return false;
+    }
+    const normalized = raw.toLowerCase().replace(/\s+/g, ' ');
+    if (/\[\s*upstream\s+error\b/i.test(raw)) {
+        return true;
+    }
+    if (/\brate limit(?:ed|s)?\b/.test(normalized) || /\brate_limit\b/.test(normalized)) {
+        return true;
+    }
+    if (/\btoo many requests\b/.test(normalized) || /\bstatus\s*429\b/.test(normalized)) {
+        return true;
+    }
+    if (/\b(please )?try again (in|after)\b/.test(normalized) && /\b(minute|second|hour|later|moment)\b/.test(normalized)) {
+        return true;
+    }
+    if (/\b(upstream error|provider error|api error|quota exceeded|overloaded)\b/.test(normalized) && raw.length <= 400) {
+        return true;
+    }
+    return false;
+}
+
 function isEmptyLikeReply(text) {
     const normalized = sanitizeContent(text);
     if (!normalized) {
+        return true;
+    }
+
+    if (isProviderErrorLikeReply(normalized)) {
         return true;
     }
 
@@ -2369,6 +2397,9 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
         if (!profileText) {
             throw new Error('AI 未生成可保存的人物档案');
         }
+        if (isProviderErrorLikeReply(profileText)) {
+            throw new Error(`AI 返回了上游错误内容，拒绝写入人物档案: ${profileText.slice(0, 200)}`);
+        }
 
         const oldProfileText = existingProfilesForMerge
             .map((item, index) => {
@@ -2409,6 +2440,9 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
             const mergedProfileText = String(aiClient.getVisibleResponseContent(mergeResult) || '').trim();
             if (!mergedProfileText) {
                 throw new Error('AI 未生成可保存的人物档案合并结果');
+            }
+            if (isProviderErrorLikeReply(mergedProfileText)) {
+                throw new Error(`AI 返回了上游错误内容，拒绝写入人物档案合并结果: ${mergedProfileText.slice(0, 200)}`);
             }
             profileText = mergedProfileText;
             mergedAt = Date.now();

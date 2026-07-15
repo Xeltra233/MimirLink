@@ -334,9 +334,16 @@ export class AIClient {
 
     formatChatResponseResult(data, extracted = null) {
         const extraction = extracted || this.buildChatExtractionResult(data);
+        const content = this.assertNotProviderErrorContent(
+            extraction.content ?? extraction.reasoningContent ?? '',
+            'chat_content'
+        );
+        const reasoningContent = extraction.reasoningContent == null
+            ? null
+            : this.assertNotProviderErrorContent(extraction.reasoningContent, 'reasoning_content');
         return {
-            content: extraction.content ?? extraction.reasoningContent ?? '',
-            reasoningContent: extraction.reasoningContent ?? null,
+            content,
+            reasoningContent,
             rawReasoningContent: extraction.rawReasoningContent ?? null,
             rawContent: extraction.rawContent ?? null,
             rawMessage: extraction.rawMessage ?? null
@@ -345,11 +352,11 @@ export class AIClient {
 
     getVisibleResponseContent(result) {
         if (typeof result === 'string') {
-            return result;
+            return this.assertNotProviderErrorContent(result, 'visible_string');
         }
 
         if (result && typeof result.content === 'string') {
-            return result.content;
+            return this.assertNotProviderErrorContent(result.content, 'visible_content');
         }
 
         return '';
@@ -470,6 +477,74 @@ export class AIClient {
 
     isEmptyMessageContentError(error) {
         return error?.message === 'AI API 返回了空消息内容';
+    }
+
+    isProviderErrorContent(text = '') {
+        const raw = String(text || '').trim();
+        if (!raw) {
+            return false;
+        }
+
+        const normalized = raw.toLowerCase().replace(/\s+/g, ' ');
+        const compact = normalized.replace(/[\[\]{}()'":,]/g, ' ').replace(/\s+/g, ' ').trim();
+
+        if (/\[\s*upstream\s+error\b/i.test(raw)) {
+            return true;
+        }
+        if (/\bupstream error\b/.test(normalized) && /\b(rate limit|quota|overloaded|too many requests|try again)\b/.test(normalized)) {
+            return true;
+        }
+        if (/\brate limit(?:ed|s)?\b/.test(normalized) || /\brate_limit\b/.test(normalized)) {
+            return true;
+        }
+        if (/\btoo many requests\b/.test(normalized) || /\bstatus\s*429\b/.test(normalized) || /\bhttp\s*429\b/.test(normalized)) {
+            return true;
+        }
+        if (/\b(please )?try again (in|after)\b/.test(normalized) && /\b(minute|second|hour|later|moment)\b/.test(normalized)) {
+            return true;
+        }
+        if (/\b(quota exceeded|insufficient_quota|overloaded|capacity exceeded|model overloaded)\b/.test(normalized)) {
+            return true;
+        }
+        if (/^error:\s*(rate|upstream|quota|overloaded|timeout|temporarily unavailable)\b/.test(compact)) {
+            return true;
+        }
+        if (raw.length <= 400 && /\b(api error|provider error|upstream error|request failed)\b/.test(normalized)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    isRateLimitError(errorOrText = '') {
+        const message = typeof errorOrText === 'string'
+            ? errorOrText
+            : (errorOrText?.message || errorOrText?.errorText || '');
+        const normalized = String(message || '').toLowerCase();
+        if (!normalized) {
+            return false;
+        }
+        return (
+            this.isProviderErrorContent(message)
+            || /\brate limit\b/.test(normalized)
+            || /\btoo many requests\b/.test(normalized)
+            || /\bstatus\s*429\b/.test(normalized)
+            || /\bhttp\s*429\b/.test(normalized)
+            || /\b429\b/.test(normalized)
+        );
+    }
+
+    assertNotProviderErrorContent(content, source = 'content') {
+        const text = String(content || '').trim();
+        if (!this.isProviderErrorContent(text)) {
+            return text;
+        }
+        const error = new Error(`AI API 返回了上游错误内容: ${text.slice(0, 200)}`);
+        error.code = 'AI_PROVIDER_ERROR_CONTENT';
+        error.retryable = true;
+        error.providerErrorContent = text;
+        error.source = source;
+        throw error;
     }
 
     hasTrailingAssistantPrefill(messages = []) {
@@ -1132,7 +1207,16 @@ export class AIClient {
         const primaryPayload = this.buildChatPayload(messages, overrides);
         this.logPipelineStage('已构建主请求 payload', this.buildPayloadPreview(primaryPayload));
 
-        const primaryResult = await this.sendChatRequest(primaryPayload, overrides);
+        const primaryResultRaw = await this.sendChatRequest(primaryPayload, overrides);
+        let primaryResult = primaryResultRaw;
+        if (!primaryResult.ok && this.isRateLimitError(primaryResult.errorText || `status ${primaryResult.status}`)) {
+            this.logPipelineStage('检测到限流错误，等待后重试主请求', {
+                status: primaryResult.status,
+                errorText: String(primaryResult.errorText || '').slice(0, 300)
+            });
+            await new Promise((resolve) => setTimeout(resolve, 1500));
+            primaryResult = await this.sendChatRequest(primaryPayload, overrides);
+        }
         if (primaryResult.ok) {
             this.logPipelineStage('主请求成功，准备提取内容', {
                 responseModel: primaryResult.data?.model || null
@@ -1143,6 +1227,18 @@ export class AIClient {
                 return await this.extractChatContentWithPrefillFallback(primaryResult.data, messages, overrides);
             } catch (error) {
                 extractedError = error;
+            }
+
+            if (extractedError?.code === 'AI_PROVIDER_ERROR_CONTENT' || this.isRateLimitError(extractedError)) {
+                this.logPipelineStage('检测到上游错误内容，等待后重试主请求', {
+                    error: String(extractedError?.message || '').slice(0, 300)
+                });
+                await new Promise((resolve) => setTimeout(resolve, 1500));
+                const retryResult = await this.sendChatRequest(primaryPayload, overrides);
+                if (retryResult.ok) {
+                    return await this.extractChatContentWithPrefillFallback(retryResult.data, messages, overrides);
+                }
+                throw new Error(`AI API 错误: ${retryResult.status} - ${retryResult.errorText}`);
             }
 
             if (!this.isEmptyMessageContentError(extractedError)) {
