@@ -1634,6 +1634,13 @@ test('admin UI includes participant profile config field hooks', () => {
     assert.ok(html.includes('id="config-memory-participant-profile-interval"'));
     assert.ok(html.includes('id="config-memory-participant-profile-source"'));
     assert.ok(html.includes('id="config-memory-participant-profile-analysis-mode"'));
+    assert.ok(html.includes('与Bot交互上下文 + 已有画像（推荐）'));
+    assert.ok(html.includes('与Bot交互上下文 无画像（更省token）'));
+    assert.ok(html.includes('锚点附近全量上下文 + 已有画像'));
+    assert.ok(html.includes('锚点附近全量上下文 无画像'));
+    assert.ok(html.includes('按说话人拆开：目标人物 / Bot / 第三者'));
+    assert.ok(html.includes('Bot 与第三者仅作背景'));
+    assert.ok(html.includes('bot_only = 只取与 Bot 有交互的对话上下文'));
     assert.ok(html.includes('id="config-memory-participant-profile-model"'));
     assert.ok(html.includes('id="config-memory-participant-profile-provider-id"'));
     assert.ok(html.includes('applyParticipantProfileModelSelection()'));

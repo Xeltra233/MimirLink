@@ -137,14 +137,17 @@ test('participant profile prompt uses only new messages in messages_only mode', 
             content: '旧画像不应出现'
         },
         messages: [
-            { sessionId: 's1', role: 'user', content: '第一句' },
-            { sessionId: 's2', role: 'assistant', content: '第二句' }
+            { sessionId: 's1', role: 'user', content: '第一句', speakerType: 'target', speakerId: '1', speakerName: '甲' },
+            { sessionId: 's2', role: 'assistant', content: '第二句', speakerType: 'bot' }
         ]
-    }, 'messages_only');
+    }, 'messages_only', {
+        participantId: '1',
+        participantName: '甲'
+    });
 
     assert.match(prompt, /仅允许依据这些新增消息总结/);
-    assert.match(prompt, /\[s1\] user: 第一句/);
-    assert.match(prompt, /\[s2\] assistant: 第二句/);
+    assert.match(prompt, /\[s1\] \[说话人:目标人物\|甲\|QQ:1\] 第一句/);
+    assert.match(prompt, /\[s2\] \[说话人:Bot\] 第二句/);
     assert.doesNotMatch(prompt, /旧画像不应出现/);
     assert.doesNotMatch(prompt, /已有档案如下/);
 });
@@ -155,13 +158,17 @@ test('participant profile prompt includes prior profile in profile_plus_messages
             content: '稳定画像: 旧档案'
         },
         messages: [
-            { sessionId: 's3', role: 'user', content: '第三句' }
+            { sessionId: 's3', role: 'user', content: '第三句', speakerType: 'target', speakerId: '3', speakerName: '乙' }
         ]
-    }, 'profile_plus_messages');
+    }, 'profile_plus_messages', {
+        participantId: '3',
+        participantName: '乙'
+    });
 
     assert.match(prompt, /已有档案如下：\n稳定画像: 旧档案/);
-    assert.match(prompt, /\[s3\] user: 第三句/);
+    assert.match(prompt, /\[s3\] \[说话人:目标人物\|乙\|QQ:3\] 第三句/);
     assert.match(prompt, /增量更新人物档案/);
+    assert.match(prompt, /不得把 Bot 或第三者的话写成目标人物说的/);
 });
 
 test('participant profile merge prompt keeps one profile and prefers new version on conflicts', () => {

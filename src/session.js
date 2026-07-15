@@ -175,6 +175,277 @@ function normalizeParticipantProfileNamespaceOptions(namespaceOptions = {}) {
     };
 }
 
+function isAssistantRole(role) {
+    return String(role || '').trim().toLowerCase() === 'assistant';
+}
+
+function isUserRole(role) {
+    return String(role || '').trim().toLowerCase() === 'user';
+}
+
+function buildParticipantProfileMessageKey(message = {}) {
+    return [
+        message.sessionId || '',
+        message.timestamp || 0,
+        message.role || '',
+        message.content || ''
+    ].join('|');
+}
+
+function resolveParticipantProfileSpeaker(message = {}, targetParticipantId = '') {
+    const targetId = normalizeParticipantId(targetParticipantId);
+    const metadata = message.metadata || {};
+    const userId = normalizeParticipantId(metadata.userId);
+    const participantName = normalizeParticipantName(
+        metadata.participantName || metadata.userName || metadata.senderName || metadata.nickname || metadata.card,
+        userId
+    );
+
+    if (isAssistantRole(message.role)) {
+        return {
+            speakerType: 'bot',
+            speakerId: 'bot',
+            speakerName: 'Bot',
+            isTargetSpeaker: false
+        };
+    }
+
+    if (isUserRole(message.role) && targetId && userId && userId === targetId) {
+        return {
+            speakerType: 'target',
+            speakerId: userId,
+            speakerName: participantName || targetId,
+            isTargetSpeaker: true
+        };
+    }
+
+    if (isUserRole(message.role)) {
+        return {
+            speakerType: 'third_party',
+            speakerId: userId || '',
+            speakerName: participantName || userId || '第三者',
+            isTargetSpeaker: false
+        };
+    }
+
+    return {
+        speakerType: 'unknown',
+        speakerId: userId || '',
+        speakerName: participantName || '',
+        isTargetSpeaker: false
+    };
+}
+
+function splitParticipantProfileQuotedContent(content = '') {
+    const rawContent = String(content || '');
+    let working = rawContent;
+    const quotes = [];
+
+    // [回复上文|发送者:xxx|QQ:yyy|内容:zzz]
+    working = working.replace(/\[\u56de\u590d\u4e0a\u6587([^\]]*)\]/g, (_, body) => {
+        const text = String(body || '');
+        const speakerName = (text.match(/\u53d1\u9001\u8005:([^|\]]+)/) || [])[1]?.trim() || '';
+        const speakerId = (text.match(/QQ:([^|\]]+)/) || [])[1]?.trim() || '';
+        const quoteContent = (text.match(/\u5185\u5bb9:([^|\]]+)/) || [])[1]?.trim() || '';
+        if (quoteContent || speakerName || speakerId) {
+            quotes.push({
+                speakerType: 'quoted',
+                speakerId,
+                speakerName,
+                content: quoteContent,
+                source: 'reply_snippet'
+            });
+        }
+        return ' ';
+    });
+
+    // 结构化前缀中的 replyQuotedText:xxx
+    working = working.replace(/\|?replyQuotedText:([^|\]]+)/g, (_, quoted) => {
+        const quoteContent = String(quoted || '').trim();
+        if (quoteContent && !quotes.some((item) => item.content === quoteContent)) {
+            quotes.push({
+                speakerType: 'quoted',
+                speakerId: '',
+                speakerName: '',
+                content: quoteContent,
+                source: 'replyQuotedText'
+            });
+        }
+        return '';
+    });
+
+    // 去掉结构化元数据括号，避免把系统字段算成本人发言
+    working = working.replace(/\[(?:\u7fa4\u804a|\u79c1\u804a)[^\]]*\]/g, ' ');
+    working = working.replace(/\[[^\]]*(?:QQ:|isAtBot:|replyToBot:|messageSegments:)[^\]]*\]/g, ' ');
+
+    const ownContent = working.replace(/\s+/g, ' ').trim();
+    return {
+        rawContent,
+        ownContent,
+        quote: quotes[0] || null,
+        quotes
+    };
+}
+
+function extractStructuredSpeakerSegments(content = '') {
+    const raw = String(content || '');
+    if (!raw.trim()) {
+        return [];
+    }
+
+    // 匹配批处理合并后的多段结构化发言：
+    // [群聊|QQ:10002|昵称:第三者群友|...] 文本
+    // [私聊|QQ:xxx|昵称:yyy|...] 文本
+    const segmentRegex = /\[(?:群聊|私聊)([^\]]*)\]\s*([^\[]*)/g;
+    const segments = [];
+    let match;
+    while ((match = segmentRegex.exec(raw)) !== null) {
+        const metaText = String(match[1] || '');
+        const bodyText = String(match[2] || '').trim();
+        const speakerId = (metaText.match(/QQ:([^|\]]+)/) || [])[1]?.trim() || '';
+        const speakerName = (metaText.match(/(?:昵称|名称|card):([^|\]]+)/) || [])[1]?.trim() || '';
+        if (!bodyText && !speakerId && !speakerName) {
+            continue;
+        }
+        segments.push({
+            speakerId,
+            speakerName,
+            content: bodyText,
+            rawSegment: match[0]
+        });
+    }
+    return segments;
+}
+
+function buildAttributedMessageFromParts(baseMessage, targetParticipantId, parts = {}) {
+    const targetId = normalizeParticipantId(targetParticipantId);
+    const speakerId = normalizeParticipantId(parts.speakerId || '');
+    const speakerName = normalizeParticipantName(parts.speakerName || '', speakerId || targetId);
+    const role = parts.role || baseMessage.role || 'user';
+
+    let speakerType = 'unknown';
+    let isTargetSpeaker = false;
+    let finalSpeakerId = speakerId;
+    let finalSpeakerName = speakerName;
+
+    if (isAssistantRole(role) || parts.speakerType === 'bot') {
+        speakerType = 'bot';
+        finalSpeakerId = 'bot';
+        finalSpeakerName = 'Bot';
+        isTargetSpeaker = false;
+    } else if (parts.speakerType === 'target' || (targetId && speakerId && speakerId === targetId)) {
+        speakerType = 'target';
+        finalSpeakerId = speakerId || targetId;
+        finalSpeakerName = speakerName || targetId;
+        isTargetSpeaker = true;
+    } else if (
+        parts.speakerType === 'third_party'
+        || (speakerId && targetId && speakerId !== targetId)
+        || parts.forceThirdParty
+    ) {
+        speakerType = 'third_party';
+        finalSpeakerId = speakerId || '';
+        finalSpeakerName = speakerName || speakerId || '第三者';
+        isTargetSpeaker = false;
+    } else if (isUserRole(role)) {
+        const fallback = resolveParticipantProfileSpeaker({
+            ...baseMessage,
+            role
+        }, targetId);
+        speakerType = fallback.speakerType;
+        finalSpeakerId = fallback.speakerId;
+        finalSpeakerName = fallback.speakerName;
+        isTargetSpeaker = fallback.isTargetSpeaker;
+    }
+
+    const split = splitParticipantProfileQuotedContent(parts.content || '');
+    return {
+        sessionId: baseMessage.sessionId,
+        role,
+        content: split.ownContent,
+        rawContent: parts.rawContent || parts.content || baseMessage.content || '',
+        quote: split.quote,
+        quotes: split.quotes,
+        hasQuote: Boolean(split.quote),
+        metadata: {
+            ...(baseMessage.metadata || {}),
+            ...(speakerId ? { userId: speakerId } : {}),
+            ...(finalSpeakerName ? { participantName: finalSpeakerName } : {}),
+            expandedFromMergedBatch: parts.expandedFromMergedBatch === true
+        },
+        timestamp: baseMessage.timestamp,
+        date: baseMessage.date,
+        speakerType,
+        speakerId: finalSpeakerId,
+        speakerName: finalSpeakerName,
+        isTargetSpeaker,
+        utterances: parts.utterances || null
+    };
+}
+
+function expandParticipantProfileSourceMessages(message, targetParticipantId) {
+    const targetId = normalizeParticipantId(targetParticipantId);
+    const content = String(message?.content || '');
+    const mergedCount = Number(message?.metadata?.mergedCount || 0);
+    const segments = extractStructuredSpeakerSegments(content);
+    const uniqueSpeakerIds = Array.from(new Set(segments.map((item) => item.speakerId).filter(Boolean)));
+    const shouldExpand = segments.length >= 2 && (uniqueSpeakerIds.length >= 2 || mergedCount > 1);
+
+    if (!shouldExpand) {
+        return [mapParticipantProfileSourceMessage(message, targetId)];
+    }
+
+    const expanded = segments.map((segment) => buildAttributedMessageFromParts(message, targetId, {
+        role: 'user',
+        speakerId: segment.speakerId,
+        speakerName: segment.speakerName,
+        content: segment.content,
+        rawContent: segment.rawSegment,
+        expandedFromMergedBatch: true,
+        forceThirdParty: Boolean(segment.speakerId && segment.speakerId !== targetId)
+    }));
+
+    const useful = expanded.filter((item) => String(item.content || '').trim() || item.hasQuote);
+    if (useful.length === 0) {
+        return [mapParticipantProfileSourceMessage(message, targetId)];
+    }
+
+    const utterances = useful.map((item) => ({
+        speakerType: item.speakerType,
+        speakerId: item.speakerId,
+        speakerName: item.speakerName,
+        content: item.content,
+        quote: item.quote
+    }));
+    useful[0] = {
+        ...useful[0],
+        utterances
+    };
+    return useful;
+}
+
+function mapParticipantProfileSourceMessage(message, targetParticipantId) {
+    const speaker = resolveParticipantProfileSpeaker(message, targetParticipantId);
+    const split = splitParticipantProfileQuotedContent(message.content);
+    return {
+        sessionId: message.sessionId,
+        role: message.role,
+        content: split.ownContent,
+        rawContent: split.rawContent,
+        quote: split.quote,
+        quotes: split.quotes,
+        hasQuote: Boolean(split.quote),
+        metadata: message.metadata || {},
+        timestamp: message.timestamp,
+        date: message.date,
+        speakerType: speaker.speakerType,
+        speakerId: speaker.speakerId,
+        speakerName: speaker.speakerName,
+        isTargetSpeaker: speaker.isTargetSpeaker,
+        utterances: null
+    };
+}
+
 function mapVariableRow(row) {
     const metadata = parseJson(row.metadata_json, {});
     const valueType = normalizeVariableType(metadata.valueType || 'string');
@@ -905,6 +1176,14 @@ export class SessionManager {
                 SELECT session_id, role, content, metadata_json, timestamp, date_iso
                 FROM messages
                 WHERE CAST(json_extract(metadata_json, '$.userId') AS TEXT) = ?
+                  AND timestamp > ?
+                ORDER BY timestamp ASC, rowid ASC
+                LIMIT ?
+            `),
+            listSessionMessagesSince: this.db.prepare(`
+                SELECT session_id, role, content, metadata_json, timestamp, date_iso
+                FROM messages
+                WHERE session_id = ?
                   AND timestamp > ?
                 ORDER BY timestamp ASC, rowid ASC
                 LIMIT ?
@@ -1971,38 +2250,118 @@ export class SessionManager {
         return true;
     }
 
+    listSessionMessagesSince(sessionId, options = {}) {
+        const since = options.since || 0;
+        const limit = Math.min(Math.max(Number(options.limit) || 200, 1), 1000);
+        const rows = this.statements.listSessionMessagesSince.all(String(sessionId), since, limit);
+        return rows.map((row) => ({
+            sessionId: row.session_id,
+            role: row.role,
+            content: row.content,
+            metadata: parseJson(row.metadata_json, {}),
+            timestamp: row.timestamp,
+            date: row.date_iso
+        }));
+    }
+
     collectParticipantProfileSource(userId, namespaceOptions, options = {}) {
         const existing = this.getParticipantProfile(namespaceOptions, userId);
         const since = existing?.metadata?.lastProcessedMessageAt || 0;
-        const messages = this.listParticipantMessages(userId, {
-            since,
-            limit: options.limit || 50
-        });
-
-        // bot_only 过滤：只保留 bot 参与了会话的消息
+        const limit = Math.min(Math.max(Number(options.limit) || 50, 1), 500);
+        const threshold = Math.max(Number(options.threshold) || 8, 1);
         const sourceFilter = options.sourceFilter || 'all';
-        if (sourceFilter === 'bot_only' && messages.length > 0) {
-            const botSessionIds = new Set();
-            for (const msg of messages) {
-                if (msg.role === 'assistant') {
-                    botSessionIds.add(msg.sessionId);
+        const contextBefore = Math.max(0, Math.floor(Number(options.contextBefore ?? 2)));
+        const contextAfter = Math.max(0, Math.floor(Number(options.contextAfter ?? 2)));
+        const targetId = normalizeParticipantId(userId);
+
+        // 目标人物本人发言作为锚点；assistant 即使误写了 userId 也不能当锚点
+        const anchorCandidates = this.listParticipantMessages(targetId, {
+            since,
+            limit: Math.max(limit * 3, 50)
+        }).filter((message) => (
+            isUserRole(message.role)
+            && normalizeParticipantId(message.metadata?.userId) === targetId
+        ));
+
+        const sessionIds = Array.from(new Set(anchorCandidates.map((item) => item.sessionId).filter(Boolean)));
+        const selected = [];
+        const seen = new Set();
+
+        for (const sessionId of sessionIds) {
+            const sessionMessages = this.listSessionMessagesSince(sessionId, {
+                since,
+                limit: Math.max(limit * 6, 200)
+            });
+            if (sessionMessages.length === 0) {
+                continue;
+            }
+
+            const anchorIndexes = [];
+            for (let index = 0; index < sessionMessages.length; index += 1) {
+                const message = sessionMessages[index];
+                if (
+                    isUserRole(message.role)
+                    && normalizeParticipantId(message.metadata?.userId) === targetId
+                ) {
+                    anchorIndexes.push(index);
                 }
             }
-            const filtered = messages.filter(msg => botSessionIds.has(msg.sessionId));
-            return {
-                existing,
-                since,
-                messages: filtered,
-                hasEnoughNewInfo: filtered.length >= (options.threshold || 8),
-                filteredCount: messages.length - filtered.length
-            };
+            if (anchorIndexes.length === 0) {
+                continue;
+            }
+
+            const sessionHasBot = sessionMessages.some((message) => isAssistantRole(message.role));
+            if (sourceFilter === 'bot_only' && !sessionHasBot) {
+                continue;
+            }
+
+            const includeMask = new Array(sessionMessages.length).fill(false);
+            for (const anchorIndex of anchorIndexes) {
+                const start = Math.max(0, anchorIndex - contextBefore);
+                const end = Math.min(sessionMessages.length - 1, anchorIndex + contextAfter);
+                for (let index = start; index <= end; index += 1) {
+                    includeMask[index] = true;
+                }
+            }
+
+            for (let index = 0; index < sessionMessages.length; index += 1) {
+                if (!includeMask[index]) {
+                    continue;
+                }
+                const attributedList = expandParticipantProfileSourceMessages(sessionMessages[index], targetId);
+                for (const attributed of attributedList) {
+                    const key = buildParticipantProfileMessageKey(attributed);
+                    if (seen.has(key)) {
+                        continue;
+                    }
+                    seen.add(key);
+                    selected.push(attributed);
+                }
+            }
         }
+
+        selected.sort((left, right) => {
+            const timeDiff = Number(left.timestamp || 0) - Number(right.timestamp || 0);
+            if (timeDiff !== 0) {
+                return timeDiff;
+            }
+            return String(left.sessionId || '').localeCompare(String(right.sessionId || ''));
+        });
+
+        const messages = selected.length > limit ? selected.slice(-limit) : selected;
+        const targetMessageCount = messages.filter((item) => item.speakerType === 'target' && String(item.content || '').trim()).length;
+        const botMessageCount = messages.filter((item) => item.speakerType === 'bot').length;
+        const thirdPartyMessageCount = messages.filter((item) => item.speakerType === 'third_party').length;
 
         return {
             existing,
             since,
             messages,
-            hasEnoughNewInfo: messages.length >= (options.threshold || 8)
+            hasEnoughNewInfo: targetMessageCount >= threshold,
+            targetMessageCount,
+            botMessageCount,
+            thirdPartyMessageCount,
+            contextMessageCount: messages.length - targetMessageCount
         };
     }
 

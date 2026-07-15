@@ -11911,12 +11911,12 @@
                             <div class="form-group">
                                 <label>分析模式</label>
                                 <select id="config-memory-participant-profile-analysis-mode">
-                                    <option value="bot_only_profile">仅bot对话 + 已有画像（省token）</option>
-                                    <option value="bot_only_messages">仅bot对话 无画像（最省token）</option>
-                                    <option value="profile_plus_messages">全量消息 + 已有画像</option>
-                                    <option value="messages_only">全量消息 无画像</option>
+                                    <option value="bot_only_profile">与Bot交互上下文 + 已有画像（推荐）</option>
+                                    <option value="bot_only_messages">与Bot交互上下文 无画像（更省token）</option>
+                                    <option value="profile_plus_messages">锚点附近全量上下文 + 已有画像</option>
+                                    <option value="messages_only">锚点附近全量上下文 无画像</option>
                                 </select>
-                                <p class="hint-text">bot对话 = 只看用户和Bot直接聊天的记录（省token）；全量消息 = 自动爬用户在所有群/私聊的全部发言。有画像 = 合并已有档案增量更新；无画像 = 每次纯看新消息重新总结。</p>
+                                <p class="hint-text">分析会保留对话上下文并按说话人拆开：目标人物 / Bot / 第三者。档案结论只写目标人物本人发言；Bot 与第三者仅作背景，不会当成目标人物说的。bot_only = 只取与 Bot 有交互的对话上下文；全量上下文 = 目标人物锚点附近的群/私聊上下文。有画像 = 合并已有档案增量更新；无画像 = 仅依据新增消息总结。</p>
                             </div>
                             <div class="form-group full">
                                 <label>档案专用模型</label>

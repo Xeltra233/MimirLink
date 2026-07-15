@@ -2342,7 +2342,7 @@ async function maybeBuildParticipantProfile(sessionManager, aiClient, namespaceO
             currentMessage: '正在构建人物档案分析提示词',
             progressPercent: 45
         });
-        const profilePrompt = buildParticipantProfilePrompt(source, participantProfileConfig.analysisMode);
+        const profilePrompt = buildParticipantProfilePrompt(source, participantProfileConfig.analysisMode, speakerIdentity);
         updateParticipantProfileProgress({
             stage: 'generating',
             currentMessage: '正在调用 AI 生成人物档案',
