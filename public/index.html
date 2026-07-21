@@ -7884,6 +7884,13 @@
         }
 
         #config .config-subpanel {
+            display: none !important;
+            gap: 16px !important;
+            grid-column: 1 / -1;
+            min-width: 0;
+        }
+
+        #config .config-subpanel.active {
             display: grid !important;
             gap: 16px !important;
         }
@@ -9581,7 +9588,90 @@
         }
 
         /* 人物档案用户名再保险 */
-        #participant-profiles .participant-profile-item-name,
+        
+/* Config checkbox/hint/details layout fix: start */
+#config .config-checkbox-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)) !important;
+    gap: 14px 16px !important;
+    align-items: start !important;
+}
+
+/* 带说明文字的开关项：纵向堆叠，避免标签与 hint 横向挤压/重叠 */
+#config .config-checkbox-grid .form-group:has(.hint-text),
+#config .form-group:has(.checkbox-label):has(.hint-text),
+#config .form-group:has(input[type="checkbox"]):has(.hint-text) {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    gap: 6px !important;
+    grid-column: 1 / -1 !important;
+    min-height: 0 !important;
+}
+
+#config .config-checkbox-grid .form-group:has(.hint-text) > .checkbox-label,
+#config .form-group:has(.checkbox-label):has(.hint-text) > .checkbox-label,
+#config .form-group:has(input[type="checkbox"]):has(.hint-text) > .checkbox-label {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+}
+
+#config .config-checkbox-grid .form-group:has(.hint-text) > .hint-text,
+#config .form-group:has(.checkbox-label):has(.hint-text) > .hint-text,
+#config .form-group:has(input[type="checkbox"]):has(.hint-text) > .hint-text {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 0 0 24px !important;
+    line-height: 1.55 !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    word-break: break-word !important;
+}
+
+/* 高级折叠区：保证可点可展，内容不被后续布局规则压扁 */
+#config details.config-advanced-section {
+    display: block !important;
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    margin-top: 12px !important;
+    padding: 12px 14px !important;
+    border: 1px solid color-mix(in srgb, var(--border) 90%, transparent 10%) !important;
+    border-radius: 12px !important;
+    background: color-mix(in srgb, var(--bg-elevated) 92%, var(--bg) 8%) !important;
+}
+
+#config details.config-advanced-section > summary {
+    display: list-item !important;
+    cursor: pointer !important;
+    pointer-events: auto !important;
+    user-select: none !important;
+    font-weight: 700 !important;
+    color: var(--text) !important;
+    list-style: disclosure-closed !important;
+}
+
+#config details.config-advanced-section[open] > summary {
+    list-style: disclosure-open !important;
+    margin-bottom: 10px !important;
+}
+
+#config details.config-advanced-section > *:not(summary) {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+}
+
+#config details.config-advanced-section > .config-subgrid,
+#config details.config-advanced-section .config-subgrid {
+    display: grid !important;
+    width: 100% !important;
+}
+/* Config checkbox/hint/details layout fix: end */
+#participant-profiles .participant-profile-item-name,
         #participant-profiles .participant-profile-item-name.name {
             writing-mode: horizontal-tb !important;
             text-orientation: mixed !important;
