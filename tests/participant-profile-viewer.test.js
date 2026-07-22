@@ -1410,7 +1410,27 @@ test('ai model routes use config fallback and explicit overrides', async () => {
                 provider: 'openai-compatible',
                 baseUrl: 'https://api.example/v1',
                 apiKey: 'global-secret',
-                model: 'main-model'
+                model: 'main-model',
+                providers: [
+                    {
+                        id: 'provider-saved',
+                        name: '已保存供应商',
+                        provider: 'openai-compatible',
+                        baseUrl: 'https://saved-provider.example/v1',
+                        apiKey: 'saved-provider-secret',
+                        model: 'saved-model',
+                        models: [{ id: 'saved-model', enabled: true }]
+                    },
+                    {
+                        id: 'provider-no-key',
+                        name: '无密钥供应商',
+                        provider: 'ollama',
+                        baseUrl: 'http://127.0.0.1:11434/v1',
+                        apiKey: '',
+                        model: 'local-model',
+                        models: [{ id: 'local-model', enabled: true }]
+                    }
+                ]
             },
             regex: { rules: [] },
             preset: {},
@@ -1433,41 +1453,146 @@ test('ai model routes use config fallback and explicit overrides', async () => {
     });
 
     try {
-        const listRes = await fetch(`${baseUrl}/api/ai/models`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
-        });
-        const listData = await listRes.json();
-        assert.equal(listRes.status, 200);
-        assert.equal(listData.success, true);
-        assert.equal(Array.isArray(listData.models), true);
-        assert.equal(aiCalls[0].type, 'listModels');
-        assert.deepEqual(aiCalls[0].options, {
-            baseUrl: 'https://api.example/v1',
-            apiKey: 'global-secret'
-        });
+        const postAI = async (pathname, body) => {
+            const response = await fetch(`${baseUrl}${pathname}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await response.json();
+            assert.equal(response.status, 200, JSON.stringify(data));
+            assert.equal(data.success, true, JSON.stringify(data));
+            return data;
+        };
 
-        const probeRes = await fetch(`${baseUrl}/api/ai/probe`, {
+        const listCases = [
+            {
+                name: '无 providerId 时沿用顶层配置',
+                body: {},
+                expected: { baseUrl: 'https://api.example/v1', apiKey: 'global-secret' }
+            },
+            {
+                name: '空 Key 沿用已保存 provider Key',
+                body: { providerId: 'provider-saved', baseUrl: 'https://saved-provider.example/v1', apiKey: '' },
+                expected: { baseUrl: 'https://saved-provider.example/v1', apiKey: 'saved-provider-secret' }
+            },
+            {
+                name: '显式新 Key 覆盖已保存 provider Key',
+                body: { providerId: 'provider-saved', baseUrl: 'https://draft-saved.example/v1', apiKey: 'draft-saved-secret' },
+                expected: { baseUrl: 'https://draft-saved.example/v1', apiKey: 'draft-saved-secret' }
+            },
+            {
+                name: '无 Key provider 不复用全局 Key',
+                body: { providerId: 'provider-no-key' },
+                expected: { baseUrl: 'http://127.0.0.1:11434/v1', apiKey: '' }
+            },
+            {
+                name: '未知 providerId 不复用全局 Key',
+                body: { providerId: 'provider-unknown', baseUrl: 'https://unknown.example/v1' },
+                expected: { baseUrl: 'https://unknown.example/v1', apiKey: '' }
+            },
+            {
+                name: '未保存 provider 可使用显式新 Key',
+                body: { providerId: 'provider-unsaved', baseUrl: 'https://unsaved.example/v1', apiKey: 'unsaved-provider-secret' },
+                expected: { baseUrl: 'https://unsaved.example/v1', apiKey: 'unsaved-provider-secret' }
+            }
+        ];
+
+        for (const scenario of listCases) {
+            const data = await postAI('/api/ai/models', scenario.body);
+            assert.equal(Array.isArray(data.models), true, scenario.name);
+            assert.deepEqual(aiCalls.at(-1), {
+                type: 'listModels',
+                options: scenario.expected
+            }, scenario.name);
+        }
+
+        const probeCases = [
+            {
+                name: '掩码 Key 沿用已保存 provider Key',
+                body: {
+                    providerId: 'provider-saved',
+                    baseUrl: 'https://saved-provider.example/v1',
+                    apiKey: '******',
+                    model: 'saved-model'
+                },
+                expectedModel: 'saved-model',
+                expected: { baseUrl: 'https://saved-provider.example/v1', apiKey: 'saved-provider-secret' }
+            },
+            {
+                name: '无 providerId 时允许显式覆盖',
+                body: {
+                    baseUrl: 'https://override.example/v1',
+                    apiKey: 'override-secret',
+                    model: 'claude-sonnet-4-5'
+                },
+                expectedModel: 'claude-sonnet-4-5',
+                expected: { baseUrl: 'https://override.example/v1', apiKey: 'override-secret' }
+            }
+        ];
+
+        for (const scenario of probeCases) {
+            const data = await postAI('/api/ai/probe', scenario.body);
+            assert.equal(data.autoMaxTokens, 8192, scenario.name);
+            assert.equal(data.model.id, scenario.expectedModel, scenario.name);
+            assert.deepEqual(aiCalls.at(-1), {
+                type: 'probeModel',
+                model: scenario.expectedModel,
+                options: scenario.expected
+            }, scenario.name);
+        }
+
+        assert.equal(aiCalls.length, listCases.length + probeCases.length);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+});
+
+test('ai model routes support the synthetic default provider for legacy top-level config', async () => {
+    const { manager } = createTempManager();
+    const aiCalls = [];
+    const { server, baseUrl } = await startTestServer(manager, {
+        config: {
+            auth: { enabled: false },
+            chat: { dataDir: './data', defaultCharacter: '角色A', sessionMode: 'user_persistent', accessControlMode: 'allowlist' },
+            memory: { storage: { path: './data/chats/memory-store.sqlite' }, summary: { enabled: false } },
+            ai: {
+                provider: 'openai-compatible',
+                baseUrl: 'https://legacy.example/v1',
+                apiKey: 'legacy-global-secret',
+                model: 'legacy-model',
+                providers: []
+            },
+            regex: { rules: [] },
+            preset: {},
+            bindings: { global: { regexRules: [] }, characters: {} }
+        },
+        aiClient: {
+            updateConfig() {},
+            async listModels(options) {
+                aiCalls.push(options);
+                return [{ id: 'legacy-model' }];
+            }
+        }
+    });
+
+    try {
+        const response = await fetch(`${baseUrl}/api/ai/models`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                baseUrl: 'https://override.example/v1',
-                apiKey: 'override-secret',
-                model: 'claude-sonnet-4-5'
+                providerId: 'default',
+                apiKey: ''
             })
         });
-        const probeData = await probeRes.json();
-        assert.equal(probeRes.status, 200);
-        assert.equal(probeData.success, true);
-        assert.equal(probeData.autoMaxTokens, 8192);
-        assert.equal(probeData.model.id, 'claude-sonnet-4-5');
-        assert.equal(aiCalls[1].type, 'probeModel');
-        assert.equal(aiCalls[1].model, 'claude-sonnet-4-5');
-        assert.deepEqual(aiCalls[1].options, {
-            baseUrl: 'https://override.example/v1',
-            apiKey: 'override-secret'
-        });
+        const body = await response.json();
+
+        assert.equal(response.status, 200);
+        assert.equal(body.success, true);
+        assert.deepEqual(aiCalls, [{
+            baseUrl: 'https://legacy.example/v1',
+            apiKey: 'legacy-global-secret'
+        }]);
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }

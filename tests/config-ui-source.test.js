@@ -23,6 +23,15 @@ test('config UI restores and saves memory summary model provider selection', () 
     assert.ok(source.includes('model: summaryModelSelection.model'));
 });
 
+test('provider model actions reuse the saved server-side key when the input stays blank', () => {
+    assert.ok(source.includes('function buildAIProviderRequestPayload(draft = {})'));
+    assert.ok(source.includes("if (!payload.apiKey || payload.apiKey === '******')"));
+    assert.ok(source.includes('delete payload.apiKey;'));
+    assert.ok(source.includes('providerId: entry.id'));
+    assert.ok(source.includes('JSON.stringify(buildAIProviderRequestPayload({'));
+    assert.equal((source.match(/const draft = buildAIProviderRequestPayload\(buildResolvedAIConfig\(getAIConfigDraft\(\)\)\);/g) || []).length, 2);
+});
+
 test('config UI disables cooldown input when group repeat is off', () => {
     assert.ok(source.includes('function updateGroupRepeatFields()'));
     assert.ok(source.includes("setConfigInputDisabledState('config-chat-group-repeat-cooldown-minutes', !enabled);"));
