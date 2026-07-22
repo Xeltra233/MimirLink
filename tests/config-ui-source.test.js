@@ -30,6 +30,7 @@ test('provider model actions reuse the saved server-side key when the input stay
     assert.ok(source.includes('providerId: entry.id'));
     assert.ok(source.includes('JSON.stringify(buildAIProviderRequestPayload({'));
     assert.equal((source.match(/const draft = buildAIProviderRequestPayload\(buildResolvedAIConfig\(getAIConfigDraft\(\)\)\);/g) || []).length, 2);
+    assert.ok(source.includes('已发现 ${models.length} 个模型'));
 });
 
 test('config UI disables cooldown input when group repeat is off', () => {

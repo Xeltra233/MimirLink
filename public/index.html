@@ -20084,7 +20084,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
             const tokenAwareCount = models.filter((model) => model.maxOutputTokens || model.recommendedMaxTokens || model.contextWindow).length;
             const preview = models.slice(0, 6).map((model) => model.id).join(', ');
-            return `已发${models.length} 个模型，含元数据 ${tokenAwareCount} 个\n预览: ${preview}${models.length > 6 ? ' ...' : ''}`;
+            return `已发现 ${models.length} 个模型，含元数据 ${tokenAwareCount} 个\n预览: ${preview}${models.length > 6 ? ' ...' : ''}`;
         }
 
         function syncAIModelList(models = []) {
