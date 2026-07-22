@@ -149,15 +149,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     const summarizePayload = (payload, maxLen = 400) => {
         try {
-            // 脱敏：移除敏感字段
-            const sanitized = { ...payload };
-            const sensitiveKeys = ['password', 'apiKey', 'accessToken', 'sessionSecret', 'secret', 'token'];
-            for (const key of sensitiveKeys) {
-                if (key in sanitized) {
-                    sanitized[key] = '******';
-                }
-            }
-
+            // 请求体可能包含 providers 等嵌套配置，必须递归脱敏后再写入日志。
+            const sanitized = maskConfigSecrets(payload);
             const text = JSON.stringify(sanitized);
             if (!text) {
                 return '';
@@ -2436,10 +2429,11 @@ export function setupRoutes(app, config, saveConfig, managers) {
         return merged;
     }
 
-    // 脱敏 config：把 apiKey/accessToken/password/sessionSecret 替换为 ******
+    // 递归脱敏配置或请求体中的密钥字段。
     function maskConfigSecrets(cfg) {
+        if (cfg === undefined || cfg === null) return {};
         const masked = JSON.parse(JSON.stringify(cfg));
-        const maskKeys = ['apiKey', 'accessToken', 'password', 'sessionSecret', 'secret'];
+        const maskKeys = ['apiKey', 'accessToken', 'password', 'sessionSecret', 'secret', 'token'];
         function walk(obj) {
             if (!obj || typeof obj !== 'object') return;
             for (const key of Object.keys(obj)) {

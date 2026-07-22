@@ -8,8 +8,6 @@ import express from 'express';
 import { SessionManager } from '../src/session.js';
 import { setupRoutes } from '../src/routes.js';
 
-let testPortOffset = 0;
-
 function createTempManager() {
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mimirlink-profile-viewer-'));
     const manager = new SessionManager(tempDir, {
@@ -62,7 +60,7 @@ async function startTestServer(sessionManager, options = {}) {
         regexProcessor: options.regexProcessor || { updateConfig() {} },
         aiClient: { ...defaultAiClient, ...(options.aiClient || {}) },
         promptBuilder: { updateConfig() {} },
-        logger: { info() {}, warn() {}, error() {}, debug() {} },
+        logger: options.logger || { info() {}, warn() {}, error() {}, debug() {} },
         bot: options.bot || { isConnected() { return false; } },
         ttsManager: options.ttsManager || {},
         VOICE_TYPES: {},
@@ -78,25 +76,13 @@ async function startTestServer(sessionManager, options = {}) {
         analyzeParticipantProfile: options.analyzeParticipantProfile
     });
 
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-        const port = 18080 + (testPortOffset++ % 2000);
-        const result = await new Promise((resolve, reject) => {
-            const server = app.listen(port, '127.0.0.1', () => {
-                resolve({ server, baseUrl: `http://127.0.0.1:${port}`, config });
-            });
-            server.once('error', reject);
-        }).catch((error) => {
-            if (error?.code === 'EADDRINUSE') {
-                return null;
-            }
-            throw error;
+    return new Promise((resolve, reject) => {
+        const server = app.listen(0, '127.0.0.1', () => {
+            const address = server.address();
+            resolve({ server, baseUrl: `http://127.0.0.1:${address.port}`, config });
         });
-        if (result) {
-            return result;
-        }
-    }
-
-    throw new Error('???????????');
+        server.once('error', reject);
+    });
 }
 
 test('listParticipantProfiles returns only participant_profile entries ordered by updated time', () => {
@@ -1598,6 +1584,61 @@ test('ai model routes support the synthetic default provider for legacy top-leve
     }
 });
 
+test('api request logging recursively masks provider secrets', async () => {
+    const { manager } = createTempManager();
+    const infoCalls = [];
+    const logger = {
+        info(...args) { infoCalls.push(args); },
+        warn() {},
+        error() {},
+        debug() {}
+    };
+    const { server, baseUrl } = await startTestServer(manager, {
+        config: {
+            auth: { enabled: false },
+            chat: { dataDir: './data', defaultCharacter: '角色A', sessionMode: 'user_persistent', accessControlMode: 'allowlist' },
+            memory: { storage: { path: './data/chats/memory-store.sqlite' }, summary: { enabled: false } },
+            ai: { baseUrl: 'https://api.example/v1', apiKey: 'server-secret', providers: [] },
+            regex: { rules: [] },
+            preset: {},
+            bindings: { global: { regexRules: [] }, characters: {} }
+        },
+        logger,
+        aiClient: {
+            updateConfig() {},
+            async listModels() { return [{ id: 'model-a' }]; }
+        }
+    });
+
+    try {
+        const response = await fetch(`${baseUrl}/api/ai/models`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                baseUrl: 'https://draft.example/v1',
+                apiKey: 'top-level-secret',
+                nested: {
+                    providers: [{ apiKey: 'nested-provider-secret' }],
+                    token: 'nested-token-secret'
+                }
+            })
+        });
+        const body = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(body));
+
+        const requestLog = infoCalls.find(([message]) => String(message).includes('POST /api/ai/models <- request'));
+        assert.ok(requestLog);
+        const preview = requestLog[1]?.bodyPreview || '';
+        assert.equal(preview.includes('top-level-secret'), false);
+        assert.equal(preview.includes('nested-provider-secret'), false);
+        assert.equal(preview.includes('nested-token-secret'), false);
+        assert.match(preview, /"apiKey":"\*{6}"/);
+        assert.match(preview, /"token":"\*{6}"/);
+    } finally {
+        await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+});
+
 test('admin UI includes provider-first AI config hooks and defaults', () => {
     const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
     assert.ok(html.includes('id="config-ai-provider"'));
@@ -1689,7 +1730,7 @@ test('admin UI includes provider-first AI config hooks and defaults', () => {
     assert.ok(html.includes('availableAIModels = normalizeAIModelEntries(models);'));
     assert.ok(!html.includes('entry.models = mergedModels;'));
     assert.ok(html.includes('onclick="addAIModelToActiveProvider({ id:'));
-    assert.ok(html.includes('style="background: conic-gradient(${segments.join(\', \')});"'));
+    assert.ok(html.includes('background: conic-gradient(var(--accent) 0deg'));
     assert.ok(!html.includes('color-mix(in srgb, var(--accent) 80%, var(--bg-primary) 20%)'));
 });
 
@@ -1806,8 +1847,8 @@ test('admin UI includes participant profile management actions', () => {
     assert.ok(html.includes('id="participant-profile-tags"'));
     assert.ok(html.includes('id="participant-profile-note"'));
     assert.ok(html.includes('id="participant-profile-content" rows="22"'));
-    assert.ok(html.includes('#participant-profiles textarea#participant-profile-content'));
-    assert.ok(html.includes('min-height: clamp(420px, 58vh, 720px) !important;'));
+    assert.ok(html.includes('#participant-profiles .participant-profile-detail-card textarea#participant-profile-content'));
+    assert.ok(html.includes('min-height: 245px;'));
     assert.ok(html.includes('saveParticipantProfile()'));
     assert.ok(html.includes('refreshSelectedParticipantProfile()'));
     assert.ok(html.includes('deleteParticipantProfile()'));
