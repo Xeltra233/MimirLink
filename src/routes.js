@@ -197,6 +197,32 @@ export function setupRoutes(app, config, saveConfig, managers) {
         return overrides;
     };
 
+    const resolveAIProviderRequestConfig = (body = {}) => {
+        const providerId = String(body?.providerId || '').trim();
+        const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
+        const provider = providerId
+            ? providers.find((item) => item?.id === providerId) || null
+            : null;
+        // 兼容仅使用顶层 ai 配置的旧数据：配置页会为其合成 id=default。
+        // 其他未知 providerId 不得回退到全局配置，避免把一个供应商的 Key 串给另一个供应商。
+        const canUseGlobalFallback = !providerId || (providers.length === 0 && providerId === 'default');
+        const savedConfig = provider || (canUseGlobalFallback ? config.ai : null) || {};
+        const hasBodyBaseUrl = Object.prototype.hasOwnProperty.call(body, 'baseUrl') && body.baseUrl !== undefined;
+        const bodyBaseUrl = hasBodyBaseUrl ? String(body.baseUrl || '').trim() : '';
+        const bodyApiKey = typeof body?.apiKey === 'string' ? body.apiKey.trim() : '';
+        const hasUsableBodyApiKey = Boolean(bodyApiKey && bodyApiKey !== '******');
+
+        return {
+            baseUrl: hasBodyBaseUrl
+                ? bodyBaseUrl
+                : String(savedConfig.baseUrl || '').trim(),
+            // 配置接口不会把已保存密钥回传给浏览器；输入框留空时按 providerId 取服务端密钥。
+            apiKey: hasUsableBodyApiKey
+                ? bodyApiKey
+                : String(savedConfig.apiKey || '').trim()
+        };
+    };
+
     const isWriteMethod = (method) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || '').toUpperCase());
 
     const isAllowedPanelOrigin = (req, originValue) => {
@@ -4105,14 +4131,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     app.post('/api/ai/models', requireAuth, async (req, res) => {
         try {
-            const { baseUrl, apiKey, providerId } = req.body || {};
-            const provider = (providerId && Array.isArray(config.ai?.providers))
-                ? config.ai.providers.find(p => p.id === providerId)
-                : null;
-            const hasBodyBaseUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'baseUrl') && baseUrl !== undefined;
-            const hasBodyApiKey = Object.prototype.hasOwnProperty.call(req.body || {}, 'apiKey') && apiKey !== undefined;
-            const resolvedBaseUrl = hasBodyBaseUrl ? baseUrl : (provider?.baseUrl ?? config.ai?.baseUrl);
-            const resolvedApiKey = hasBodyApiKey ? apiKey : (provider?.apiKey ?? config.ai?.apiKey);
+            const { baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey } = resolveAIProviderRequestConfig(req.body || {});
             const models = await aiClient.listModels({
                 baseUrl: resolvedBaseUrl,
                 apiKey: resolvedApiKey
@@ -4130,14 +4149,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     app.post('/api/ai/probe', requireAuth, async (req, res) => {
         try {
-            const { baseUrl, apiKey, model, providerId } = req.body || {};
-            const provider = (providerId && Array.isArray(config.ai?.providers))
-                ? config.ai.providers.find(p => p.id === providerId)
-                : null;
-            const hasBodyBaseUrl = Object.prototype.hasOwnProperty.call(req.body || {}, 'baseUrl') && baseUrl !== undefined;
-            const hasBodyApiKey = Object.prototype.hasOwnProperty.call(req.body || {}, 'apiKey') && apiKey !== undefined;
-            const resolvedBaseUrl = hasBodyBaseUrl ? baseUrl : (provider?.baseUrl ?? config.ai?.baseUrl);
-            const resolvedApiKey = hasBodyApiKey ? apiKey : (provider?.apiKey ?? config.ai?.apiKey);
+            const { model } = req.body || {};
+            const { baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey } = resolveAIProviderRequestConfig(req.body || {});
             const result = await aiClient.probeModel(model, {
                 baseUrl: resolvedBaseUrl,
                 apiKey: resolvedApiKey

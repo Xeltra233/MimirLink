@@ -19303,7 +19303,12 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             try {
                 const res = await fetch('/api/ai/probe', {
                     method:'POST', headers:{'Content-Type':'application/json'},
-                    body: JSON.stringify({ model: entry.model || (entry.models||[])[0]?.id || '', baseUrl: entry.baseUrl, apiKey: entry.apiKey })
+                    body: JSON.stringify(buildAIProviderRequestPayload({
+                        providerId: entry.id,
+                        model: entry.model || (entry.models||[])[0]?.id || '',
+                        baseUrl: entry.baseUrl,
+                        apiKey: entry.apiKey
+                    }))
                 });
                 const data = await res.json();
                 btn.textContent = data.success ? '✓' : '✗';
@@ -20036,6 +20041,15 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             });
         }
 
+        function buildAIProviderRequestPayload(draft = {}) {
+            const payload = { ...draft };
+            // 空值/掩码表示沿用 providerId 对应的服务端密钥；真实新 Key 仍可用于保存前试连。
+            if (!payload.apiKey || payload.apiKey === '******') {
+                delete payload.apiKey;
+            }
+            return payload;
+        }
+
         function renderAIModelMeta(meta = null) {
             const container = document.getElementById('config-ai-model-meta');
             if (!container) {
@@ -20093,7 +20107,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
         }
 
         async function fetchAIModels() {
-            const draft = buildResolvedAIConfig(getAIConfigDraft());
+            const draft = buildAIProviderRequestPayload(buildResolvedAIConfig(getAIConfigDraft()));
             if (!draft.baseUrl) {
                 showToast('请先选择 provider，或在模型供应商中填写 AI Base URL', true);
                 return;
@@ -20121,7 +20135,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
         }
 
         async function probeAIModel() {
-            const draft = buildResolvedAIConfig(getAIConfigDraft());
+            const draft = buildAIProviderRequestPayload(buildResolvedAIConfig(getAIConfigDraft()));
             if (!draft.baseUrl) {
                 showToast('请先选择 provider，或在模型供应商中填写 AI Base URL', true);
                 return;
