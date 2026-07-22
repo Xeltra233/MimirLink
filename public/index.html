@@ -12081,7 +12081,7 @@
                                         </div>
                                         <div class="form-group full">
                                             <label>API Key</label>
-                                            <input type="password" id="config-ai-apikey" placeholder="留空表示不修改当前已保存密钥" oninput="syncActiveAIProviderFromInputs(); markConfigDirty('模型供应商密钥已修改')" autocomplete="new-password">
+                                            <input type="password" id="config-ai-apikey" placeholder="留空表示不修改当前已保存密钥" oninput="syncActiveAIProviderFromInputs({ apiKeyEdited: true }); markConfigDirty('模型供应商密钥已修改')" autocomplete="new-password">
                                             <div id="config-ai-apikey-status" class="hint-text" style="margin-top: 6px; display: none;">已配置密钥，留空表示不修改</div>
                                         </div>
                                     </div>
@@ -19161,13 +19161,17 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (entry.model && !models.some((model) => model.id === entry.model)) {
                 models.unshift({ id: entry.model, name: entry.model, enabled: true });
             }
+            // 区分服务端已保存密钥与本次页面输入的临时密钥，便于用户清空后回到保存值。
+            const hasSavedApiKey = entry.hasSavedApiKey === true
+                || (entry.hasSavedApiKey !== false && Boolean(entry.hasApiKey));
             return {
                 id: typeof entry.id === 'string' && entry.id.trim() ? entry.id.trim() : createAIProviderId(),
                 name,
                 provider: resolved.provider,
                 baseUrl: entry.baseUrl || resolved.baseUrl || '',
                 apiKey: typeof entry.apiKey === 'string' ? entry.apiKey : '',
-                hasApiKey: Boolean(entry.hasApiKey || entry.apiKey),
+                hasSavedApiKey,
+                hasApiKey: Boolean(hasSavedApiKey || entry.apiKey),
                 model: entry.model || models.find((model) => model.enabled)?.id || models[0]?.id || '',
                 models
             };
@@ -19387,7 +19391,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (providerSelect) providerSelect.value = normalizeAIProvider(entry.provider);
             if (baseUrlInput) baseUrlInput.value = entry.baseUrl || '';
             if (modelInput) modelInput.value = '';
-            if (apiKeyInput) apiKeyInput.value = '';
+            // 服务端保存值始终为空；仅回显用户本轮尚未保存的临时 Key，避免切换供应商后出现隐藏残留。
+            if (apiKeyInput) apiKeyInput.value = entry.apiKey || '';
             if (apiKeyStatus) apiKeyStatus.style.display = entry.hasApiKey ? 'block' : 'none';
             availableAIModels = Array.isArray(entry.models) ? entry.models : [];
             updateAIProviderFields({ applyDefaultModel: false });
@@ -19396,7 +19401,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             refreshAIModelSelectOptions();
         }
 
-        function syncActiveAIProviderFromInputs() {
+        function syncActiveAIProviderFromInputs(options = {}) {
             const entry = getActiveAIProviderEntry();
             if (!entry) {
                 return null;
@@ -19410,6 +19415,10 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (apiKeyValue && apiKeyValue !== '******') {
                 entry.apiKey = apiKeyValue;
                 entry.hasApiKey = true;
+            } else if (options.apiKeyEdited === true) {
+                // 只有真实输入事件产生的空值才表示撤销临时 Key；普通同步不得清掉切换面板时隐藏的临时值。
+                entry.apiKey = '';
+                entry.hasApiKey = Boolean(entry.hasSavedApiKey);
             }
             return entry;
         }
@@ -19451,7 +19460,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 id: createAIProviderId(),
                 name: `${current.name || '模型供应商'} 副本`,
                 apiKey: '',
-                hasApiKey: current.hasApiKey,
+                hasSavedApiKey: false,
+                hasApiKey: false,
                 models: structuredClone(current.models || [])
             }, aiProviderEntries.length);
             aiProviderEntries.push(entry);

@@ -1381,6 +1381,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
             return value;
         }
         delete value.hasApiKey;
+        delete value.hasSavedApiKey;
         delete value.hasAccessToken;
         delete value.passwordSet;
         delete value.sessionSecretSet;

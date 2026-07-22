@@ -1531,6 +1531,7 @@ test('config save preserves provider key but drops client-only key flags', async
                         baseUrl: 'https://provider.example/v1',
                         apiKey: '******',
                         hasApiKey: true,
+                        hasSavedApiKey: true,
                         model: 'deepseek-v4-pro',
                         models: [{ id: 'deepseek-v4-pro', enabled: true }]
                     }],
@@ -1564,6 +1565,7 @@ test('config save preserves provider key but drops client-only key flags', async
         assert.equal(savedConfig.onebot.accessToken, 'onebot-token');
         assert.equal('hasApiKey' in savedConfig.ai, false);
         assert.equal('hasApiKey' in savedConfig.ai.providers[0], false);
+        assert.equal('hasSavedApiKey' in savedConfig.ai.providers[0], false);
         assert.equal('hasApiKey' in savedConfig.ai.tools.webSearch, false);
         assert.equal('hasAccessToken' in savedConfig.onebot, false);
         assert.equal('passwordSet' in savedConfig.auth, false);

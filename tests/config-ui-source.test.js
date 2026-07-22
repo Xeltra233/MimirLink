@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
@@ -31,6 +32,70 @@ test('provider model actions reuse the saved server-side key when the input stay
     assert.ok(source.includes('JSON.stringify(buildAIProviderRequestPayload({'));
     assert.equal((source.match(/const draft = buildAIProviderRequestPayload\(buildResolvedAIConfig\(getAIConfigDraft\(\)\)\);/g) || []).length, 2);
     assert.ok(source.includes('已发现 ${models.length} 个模型'));
+    assert.ok(source.includes('hasSavedApiKey,'));
+    assert.ok(source.includes("syncActiveAIProviderFromInputs({ apiKeyEdited: true })"));
+    assert.ok(source.includes("if (apiKeyInput) apiKeyInput.value = entry.apiKey || '';"));
+    assert.ok(source.includes('hasSavedApiKey: false,\n                hasApiKey: false,'));
+});
+
+test('provider key input can clear a transient key back to saved-key semantics', () => {
+    const start = source.indexOf('function syncActiveAIProviderFromInputs(options = {})');
+    const end = source.indexOf('function selectAIProviderEntry(providerId)', start);
+    assert.ok(start >= 0);
+    assert.ok(end > start);
+
+    const fields = {
+        'config-ai-apikey': { value: '' },
+        'config-ai-provider-name': { value: '测试供应商' },
+        'config-ai-provider': { value: 'openai-compatible' },
+        'config-ai-baseurl': { value: 'https://provider.example/v1' }
+    };
+    let activeEntry = {
+        name: '测试供应商',
+        provider: 'openai-compatible',
+        baseUrl: 'https://provider.example/v1',
+        apiKey: '',
+        hasSavedApiKey: true,
+        hasApiKey: true,
+        models: []
+    };
+    const context = {
+        document: { getElementById: (id) => fields[id] || null },
+        getActiveAIProviderEntry: () => activeEntry,
+        normalizeAIProvider: (value) => value,
+        normalizeAIModelEntries: (value) => value
+    };
+    vm.createContext(context);
+    vm.runInContext(source.slice(start, end), context);
+
+    fields['config-ai-apikey'].value = 'draft-key';
+    context.syncActiveAIProviderFromInputs({ apiKeyEdited: true });
+    assert.equal(activeEntry.apiKey, 'draft-key');
+    assert.equal(activeEntry.hasApiKey, true);
+
+    fields['config-ai-apikey'].value = '';
+    context.syncActiveAIProviderFromInputs({ apiKeyEdited: true });
+    assert.equal(activeEntry.apiKey, '');
+    assert.equal(activeEntry.hasApiKey, true);
+
+    fields['config-ai-apikey'].value = 'transient-key';
+    context.syncActiveAIProviderFromInputs({ apiKeyEdited: true });
+    fields['config-ai-apikey'].value = '';
+    context.syncActiveAIProviderFromInputs();
+    assert.equal(activeEntry.apiKey, 'transient-key');
+
+    activeEntry = {
+        ...activeEntry,
+        apiKey: '',
+        hasSavedApiKey: false,
+        hasApiKey: false
+    };
+    fields['config-ai-apikey'].value = 'new-provider-key';
+    context.syncActiveAIProviderFromInputs({ apiKeyEdited: true });
+    fields['config-ai-apikey'].value = '';
+    context.syncActiveAIProviderFromInputs({ apiKeyEdited: true });
+    assert.equal(activeEntry.apiKey, '');
+    assert.equal(activeEntry.hasApiKey, false);
 });
 
 test('config UI disables cooldown input when group repeat is off', () => {
