@@ -3016,8 +3016,9 @@ async function processBatch(batch) {
                 await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
                     logger.info(`[摘要] 开始生成 (${messages.length}条消息) 模型:${summaryModel||'默认'}`);
                     const result = await aiClient.summarize(messages, lockedSessionId, summaryAIOverrides);
-                    logger.info(`[摘要] 完成 (${result?.length||0}字)`);
-                    return result;
+                    const summaryText = typeof result === 'string' ? result : (result?.content || '');
+                    logger.info(`[摘要] 完成 (${summaryText.length || 0}字)`);
+                    return summaryText;
                 });
             }
 

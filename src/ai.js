@@ -1366,7 +1366,9 @@ export class AIClient {
         const overrides = modelOverride && typeof modelOverride === 'object'
             ? { ...modelOverride }
             : (modelOverride ? { model: modelOverride } : {});
-        return this.chat(summaryPrompt, overrides);
+        // chat() 返回 { content, reasoningContent, ... }；摘要调用方按纯文本处理
+        const result = await this.chat(summaryPrompt, overrides);
+        return this.getVisibleResponseContent(result);
     }
 
     async chatWithTools(messages, toolContext = {}, overrides = {}) {

@@ -1478,8 +1478,11 @@ export class SessionManager {
         if (this.summaryConfig.useAI && typeof summarizer === 'function') {
             try {
                 const generated = await summarizer(sourceMessages, sessionId, this.getSummaries(sessionId));
-                if (generated && generated.trim()) {
-                    summaryText = generated.trim();
+                const generatedText = typeof generated === 'string'
+                    ? generated
+                    : (generated && typeof generated.content === 'string' ? generated.content : '');
+                if (generatedText && generatedText.trim()) {
+                    summaryText = generatedText.trim();
                 }
             } catch (error) {
                 this.logger.warn?.(`[记忆] AI 摘要失败，回退到规则摘要: ${error.message}`);
