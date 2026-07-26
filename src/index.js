@@ -50,6 +50,12 @@ import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detect
 import { getParticipantProfileConfig, normalizeParticipantProfileConfig } from './participant-profile-config.js';
 import { GroupRepeatDetector, normalizeGroupRepeatConfig, shouldObserveGroupRepeatMessage } from './group-repeat.js';
 import { DEFAULT_QQ_EMOJI_REACTION_ID, executeAdminPokeCommand, isCommandInvocation, normalizeEmojiReactionId, resolveEmojiReactionId } from './qq-interactions.js';
+import {
+    MusicBridgeClient,
+    MusicCommandHandler,
+    MusicSessionStore,
+    normalizeMusicConfig
+} from './music.js';
 import { collectParticipantGroupIds, mergeParticipantIdentity, resolveParticipantIdentityFromOneBot } from './participant-identity.js';
 import {
     getParticipantProfileTimerKey,
@@ -452,6 +458,8 @@ function ensureCommandAndToolConfig(config) {
         enabled: typeof participantProfileManual.enabled === 'boolean' ? participantProfileManual.enabled : true,
         command: normalizeCommandText(participantProfileManual.command, participantProfileConfig.manualCommand)
     };
+
+    config.chat.music = normalizeMusicConfig(config.chat.music);
 
     config.memory.participantProfile.manualCommand = config.chat.commands.participantProfileManual.command;
 
@@ -1601,6 +1609,18 @@ const aiClient = new AIClient({ ...config.ai, chat: config.chat }, logger);
 const promptBuilder = new PromptBuilder(characterManager, worldBookManager, config, logger);
 const ttsManager = new TTSManager(logger);
 const groupRepeatDetector = new GroupRepeatDetector();
+const musicSessionStore = new MusicSessionStore();
+const musicBridgeClient = new MusicBridgeClient({
+    getConfig: () => config.chat?.music || {},
+    logger
+});
+const musicCommandHandler = new MusicCommandHandler({
+    getConfig: () => config.chat?.music || {},
+    client: musicBridgeClient,
+    store: musicSessionStore,
+    audioDir: join(ROOT_DIR, 'audio'),
+    logger
+});
 
 if (config.tts) {
     ttsManager.updateConfig(config.tts);
@@ -2954,6 +2974,60 @@ async function handleAdminPokeCommand(event, plainText) {
     return result.handled === true;
 }
 
+function probeMusicBridge() {
+    const musicConfig = normalizeMusicConfig(config.chat?.music);
+    if (!musicConfig.enabled) {
+        logger.info('[点歌] 功能未启用，跳过桥接服务探活');
+        return;
+    }
+
+    musicBridgeClient.healthz()
+        .then((info) => {
+            logger.info(`[点歌] 桥接服务可用: ${musicConfig.baseUrl} version=${info?.version || '未知'} max_limit=${info?.max_limit ?? '未知'}`);
+        })
+        .catch((error) => {
+            logger.warn(`[点歌] 桥接服务探活失败: ${musicConfig.baseUrl} ${error.message}（点歌指令会返回错误提示）`);
+        });
+}
+
+async function handleMusicCommand(event, plainText) {
+    // 点歌指令面向普通用户，必须遵守群聊/用户访问控制，避免在未授权会话里响应
+    if (!isAllowed(config, event)) {
+        return false;
+    }
+
+    const result = await musicCommandHandler.handle({
+        event,
+        plainText,
+        onCommandAccepted: () => sendEmojiReactionForEvent(event),
+        sendText: (message) => sendQuotedStatusMessage(event, message),
+        sendVoice: async (audioPath) => {
+            const prefixSegments = [];
+            if (config.chat?.quoteReplyEnabled !== false && event.message_id) {
+                prefixSegments.push({ type: 'reply', data: { id: String(event.message_id) } });
+            }
+            if (event.message_type === 'group' && config.chat?.mentionSenderOnReply !== false && event.user_id) {
+                prefixSegments.push({ type: 'at', data: { qq: String(event.user_id) } });
+            }
+
+            if (event.message_type === 'group') {
+                if (typeof bot.sendGroupRecord !== 'function') {
+                    throw new Error('当前 OneBot 适配器不支持发送群语音');
+                }
+                await bot.sendGroupRecord(event.group_id, audioPath, prefixSegments);
+                return;
+            }
+
+            if (typeof bot.sendPrivateRecord !== 'function') {
+                throw new Error('当前 OneBot 适配器不支持发送私聊语音');
+            }
+            await bot.sendPrivateRecord(event.user_id, audioPath, prefixSegments);
+        }
+    });
+
+    return result.handled === true;
+}
+
 async function processBatch(batch) {
     const responseItem = [...batch.items].reverse().find((item) => item.routingDecision?.shouldRespond) || null;
     const primary = responseItem || batch.items[batch.items.length - 1];
@@ -3757,6 +3831,11 @@ async function handleMessage(event) {
         return;
     }
 
+    // 点歌是独立能力，不依赖 LLM，所以放在 LLM 开关判断之前
+    if (await handleMusicCommand(event, plainText)) {
+        return;
+    }
+
     // LLM 关闭时不处理任何消息
     if (!llmEnabled) {
         return;
@@ -3880,6 +3959,7 @@ server.listen(config.server.port, config.server.host, () => {
     logger.info(`服务器已启动: http://${config.server.host}:${config.server.port}`);
     startHealthTicker();
     startParticipantProfileIntervalScheduler(sessionManager, aiClient, logger);
+    probeMusicBridge();
 
     const defaultCharacter = config.chat.defaultCharacter;
     applyMemoryBinding();

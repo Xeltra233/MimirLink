@@ -1582,6 +1582,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
         safeOneBotConfig.hasAccessToken = Boolean(accessToken);
         const { apiKey: ttsApiKey, ...safeTtsConfig } = config.tts || {};
         safeTtsConfig.hasApiKey = Boolean(ttsApiKey);
+        // 点歌桥接的 API Key 不下发到前端，只告知是否已配置
+        const { apiKey: musicApiKey, ...safeMusicConfig } = config.chat?.music || {};
+        safeMusicConfig.hasApiKey = Boolean(musicApiKey);
         const {
             apiKey: participantProfileApiKey,
             baseUrl: participantProfileBaseUrl,
@@ -1592,6 +1595,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
             ...config,
             auth: safeAuthConfig,
             onebot: safeOneBotConfig,
+            chat: {
+                ...(config.chat || {}),
+                music: safeMusicConfig
+            },
             imports: {
                 ...(config.imports || {}),
                 presetFiles: config.imports.presetFiles.map((record) => summarizePresetImportRecord(record)),
@@ -1646,6 +1653,10 @@ export function setupRoutes(app, config, saveConfig, managers) {
 			}
             if (newConfig?.ai?.tools?.webSearch?.apiKey === '******') {
                 newConfig.ai.tools.webSearch.apiKey = config.ai?.tools?.webSearch?.apiKey || '';
+            }
+            // 前端回填的是掩码占位符，保存时还原成已存的点歌 API Key
+            if (newConfig?.chat?.music?.apiKey === '******') {
+                newConfig.chat.music.apiKey = config.chat?.music?.apiKey || '';
             }
             if (newConfig?.memory?.participantProfile) {
                 delete newConfig.memory.participantProfile.apiKey;

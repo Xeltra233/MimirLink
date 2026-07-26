@@ -123,6 +123,22 @@
         "enabled": true,
         "command": "/人物档案"
       }
+    },
+    "music": {
+      "enabled": false,
+      "command": "/music",
+      "exitCommand": "/music-exit",
+      "baseUrl": "http://127.0.0.1:8787",
+      "apiKey": "",
+      "limit": 10,
+      "minScore": 0.35,
+      "searchTimeoutMs": 20000,
+      "downloadTimeoutMs": 300000,
+      "sessionTtlMs": 1800000,
+      "maxDurationSeconds": 900,
+      "maxFilesizeMB": 30,
+      "format": "mp3",
+      "voiceSegmentSeconds": 120
     }
   },
   "memory": {
