@@ -12,7 +12,9 @@ import {
     buildMusicSessionKey,
     formatMusicSearchList,
     normalizeMusicConfig,
-    parseMusicCommand
+    parseMusicCommand,
+    resolveMusicDownloadFormat,
+    splitMusicTrailingParam
 } from '../src/music.js';
 
 const BASE_CONFIG = {
@@ -89,13 +91,18 @@ function createHandler({ client, config = {}, audioDir, runCommand, store } = {}
 function createRecorder() {
     const texts = [];
     const voices = [];
+    const files = [];
     return {
         texts,
         voices,
+        files,
         sendText: async (text) => { texts.push(text); },
         sendVoice: async (audioPath, meta) => {
             // 语音下发时文件必须已经真实落盘，否则 onebot 读文件会失败
             voices.push({ audioPath, exists: fs.existsSync(audioPath), meta });
+        },
+        sendFile: async (filePath, meta) => {
+            files.push({ filePath, exists: fs.existsSync(filePath), meta });
         }
     };
 }
@@ -149,28 +156,151 @@ test('parseMusicCommand 覆盖退出优先、用法、搜索、序号与歌名�
     assert.deepEqual(parseMusicCommand('随便聊天'), { type: 'none' });
 
     // 无候选时纯数字应当作搜索关键词
-    assert.deepEqual(parseMusicCommand('/music 250'), { type: 'search', query: '250' });
+    assert.deepEqual(parseMusicCommand('/music 250'), { type: 'search', query: '250', deliveryMode: 'voice', format: null, trailingToken: null });
 
     const session = { results: [buildResult(1, '晴天 - 周杰伦'), buildResult(2, 'Shape of You - Ed Sheeran')] };
-    assert.deepEqual(parseMusicCommand('/music 2', { session }), { type: 'select', index: 2, raw: '2' });
-    assert.deepEqual(parseMusicCommand('/music ２', { session }), { type: 'select', index: 2, raw: '２' }, '全角数字要归一化');
+    assert.deepEqual(parseMusicCommand('/music 2', { session }), { type: 'select', index: 2, raw: '2', deliveryMode: 'voice', format: null, trailingToken: null });
+    assert.deepEqual(parseMusicCommand('/music ２', { session }), { type: 'select', index: 2, raw: '２', deliveryMode: 'voice', format: null, trailingToken: null }, '全角数字要归一化');
     assert.deepEqual(
         parseMusicCommand('/music 晴天 - 周杰伦', { session }),
-        { type: 'select', name: '晴天 - 周杰伦', raw: '晴天 - 周杰伦' }
+        { type: 'select', name: '晴天 - 周杰伦', raw: '晴天 - 周杰伦', deliveryMode: 'voice', format: null, trailingToken: null }
     );
     assert.deepEqual(
         parseMusicCommand('/music   shape of YOU -   Ed Sheeran  ', { session }),
-        { type: 'select', name: 'Shape of You - Ed Sheeran', raw: 'shape of YOU -   Ed Sheeran' },
+        { type: 'select', name: 'Shape of You - Ed Sheeran', raw: 'shape of YOU -   Ed Sheeran', deliveryMode: 'voice', format: null, trailingToken: null },
         '歌名匹配忽略大小写与多余空白'
     );
-    assert.deepEqual(parseMusicCommand('/music 不存在的歌', { session }), { type: 'search', query: '不存在的歌' });
+    assert.deepEqual(parseMusicCommand('/music 不存在的歌', { session }), { type: 'search', query: '不存在的歌', deliveryMode: 'voice', format: null, trailingToken: null });
 
     // 自定义指令名同样生效
     assert.deepEqual(
         parseMusicCommand('!歌 周杰伦', { command: '!歌', exitCommand: '!歌退出' }),
-        { type: 'search', query: '周杰伦' }
+        { type: 'search', query: '周杰伦', deliveryMode: 'voice', format: null, trailingToken: null }
     );
 });
+
+
+test('splitMusicTrailingParam / parseMusicCommand 只认最后一词作为发送参数', () => {
+    assert.deepEqual(splitMusicTrailingParam('1 mp3'), {
+        body: '1',
+        deliveryMode: 'file',
+        format: 'mp3',
+        trailingToken: 'mp3'
+    });
+    assert.deepEqual(splitMusicTrailingParam('Scream Aim Fire - Bullet For My Valentine flac'), {
+        body: 'Scream Aim Fire - Bullet For My Valentine',
+        deliveryMode: 'file',
+        format: 'flac',
+        trailingToken: 'flac'
+    });
+    assert.deepEqual(splitMusicTrailingParam('song name file'), {
+        body: 'song name',
+        deliveryMode: 'file',
+        format: null,
+        trailingToken: 'file'
+    });
+    assert.deepEqual(splitMusicTrailingParam('song name voice'), {
+        body: 'song name',
+        deliveryMode: 'voice',
+        format: null,
+        trailingToken: 'voice'
+    });
+    // 非最后一词不剥离
+    assert.deepEqual(splitMusicTrailingParam('song mp3 live'), {
+        body: 'song mp3 live',
+        deliveryMode: 'voice',
+        format: null,
+        trailingToken: null
+    });
+    // 单独格式词当作普通搜索词
+    assert.deepEqual(splitMusicTrailingParam('mp3'), {
+        body: 'mp3',
+        deliveryMode: 'voice',
+        format: null,
+        trailingToken: null
+    });
+
+    const session = { results: [buildResult(1, 'Scream Aim Fire - Bullet For My Valentine'), buildResult(2, 'Ready Aim Fire - Pump')] };
+    assert.deepEqual(
+        parseMusicCommand('/music 1 mp3', { session }),
+        { type: 'select', index: 1, raw: '1', deliveryMode: 'file', format: 'mp3', trailingToken: 'mp3' }
+    );
+    assert.deepEqual(
+        parseMusicCommand('/music Scream Aim Fire - Bullet For My Valentine flac', { session }),
+        {
+            type: 'select',
+            name: 'Scream Aim Fire - Bullet For My Valentine',
+            raw: 'Scream Aim Fire - Bullet For My Valentine',
+            deliveryMode: 'file',
+            format: 'flac',
+            trailingToken: 'flac'
+        }
+    );
+    // 无参数默认语音字段
+    assert.deepEqual(
+        parseMusicCommand('/music 2', { session }),
+        { type: 'select', index: 2, raw: '2', deliveryMode: 'voice', format: null, trailingToken: null }
+    );
+    // 歌名中间有 mp3 但不在末尾：整段当搜索/歌名
+    assert.deepEqual(
+        parseMusicCommand('/music song mp3 live', { session }),
+        { type: 'search', query: 'song mp3 live', deliveryMode: 'voice', format: null, trailingToken: null }
+    );
+    // 搜索场景末尾格式也要剥离，避免把格式吃进 query
+    assert.deepEqual(
+        parseMusicCommand('/music Screen Aim Fire mp3'),
+        { type: 'search', query: 'Screen Aim Fire', deliveryMode: 'file', format: 'mp3', trailingToken: 'mp3' }
+    );
+});
+
+
+
+test('选错可重选；退出只走专门的 /music-exit', async () => {
+    // /music 取消 不再是退出别名，应被当成普通搜索词
+    assert.deepEqual(
+        parseMusicCommand('/music 取消'),
+        { type: 'search', query: '取消', deliveryMode: 'voice', format: null, trailingToken: null }
+    );
+    assert.deepEqual(parseMusicCommand('/music-exit'), { type: 'exit' });
+
+    const client = createFakeClient({
+        searchResponses: [{
+            session_id: 's_reselect',
+            expires_in: 1800,
+            results: [buildResult(1, '晴天 - 周杰伦'), buildResult(2, '七里香 - 周杰伦')]
+        }]
+    });
+    const { handler, store } = createHandler({ client });
+    const recorder = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 晴天', ...recorder });
+    assert.ok(store.get('group:100:user:1001'));
+
+    const bad = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 9', ...recorder });
+    assert.equal(bad.reason, 'index_out_of_range');
+    assert.ok(store.get('group:100:user:1001'), '选错后候选必须保留以便重选');
+    assert.ok(recorder.texts.at(-1).includes('可重发序号'), recorder.texts.at(-1));
+    assert.ok(recorder.texts.at(-1).includes('/music-exit'), recorder.texts.at(-1));
+    assert.equal(recorder.texts.at(-1).includes('/music 取消'), false, '不应再引导 /music 取消');
+
+    // 重选成功
+    const ok = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1', ...recorder });
+    assert.equal(ok.ok, true);
+
+    // 专门退出指令清空
+    const exited = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music-exit', ...recorder });
+    assert.equal(exited.reason, 'exit');
+    assert.equal(store.get('group:100:user:1001'), null);
+    assert.ok(recorder.texts.at(-1).includes('已退出点歌状态'), recorder.texts.at(-1));
+});
+
+test('歌单页脚提示选错可重选，退出仅指引专用指令', () => {
+    const text = formatMusicSearchList('测试', [buildResult(1, '晴天 - 周杰伦')], { expiresInSeconds: 1800 });
+    assert.ok(text.includes('选错了可重发序号'), text);
+    assert.ok(text.includes('/music-exit'), text);
+    assert.equal(text.includes('/music 取消') || text.includes('或 /music 取消'), false, text);
+    assert.ok(text.includes('默认语音') || text.includes('mp3'), text);
+});
+
 
 test('formatMusicSearchList 输出序号、时长与用法提示', () => {
     const text = formatMusicSearchList('晴天 周杰伦', [buildResult(1, '晴天 - 周杰伦'), buildResult(2, '晴天(live) - 周杰伦')], {
@@ -217,7 +347,7 @@ test('搜索后选歌会写出音频并调用语音发送', async () => {
     const selectResult = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1', ...recorder });
     assert.equal(selectResult.ok, true);
     assert.equal(selectResult.reason, 'sent');
-    assert.deepEqual(client.calls.download, [{ sessionId: 's_aaa', index: 1, name: '' }]);
+    assert.deepEqual(client.calls.download, [{ sessionId: 's_aaa', index: 1, name: '', format: 'opus' }]);
     assert.equal(recorder.voices.length, 1);
     assert.equal(recorder.voices[0].exists, true, '发送语音时临时文件必须存在');
     assert.ok(recorder.voices[0].audioPath.endsWith('.mp3'));
@@ -239,7 +369,7 @@ test('用完整歌名选歌时按 name 请求上游', async () => {
     await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 晴天', ...recorder });
     const result = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music Shape of You - Ed Sheeran', ...recorder });
     assert.equal(result.ok, true);
-    assert.deepEqual(client.calls.download, [{ sessionId: 's_name', index: null, name: 'Shape of You - Ed Sheeran' }]);
+    assert.deepEqual(client.calls.download, [{ sessionId: 's_name', index: null, name: 'Shape of You - Ed Sheeran', format: 'opus' }]);
 });
 
 test('同群多用户同时点歌互不串台', async () => {
@@ -263,10 +393,7 @@ test('同群多用户同时点歌互不串台', async () => {
     await handler.handle({ event: GROUP_EVENT_B, plainText: '/music 2', ...recorderB });
     await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1', ...recorderA });
 
-    assert.deepEqual(client.calls.download, [
-        { sessionId: 's_userB', index: 2, name: '' },
-        { sessionId: 's_userA', index: 1, name: '' }
-    ], '每个用户的下载必须带自己的 session_id 与序号');
+    assert.deepEqual(client.calls.download, [{ sessionId: 's_userB', index: 2, name: '', format: 'opus' }, { sessionId: 's_userA', index: 1, name: '', format: 'opus' }], '每个用户的下载必须带自己的 session_id 与序号');
 
     // A 退出不影响 B 的状态
     await handler.handle({ event: GROUP_EVENT_A, plainText: '/music-exit', ...recorderA });
@@ -531,6 +658,110 @@ test('MusicSessionStore 过期清理与容量上限生效', () => {
     assert.equal(store.getStats().sessions, 2, '超过上限时淘汰最旧会话');
     assert.equal(store.get('k1'), null);
     assert.equal(store.get('k3').sessionId, 's3');
+});
+
+
+
+test('resolveMusicDownloadFormat 按 BOT-PARAMS 映射 delivery 与 API format', () => {
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'voice', format: null, trailingToken: null }),
+        { ok: true, deliveryMode: 'voice', format: 'opus' }
+    );
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'voice', format: null, trailingToken: 'voice' }),
+        { ok: true, deliveryMode: 'voice', format: 'opus' }
+    );
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'file', format: null, trailingToken: 'file' }),
+        { ok: true, deliveryMode: 'file', format: 'mp3' }
+    );
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'file', format: 'm4a', trailingToken: 'm4a' }),
+        { ok: true, deliveryMode: 'file', format: 'm4a' }
+    );
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'file', format: 'flac', trailingToken: 'flac' }).ok,
+        false
+    );
+});
+
+test('选歌默认语音；末尾 mp3 走文件发送；flac 明确拒绝', async () => {
+    const downloadArgs = [];
+    const client = {
+        calls: { search: [], download: downloadArgs },
+        async search(query) {
+            this.calls.search.push(query);
+            return {
+                session_id: 's_delivery_' + this.calls.search.length,
+                expires_in: 1800,
+                results: [buildResult(1, '晴天 - 周杰伦'), buildResult(2, '七里香 - 周杰伦')]
+            };
+        },
+        async download(args) {
+            downloadArgs.push(args);
+            if (String(args.format || '').toLowerCase() === 'flac') {
+                throw new MusicBridgeError('当前点歌桥接不支持 flac，请改用 mp3 / m4a / opus 或 file', {
+                    code: 'INVALID_REQUEST',
+                    status: 400
+                });
+            }
+            return {
+                buffer: Buffer.from('audio-' + (args.format || 'mp3')),
+                format: args.format || 'mp3',
+                title: '晴天',
+                artists: '周杰伦',
+                videoId: 'vid_delivery',
+                durationSeconds: 90,
+                cacheHit: false
+            };
+        }
+    };
+    const { handler } = createHandler({ client });
+
+    // default voice
+    const recVoice = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 晴天', ...recVoice });
+    const voiceResult = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1', ...recVoice });
+    assert.equal(voiceResult.ok, true);
+    assert.equal(voiceResult.reason, 'sent');
+    assert.equal(voiceResult.deliveryMode, 'voice');
+    assert.equal(recVoice.voices.length, 1);
+    assert.equal(recVoice.files.length, 0);
+    assert.equal(downloadArgs[0].format, 'opus', '默认语音应按 BOT-PARAMS 请求 opus');
+
+    // file via trailing mp3
+    const recFile = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 晴天', ...recFile });
+    const fileResult = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1 mp3', ...recFile });
+    assert.equal(fileResult.ok, true);
+    assert.equal(fileResult.reason, 'sent_file');
+    assert.equal(fileResult.deliveryMode, 'file');
+    assert.equal(fileResult.format, 'mp3');
+    assert.equal(recFile.files.length, 1);
+    assert.equal(recFile.voices.length, 0);
+    assert.equal(downloadArgs[1].format, 'mp3');
+    assert.ok(String(recFile.files[0].meta.fileName || '').endsWith('.mp3'));
+
+    // flac rejected with clear message and no download success path
+    const recFlac = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 晴天', ...recFlac });
+    const flacResult = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1 flac', ...recFlac });
+    assert.equal(flacResult.ok, false);
+    assert.equal(flacResult.reason, 'unsupported_format');
+    assert.equal(recFlac.voices.length, 0);
+    assert.equal(recFlac.files.length, 0);
+    assert.ok(recFlac.texts.some((text) => text.includes('不支持 flac') || text.includes('暂不支持 flac')), recFlac.texts.join('\n'));
+});
+
+test('index.js 已接入点歌文件发送回调', () => {
+    const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+    assert.ok(source.includes('sendFile: async'), 'handleMusicCommand 必须注入 sendFile');
+    assert.ok(source.includes('bot.sendGroupFile') || source.includes('sendGroupFile('), '群文件发送');
+    assert.ok(source.includes('bot.sendPrivateFile') || source.includes('sendPrivateFile('), '私聊文件发送');
+    const onebotSource = fs.readFileSync(new URL('../src/onebot.js', import.meta.url), 'utf8');
+    assert.ok(onebotSource.includes('async sendGroupFile'));
+    assert.ok(onebotSource.includes('async sendPrivateFile'));
+    assert.ok(onebotSource.includes("type: 'file'"));
 });
 
 test('index.js 已接入点歌指令、访问控制与语音下发', () => {

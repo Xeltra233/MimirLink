@@ -5,6 +5,7 @@
 import WebSocket from 'ws';
 import { EventEmitter } from 'events';
 import fs from 'fs';
+import path from 'path';
 
 function summarizeMessagePayload(message) {
     if (typeof message === 'string') {
@@ -444,7 +445,7 @@ export class OneBotClient extends EventEmitter {
         const audioData = fs.readFileSync(filePath);
         const base64Data = audioData.toString('base64');
         const safePrefixSegments = Array.isArray(prefixSegments) ? prefixSegments : [];
-        
+
         return this._call('send_group_msg', {
             group_id: groupId,
             message: [
@@ -469,7 +470,7 @@ export class OneBotClient extends EventEmitter {
         const audioData = fs.readFileSync(filePath);
         const base64Data = audioData.toString('base64');
         const safePrefixSegments = Array.isArray(prefixSegments) ? prefixSegments : [];
-        
+
         return this._call('send_private_msg', {
             user_id: userId,
             message: [
@@ -478,6 +479,58 @@ export class OneBotClient extends EventEmitter {
                     type: 'record',
                     data: {
                         file: `base64://${base64Data}`
+                    }
+                }
+            ]
+        });
+    }
+
+    /**
+     * 发送群文件（base64，兼容 Docker 环境）
+     * @param {number} groupId
+     * @param {string} filePath
+     * @param {object} options
+     */
+    async sendGroupFile(groupId, filePath, options = {}) {
+        const fileData = fs.readFileSync(filePath);
+        const base64Data = fileData.toString('base64');
+        const safePrefixSegments = Array.isArray(options.prefixSegments) ? options.prefixSegments : [];
+        const fileName = String(options.fileName || path.basename(filePath) || 'track.bin');
+        return this._call('send_group_msg', {
+            group_id: groupId,
+            message: [
+                ...safePrefixSegments,
+                {
+                    type: 'file',
+                    data: {
+                        file: `base64://${base64Data}`,
+                        name: fileName
+                    }
+                }
+            ]
+        });
+    }
+
+    /**
+     * 发送私聊文件（base64，兼容 Docker 环境）
+     * @param {number} userId
+     * @param {string} filePath
+     * @param {object} options
+     */
+    async sendPrivateFile(userId, filePath, options = {}) {
+        const fileData = fs.readFileSync(filePath);
+        const base64Data = fileData.toString('base64');
+        const safePrefixSegments = Array.isArray(options.prefixSegments) ? options.prefixSegments : [];
+        const fileName = String(options.fileName || path.basename(filePath) || 'track.bin');
+        return this._call('send_private_msg', {
+            user_id: userId,
+            message: [
+                ...safePrefixSegments,
+                {
+                    type: 'file',
+                    data: {
+                        file: `base64://${base64Data}`,
+                        name: fileName
                     }
                 }
             ]

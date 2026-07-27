@@ -9,6 +9,18 @@ import { randomBytes } from 'crypto';
 import { spawn } from 'child_process';
 
 export const MUSIC_AUDIO_FORMATS = Object.freeze(['mp3', 'm4a', 'opus']);
+// 选歌命令末尾可选发送参数（只认最后一个独立单词）
+export const MUSIC_TRAILING_FORMAT_TOKENS = Object.freeze(['mp3', 'm4a', 'opus', 'flac']);
+export const MUSIC_TRAILING_MODE_TOKENS = Object.freeze(['file', 'voice']);
+export const MUSIC_TRAILING_PARAM_TOKENS = Object.freeze([
+    ...MUSIC_TRAILING_FORMAT_TOKENS,
+    ...MUSIC_TRAILING_MODE_TOKENS
+]);
+// 末尾独立词：前面必须有正文，避免把单独的 "mp3" 搜索词误吃掉
+const MUSIC_TRAILING_PARAM_RE = new RegExp(
+    '^(?<body>[\\s\\S]*?\\S)\\s+(?<token>' + MUSIC_TRAILING_PARAM_TOKENS.join('|') + ')$',
+    'i'
+);
 export const DEFAULT_MUSIC_BASE_URL = 'http://127.0.0.1:8787';
 export const DEFAULT_MUSIC_COMMAND = '/music';
 export const DEFAULT_MUSIC_EXIT_COMMAND = '/music-exit';
@@ -137,6 +149,123 @@ function matchesCommandPrefix(text, command) {
  * - `/music 关键词` → 新搜索
  * - 已有候选列表时 `/music 3` / `/music 晴天 - 周杰伦` → 选歌
  */
+
+/**
+ * 剥离选歌/搜索参数末尾的发送方式词。
+ * 规则：只认最后一个独立单词，且必须命中白名单；歌名中间的 mp3/flac 等不处理。
+ * 例：
+ * - "1 mp3" -> body=1, file/mp3
+ * - "Scream Aim Fire flac" -> body=Scream Aim Fire, file/flac
+ * - "song mp3 live" -> 不剥离（mp3 不是最后一词）
+ * - "mp3" -> 不剥离（没有前置正文，当作普通关键词）
+ */
+export function splitMusicTrailingParam(argument = '') {
+    const text = sanitizeText(argument);
+    if (!text) {
+        return {
+            body: '',
+            deliveryMode: 'voice',
+            format: null,
+            trailingToken: null
+        };
+    }
+
+    const matched = text.match(MUSIC_TRAILING_PARAM_RE);
+    if (!matched?.groups?.body || !matched?.groups?.token) {
+        return {
+            body: text,
+            deliveryMode: 'voice',
+            format: null,
+            trailingToken: null
+        };
+    }
+
+    const token = String(matched.groups.token).toLowerCase();
+    const body = sanitizeText(matched.groups.body);
+    if (!body) {
+        return {
+            body: text,
+            deliveryMode: 'voice',
+            format: null,
+            trailingToken: null
+        };
+    }
+
+    if (token === 'voice') {
+        return {
+            body,
+            deliveryMode: 'voice',
+            format: null,
+            trailingToken: token
+        };
+    }
+
+    if (token === 'file') {
+        return {
+            body,
+            deliveryMode: 'file',
+            format: null,
+            trailingToken: token
+        };
+    }
+
+    // mp3/m4a/opus/flac => 文件发送 + 指定格式
+    return {
+        body,
+        deliveryMode: 'file',
+        format: token,
+        trailingToken: token
+    };
+}
+
+
+/**
+ * 按 BOT-PARAMS 约定，把用户尾参映射成 API /download 的 format。
+ * - 默认/voice => delivery=voice, format=opus
+ * - file => delivery=file, format=mp3
+ * - mp3/m4a/opus => delivery=file, format=对应值
+ * - flac => 不调 API，提示暂不支持
+ * voice/file 本身不是音频容器，不能原样传给上游。
+ */
+export function resolveMusicDownloadFormat(parsed = {}, config = {}) {
+    const deliveryMode = parsed?.deliveryMode === 'file' ? 'file' : 'voice';
+    const token = String(parsed?.format || parsed?.trailingToken || '').toLowerCase();
+
+    if (token === 'flac') {
+        return {
+            ok: false,
+            deliveryMode: 'file',
+            format: 'flac',
+            reason: 'unsupported_format',
+            message: '暂不支持 flac，请改用 mp3 / m4a / opus'
+        };
+    }
+
+    if (deliveryMode === 'voice') {
+        return {
+            ok: true,
+            deliveryMode: 'voice',
+            // 语音消息更适合 opus；显式传给 /download，不依赖服务端默认 mp3
+            format: 'opus'
+        };
+    }
+
+    if (token === 'mp3' || token === 'm4a' || token === 'opus') {
+        return {
+            ok: true,
+            deliveryMode: 'file',
+            format: token
+        };
+    }
+
+    // 仅 file、或未带具体编码时
+    return {
+        ok: true,
+        deliveryMode: 'file',
+        format: 'mp3'
+    };
+}
+
 export function parseMusicCommand(plainText = '', {
     command = DEFAULT_MUSIC_COMMAND,
     exitCommand = DEFAULT_MUSIC_EXIT_COMMAND,
@@ -164,21 +293,48 @@ export function parseMusicCommand(plainText = '', {
         return { type: 'usage' };
     }
 
+    // 只认最后一个单词作为发送参数；剥离后再做选歌/搜索判断，避免空格歌名被误伤
+    const trailing = splitMusicTrailingParam(argument);
+    const body = trailing.body;
+    if (!body) {
+        return { type: 'usage' };
+    }
+
+    const delivery = {
+        deliveryMode: trailing.deliveryMode,
+        format: trailing.format,
+        trailingToken: trailing.trailingToken
+    };
+
     const results = Array.isArray(session?.results) ? session.results : [];
     if (results.length > 0) {
-        const numericArgument = normalizeDigits(argument);
+        const numericArgument = normalizeDigits(body);
         if (/^\d+$/.test(numericArgument)) {
-            return { type: 'select', index: Number.parseInt(numericArgument, 10), raw: argument };
+            return {
+                type: 'select',
+                index: Number.parseInt(numericArgument, 10),
+                raw: body,
+                ...delivery
+            };
         }
 
-        const wanted = normalizeNameForMatch(argument);
+        const wanted = normalizeNameForMatch(body);
         const matched = results.find((item) => normalizeNameForMatch(item?.display_name) === wanted);
         if (matched) {
-            return { type: 'select', name: sanitizeText(matched.display_name), raw: argument };
+            return {
+                type: 'select',
+                name: sanitizeText(matched.display_name),
+                raw: body,
+                ...delivery
+            };
         }
     }
 
-    return { type: 'search', query: argument };
+    return {
+        type: 'search',
+        query: body,
+        ...delivery
+    };
 }
 
 function formatDuration(result = {}) {
@@ -210,9 +366,10 @@ export function formatMusicSearchList(query, results = [], {
     const minutes = Math.max(1, Math.round(Number(expiresInSeconds) / 60) || 1);
     const header = `🎵 「${sanitizeText(query)}」的搜索结果（${results.length} 条${truncated ? '，上游还有更多' : ''}）`;
     const footer = [
-        `回复 ${command} 序号 选歌，例如 ${command} 1`,
+        `回复 ${command} 序号 选歌，例如 ${command} 1（默认语音；末尾加 mp3 可发文件）`,
         `也可以回复 ${command} 完整歌名`,
-        `${minutes} 分钟内有效，退出点歌请发 ${exitCommand}`
+        `选错了可重发序号；退出请发 ${exitCommand}`,
+        `${minutes} 分钟内有效`
     ].join('\n');
     return `${header}\n${lines.join('\n')}\n${footer}`;
 }
@@ -387,9 +544,18 @@ export class MusicBridgeClient {
         return response.json();
     }
 
-    async download({ sessionId = '', index = null, name = '', videoId = '' } = {}) {
+    async download({ sessionId = '', index = null, name = '', videoId = '', format = '' } = {}) {
         const config = normalizeMusicConfig(this.getConfig());
-        const body = { format: config.format };
+        const requestedFormat = String(format || config.format || 'mp3').toLowerCase();
+        if (requestedFormat === 'flac') {
+            throw new MusicBridgeError('暂不支持 flac，请改用 mp3 / m4a / opus', {
+                code: 'INVALID_REQUEST',
+                status: 400
+            });
+        }
+        const body = {
+            format: MUSIC_AUDIO_FORMATS.includes(requestedFormat) ? requestedFormat : config.format
+        };
         if (videoId) {
             body.video_id = videoId;
         } else if (Number.isInteger(index)) {
@@ -521,6 +687,15 @@ export class MusicSessionStore {
     }
 }
 
+function buildMusicFileName(track = {}, fallbackName = '', format = 'mp3') {
+    const base = sanitizeText(track.display_name || track.title || fallbackName || 'track')
+        .replace(/[\\/:*?"<>|]/g, '_')
+        .replace(/\s+/g, ' ')
+        .slice(0, 80) || 'track';
+    const ext = sanitizeText(format || track.format || 'mp3').toLowerCase() || 'mp3';
+    return `${base}.${ext}`;
+}
+
 function buildTrackLabel(track = {}, fallback = '') {
     const title = sanitizeText(track.title);
     const artists = sanitizeText(track.artists);
@@ -560,7 +735,7 @@ export class MusicCommandHandler {
         return normalizeMusicConfig(this.getConfig());
     }
 
-    async handle({ event = {}, plainText = '', sendText, sendVoice, onCommandAccepted } = {}) {
+    async handle({ event = {}, plainText = '', sendText, sendVoice, sendFile, onCommandAccepted } = {}) {
         const config = this.getNormalizedConfig();
         const sessionKey = buildMusicSessionKey(event);
         const session = this.store.get(sessionKey);
@@ -600,8 +775,9 @@ export class MusicCommandHandler {
             await reply([
                 `🎵 点歌用法：`,
                 `${config.command} 歌名 关键词 —— 搜索歌曲`,
-                `${config.command} 序号 或 ${config.command} 完整歌名 —— 选歌并发语音`,
-                `${config.exitCommand} —— 退出点歌状态`
+                `${config.command} 序号 或 ${config.command} 完整歌名 —— 选歌（默认语音）`,
+                `${config.command} 序号 mp3/m4a/opus/file —— 选歌并发送文件`,
+                `选错了可重发序号/歌名；退出请发 ${config.exitCommand}`
             ].join('\n'));
             return { handled: true, ok: true, reason: 'usage', sessionKey };
         }
@@ -610,7 +786,7 @@ export class MusicCommandHandler {
             return this.handleSearch({ config, sessionKey, query: parsed.query, reply });
         }
 
-        return this.handleSelect({ config, sessionKey, session, parsed, reply, sendVoice });
+        return this.handleSelect({ config, sessionKey, session, parsed, reply, sendVoice, sendFile });
     }
 
     async handleSearch({ config, sessionKey, query, reply }) {
@@ -654,7 +830,7 @@ export class MusicCommandHandler {
         }
     }
 
-    async handleSelect({ config, sessionKey, session, parsed, reply, sendVoice }) {
+    async handleSelect({ config, sessionKey, session, parsed, reply, sendVoice, sendFile }) {
         if (!session) {
             await reply(`当前没有候选歌单，请先发送 ${config.command} 歌名 搜索`);
             return { handled: true, ok: false, reason: 'no_session', sessionKey };
@@ -665,13 +841,13 @@ export class MusicCommandHandler {
         if (Number.isInteger(parsed.index)) {
             picked = results.find((item) => Number(item?.index) === parsed.index) || null;
             if (!picked) {
-                await reply(`序号 ${parsed.index} 不在候选里，请选 1 - ${results.length}`);
+                await reply(`序号 ${parsed.index} 不在候选里，请选 1 - ${results.length}。选错了可重发序号，或发 ${config.exitCommand} 退出`);
                 return { handled: true, ok: false, reason: 'index_out_of_range', sessionKey };
             }
         } else {
             picked = results.find((item) => normalizeNameForMatch(item?.display_name) === normalizeNameForMatch(parsed.name)) || null;
             if (!picked) {
-                await reply(`候选里没有「${parsed.name}」，请改用序号选歌`);
+                await reply(`候选里没有「${parsed.name}」，请改用序号选歌。选错了可重发正确序号，或发 ${config.exitCommand} 退出`);
                 return { handled: true, ok: false, reason: 'name_not_found', sessionKey };
             }
         }
@@ -689,25 +865,81 @@ export class MusicCommandHandler {
             await reply('你上一首还在下载中，等这首发出来再点下一首');
             return { handled: true, ok: false, reason: 'user_busy', sessionKey };
         }
-
         const createdPaths = [];
         try {
+            const resolved = resolveMusicDownloadFormat(parsed, config);
+            const deliveryMode = resolved.deliveryMode;
+            const requestFormat = resolved.format;
+
+            if (!resolved.ok) {
+                await reply(resolved.message || '暂不支持该音频格式，请改用 mp3 / m4a / opus');
+                return {
+                    handled: true,
+                    ok: false,
+                    reason: resolved.reason || 'unsupported_format',
+                    sessionKey,
+                    format: resolved.format || null,
+                    deliveryMode
+                };
+            }
+
             const segmentSeconds = Number(config.voiceSegmentSeconds) || 0;
             const durationHint = Number(picked.duration_seconds) || 0;
-            const estimatedParts = segmentSeconds > 0 && durationHint > 0
+            const estimatedParts = deliveryMode === 'voice' && segmentSeconds > 0 && durationHint > 0
                 ? Math.max(1, Math.ceil(durationHint / segmentSeconds))
                 : 1;
-            await reply(estimatedParts > 1
-                ? `🎵 正在下载「${picked.display_name}」，约 ${estimatedParts} 段语音连发，请稍等`
-                : `🎵 正在下载「${picked.display_name}」，转成语音后发出来，请稍等`);
+
+            if (deliveryMode === 'file') {
+                await reply(`📁 正在下载「${picked.display_name}」并按文件发送（${String(requestFormat).toLowerCase()}），请稍等`);
+            } else {
+                await reply(estimatedParts > 1
+                    ? `🎵 正在下载「${picked.display_name}」，约 ${estimatedParts} 段语音连发，请稍等`
+                    : `🎵 正在下载「${picked.display_name}」，转成语音后发出来，请稍等`);
+            }
 
             const track = await this.client.download({
                 sessionId: session.sessionId,
                 index: Number.isInteger(parsed.index) ? parsed.index : null,
-                name: Number.isInteger(parsed.index) ? '' : parsed.name
+                name: Number.isInteger(parsed.index) ? '' : parsed.name,
+                format: requestFormat
             });
             const audioPath = await this.writeAudioFile(track);
             createdPaths.push(audioPath);
+
+            if (deliveryMode === 'file') {
+                if (typeof sendFile !== 'function') {
+                    throw new Error('当前会话不支持发送文件');
+                }
+                const fileName = buildMusicFileName(track, picked.display_name, track.format || requestFormat);
+                await sendFile(audioPath, {
+                    track,
+                    label: buildTrackLabel(track, picked.display_name),
+                    picked,
+                    fileName,
+                    format: track.format || requestFormat,
+                    deliveryMode: 'file'
+                });
+                this.logger?.info?.('[点歌] 文件已发送', {
+                    sessionKey,
+                    videoId: track.videoId || picked.video_id || '',
+                    bytes: track.buffer.length,
+                    cacheHit: track.cacheHit,
+                    format: track.format || requestFormat,
+                    deliveryMode: 'file'
+                });
+                return {
+                    handled: true,
+                    ok: true,
+                    reason: 'sent_file',
+                    sessionKey,
+                    videoId: track.videoId || picked.video_id || '',
+                    bytes: track.buffer.length,
+                    parts: 1,
+                    deliveryMode: 'file',
+                    format: track.format || requestFormat
+                };
+            }
+
             if (typeof sendVoice !== 'function') {
                 throw new Error('当前会话不支持发送语音');
             }
@@ -734,10 +966,10 @@ export class MusicCommandHandler {
                     picked,
                     part,
                     totalParts,
-                    segmentSeconds
+                    segmentSeconds,
+                    deliveryMode: 'voice'
                 });
                 if (totalParts > 1 && part < totalParts) {
-                    // 给协议端一点喘息时间，降低连续语音被限流概率
                     await sleep(350);
                 }
             }
@@ -752,7 +984,8 @@ export class MusicCommandHandler {
                 bytes: track.buffer.length,
                 cacheHit: track.cacheHit,
                 parts: totalParts,
-                segmentSeconds
+                segmentSeconds,
+                deliveryMode: 'voice'
             });
             return {
                 handled: true,
@@ -761,7 +994,8 @@ export class MusicCommandHandler {
                 sessionKey,
                 videoId: track.videoId || picked.video_id || '',
                 bytes: track.buffer.length,
-                parts: totalParts
+                parts: totalParts,
+                deliveryMode: 'voice'
             };
         } catch (error) {
             this.logger?.warn?.(`[点歌] 选歌失败: ${sessionKey} ${error.code || ''} ${error.message}`);

@@ -3022,6 +3022,29 @@ async function handleMusicCommand(event, plainText) {
                 throw new Error('当前 OneBot 适配器不支持发送私聊语音');
             }
             await bot.sendPrivateRecord(event.user_id, audioPath, prefixSegments);
+        },
+        sendFile: async (filePath, meta = {}) => {
+            const prefixSegments = [];
+            if (config.chat?.quoteReplyEnabled !== false && event.message_id) {
+                prefixSegments.push({ type: 'reply', data: { id: String(event.message_id) } });
+            }
+            if (event.message_type === 'group' && config.chat?.mentionSenderOnReply !== false && event.user_id) {
+                prefixSegments.push({ type: 'at', data: { qq: String(event.user_id) } });
+            }
+            const fileName = meta.fileName || meta.name || 'track.mp3';
+
+            if (event.message_type === 'group') {
+                if (typeof bot.sendGroupFile !== 'function') {
+                    throw new Error('当前 OneBot 适配器不支持发送群文件');
+                }
+                await bot.sendGroupFile(event.group_id, filePath, { prefixSegments, fileName });
+                return;
+            }
+
+            if (typeof bot.sendPrivateFile !== 'function') {
+                throw new Error('当前 OneBot 适配器不支持发送私聊文件');
+            }
+            await bot.sendPrivateFile(event.user_id, filePath, { prefixSegments, fileName });
         }
     });
 

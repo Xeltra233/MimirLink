@@ -11815,7 +11815,9 @@
                                     <input type="checkbox" id="config-chat-music-enabled" onchange="updateMusicFields(); markConfigDirty('点歌开关已修改')">
                                     启用点歌指令
                                 </label>
-                                <p class="hint-text">默认关闭。开启后普通成员可用 <code>/music 歌名</code> 搜索、<code>/music 序号</code> 选歌，bot 会下载音频并按约 2 分钟切段后以 QQ 语音连发。风险：会占用带宽、磁盘临时空间和 CPU（转码/切段），且依赖本机 ytmusic-bridge 服务；候选状态按「群 + 用户」隔离，多人同时点歌不会串台。</p>
+                                <p class="hint-text">默认关闭。开启后可用 <code>/music 歌名</code> 搜索、<code>/music 序号</code> 或完整歌名选歌。<br>
+默认以<strong>语音</strong>发送（下载 format=opus，并按约 2 分钟切段连发）。若要发文件，在命令<strong>最后一词</strong>加格式：<code>mp3</code>/<code>m4a</code>/<code>opus</code>，或 <code>file</code>（默认 mp3）。例：<code>/music 1 mp3</code>、<code>/music 晴天 - 周杰伦 m4a</code>。<code>flac</code> 暂不支持。<br>
+选错可重发序号；退出请发专用指令（默认 <code>/music-exit</code>）。候选按「群+用户」隔离。风险：占用带宽/临时磁盘/CPU，依赖 ytmusic-bridge。</p>
                             </div>
                             <div class="form-group">
                                 <label>点歌指令文本</label>
@@ -11825,7 +11827,7 @@
                             <div class="form-group">
                                 <label>退出点歌指令文本</label>
                                 <input type="text" id="config-chat-music-exit-command" placeholder="/music-exit">
-                                <p class="hint-text">发送后清空该用户的候选歌单。不能含空格，留空回退 <code>/music-exit</code>。</p>
+                                <p class="hint-text">专用退出指令：发送后清空该用户候选歌单。不能含空格，留空回退 <code>/music-exit</code>。选错请重发序号；不要用 <code>/music 取消</code> 当退出。</p>
                             </div>
                             <div class="form-group">
                                 <label>桥接服务地址</label>
@@ -11854,7 +11856,7 @@
                                     <option value="m4a">m4a</option>
                                     <option value="opus">opus（体积最小）</option>
                                 </select>
-                                <p class="hint-text">QQ 语音由 OneBot 端再转码，mp3 最稳妥；opus/m4a 视客户端可能发送失败。</p>
+                                <p class="hint-text">这是「未指定尾参时的备用下载格式」配置项；实际每次选歌会按命令尾参映射：默认/voice→opus，file→mp3，mp3/m4a/opus→对应值。QQ 语音由 OneBot 再处理，文件发送则按实际 format 下发。</p>
                             </div>
                             <details style="margin-top:8px">
                                 <summary>点歌详细配置</summary>
@@ -11867,7 +11869,7 @@
                                     <div class="form-group">
                                         <label>语音切段时长（秒）</label>
                                         <input type="number" id="config-chat-music-voice-segment" placeholder="120" min="0" max="600">
-                                        <p class="hint-text">QQ 语音单条约 2 分钟。超过该秒数会用 ffmpeg 切成多段顺序连发。默认 120；填 0 表示不切段（不推荐，长歌可能发失败）。</p>
+                                        <p class="hint-text">仅对「语音发送」生效。QQ 语音单条约 2 分钟；超过会用 ffmpeg 切段顺序连发。默认 120；0=不切段（不推荐）。文件发送不会切段。</p>
                                     </div>
                                     <div class="form-group">
                                         <label>音频体积上限（MB）</label>
