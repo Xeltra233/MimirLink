@@ -73,17 +73,17 @@ function createFakeClient({ searchResponses = [], downloadImpl } = {}) {
     };
 }
 
-function createHandler({ client, config = {}, audioDir, runCommand } = {}) {
-    const store = new MusicSessionStore();
+function createHandler({ client, config = {}, audioDir, runCommand, store } = {}) {
+    const sessionStore = store || new MusicSessionStore();
     const handler = new MusicCommandHandler({
         getConfig: () => ({ ...BASE_CONFIG, ...config }),
         client,
-        store,
+        store: sessionStore,
         logger: { info() {}, warn() {}, error() {} },
         audioDir: audioDir || fs.mkdtempSync(path.join(os.tmpdir(), 'mimir-music-')),
         runCommand
     });
-    return { handler, store };
+    return { handler, store: sessionStore };
 }
 
 function createRecorder() {
@@ -485,6 +485,35 @@ test('MusicBridgeClient 解析下载响应头并按上限拒绝过大文件', as
         () => tooLargeClient.download({ sessionId: 's1', index: 1 }),
         (error) => error instanceof MusicBridgeError && error.code === 'FILE_TOO_LARGE'
     );
+});
+
+
+test('本地 TTL 过期后数字选歌会变成新搜索（已知摩擦，锁定现状）', async () => {
+    let clock = 1000;
+    const store = new MusicSessionStore({ now: () => clock });
+    store.set('group:100:user:1001', {
+        sessionId: 's_old',
+        query: 'Screen Aim Fire',
+        results: [buildResult(1, 'Scream Aim Fire - Bullet For My Valentine')],
+        ttlMs: 100
+    });
+    clock += 200;
+    assert.equal(store.get('group:100:user:1001'), null, '本地 TTL 过期后候选应消失');
+
+    const client = createFakeClient({
+        searchResponses: [{
+            session_id: 's_after_expire',
+            expires_in: 1800,
+            results: [buildResult(1, 'One - Fake')]
+        }]
+    });
+    const { handler } = createHandler({ client, store });
+    const recorder = createRecorder();
+    const result = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1', ...recorder });
+
+    assert.equal(result.reason, 'search', '无候选时纯数字参数当前会走搜索而不是 select/no_session');
+    assert.deepEqual(client.calls.search, ['1']);
+    assert.ok(recorder.texts.some((text) => text.includes('「1」的搜索结果') || text.includes('One - Fake')), recorder.texts.join('\n'));
 });
 
 test('MusicSessionStore 过期清理与容量上限生效', () => {
