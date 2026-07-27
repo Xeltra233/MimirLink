@@ -11847,15 +11847,6 @@
                                 <input type="number" id="config-chat-music-min-score" placeholder="0.35" min="0" max="1" step="0.05">
                                 <p class="hint-text">0 - 1。调高结果更准但更容易搜不到，调低会混入无关曲目。</p>
                             </div>
-                            <div class="form-group">
-                                <label>音频格式</label>
-                                <select id="config-chat-music-format" onchange="markConfigDirty('点歌音频格式已修改')">
-                                    <option value="mp3">mp3（兼容性最好）</option>
-                                    <option value="m4a">m4a</option>
-                                    <option value="opus">opus（体积最小）</option>
-                                </select>
-                                <p class="hint-text">这是「未指定尾参时的备用下载格式」配置项；实际每次选歌会按命令尾参映射：默认/voice→opus，file→mp3，mp3/m4a/opus→对应值。QQ 语音由 OneBot 再处理，文件发送则按实际 format 下发。</p>
-                            </div>
                             <details style="margin-top:8px">
                                 <summary>点歌详细配置</summary>
                                 <div style="margin-top:8px">
@@ -19873,9 +19864,6 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 if (musicDraft.maxFilesizeMB > 30) {
                     warnings.push('点歌音频体积上限超过 30MB，QQ 语音大概率发送失败');
                 }
-                if (musicDraft.format !== 'mp3') {
-                    warnings.push('点歌音频格式不是 mp3，部分 QQ 客户端可能无法播放语音');
-                }
             }
 
             if (draft.ai.tools.webSearch.maxResults < 1) {
@@ -20049,7 +20037,6 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 'config-chat-music-api-key',
                 'config-chat-music-limit',
                 'config-chat-music-min-score',
-                'config-chat-music-format',
                 'config-chat-music-max-duration',
                 'config-chat-music-voice-segment',
                 'config-chat-music-max-filesize',
@@ -20401,7 +20388,6 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-music-api-key').placeholder = currentConfig.chat?.music?.hasApiKey ? '已配置桥接 API Key，留空表示不修改' : '桥接服务未开鉴权时留空';
                 document.getElementById('config-chat-music-limit').value = currentConfig.chat?.music?.limit ?? 10;
                 document.getElementById('config-chat-music-min-score').value = currentConfig.chat?.music?.minScore ?? 0.35;
-                document.getElementById('config-chat-music-format').value = currentConfig.chat?.music?.format || 'mp3';
                 document.getElementById('config-chat-music-max-duration').value = currentConfig.chat?.music?.maxDurationSeconds ?? 900;
                 document.getElementById('config-chat-music-voice-segment').value = currentConfig.chat?.music?.voiceSegmentSeconds ?? 120;
                 document.getElementById('config-chat-music-max-filesize').value = currentConfig.chat?.music?.maxFilesizeMB ?? 30;
@@ -20831,7 +20817,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                             || (currentConfig.chat?.music?.hasApiKey ? '******' : ''),
                         limit: Math.min(Math.max(readIntegerInput('config-chat-music-limit', 10), 1), 20),
                         minScore: Math.min(Math.max(Number(document.getElementById('config-chat-music-min-score').value) || 0.35, 0), 1),
-                        format: document.getElementById('config-chat-music-format').value || 'mp3',
+                        format: 'mp3',
                         maxDurationSeconds: Math.min(Math.max(readIntegerInput('config-chat-music-max-duration', 900), 0), 7200),
                         voiceSegmentSeconds: Math.min(Math.max(readIntegerInput('config-chat-music-voice-segment', 120), 0), 600),
                         maxFilesizeMB: Math.min(Math.max(readIntegerInput('config-chat-music-max-filesize', 30), 1), 200),

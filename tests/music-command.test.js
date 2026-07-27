@@ -597,6 +597,7 @@ test('MusicBridgeClient 解析下载响应头并按上限拒绝过大文件', as
     assert.equal(track.durationSeconds, 270);
     assert.equal(track.cacheHit, true);
     assert.equal(track.buffer.length, 10);
+    assert.equal(track.format, 'mp3', '未显式传 format 时回退 config.format');
 
     const tooLargeClient = new MusicBridgeClient({
         getConfig: () => ({ ...BASE_CONFIG, maxFilesizeMB: 1 }),
@@ -890,3 +891,105 @@ test('voiceSegmentSeconds=0 时不切段', async () => {
     assert.equal(recorder.voices.length, 1);
     assert.equal(splitCalls, 0);
 });
+
+
+test('MusicBridgeClient.download 返回请求 format 而不是全局 config.format', async () => {
+    const requests = [];
+    const client = new MusicBridgeClient({
+        // 全局默认 mp3；请求显式 opus 时返回值必须是 opus
+        getConfig: () => ({ ...BASE_CONFIG, format: 'mp3', maxFilesizeMB: 30 }),
+        fetchImpl: async (url, options) => {
+            requests.push({ url, options });
+            return {
+                ok: true,
+                status: 200,
+                headers: new Headers({
+                    'content-length': '4',
+                    'x-track-title': encodeURIComponent('Scream Aim Fire'),
+                    'x-track-artists': encodeURIComponent('Bullet For My Valentine'),
+                    'x-track-video-id': 'XjN_p416_nM',
+                    'x-track-duration': '268',
+                    'x-cache': 'miss'
+                }),
+                arrayBuffer: async () => new TextEncoder().encode('opus').buffer
+            };
+        }
+    });
+
+    const track = await client.download({ sessionId: 's_fmt', index: 1, format: 'opus' });
+    assert.equal(track.format, 'opus', '不得把实际下载格式回写成 config.format=mp3');
+    assert.equal(track.videoId, 'XjN_p416_nM');
+    assert.equal(requests.length, 1);
+    assert.deepEqual(JSON.parse(requests[0].options.body), {
+        format: 'opus',
+        session_id: 's_fmt',
+        index: 1
+    });
+});
+
+test('流复制切段失败时回退 mp3 转码切段', async () => {
+    const audioDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mimir-music-reencode-'));
+    const ffmpegCalls = [];
+    const client = createFakeClient({
+        searchResponses: [{
+            session_id: 's_reencode',
+            expires_in: 1800,
+            results: [buildResult(1, '长歌 - 测试', { duration: '4:30', duration_seconds: 270 })]
+        }],
+        downloadImpl: async (args) => ({
+            // 模拟 voice 默认拉到的 opus
+            buffer: Buffer.from('opus-audio-source'),
+            format: args.format || 'opus',
+            title: '长歌',
+            artists: '测试',
+            videoId: 'vid_reencode',
+            durationSeconds: 270,
+            cacheHit: false
+        })
+    });
+
+    const { handler } = createHandler({
+        client,
+        audioDir,
+        config: { voiceSegmentSeconds: 120 },
+        runCommand: async (_cmd, args) => {
+            ffmpegCalls.push(args.slice());
+            const pattern = args.at(-1);
+            if (args.includes('copy')) {
+                throw new Error('Invalid audio stream. Exactly one MP3 audio stream is required.');
+            }
+            if (args.includes('libmp3lame')) {
+                for (let i = 0; i < 3; i += 1) {
+                    const file = pattern.replace('%03d', String(i).padStart(3, '0'));
+                    fs.writeFileSync(file, Buffer.from(`seg-${i}`));
+                }
+                return;
+            }
+            throw new Error('unexpected ffmpeg args: ' + args.join(' '));
+        }
+    });
+
+    const recorder = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 长歌', ...recorder });
+    const result = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1', ...recorder });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.parts, 3, '转码切段成功后应发 3 段');
+    assert.equal(recorder.voices.length, 3);
+    assert.equal(ffmpegCalls.length, 2, '应先 copy 再 libmp3lame');
+    assert.ok(ffmpegCalls[0].includes('copy'));
+    assert.ok(ffmpegCalls[1].includes('libmp3lame'));
+    // copy 尝试应使用 opus 扩展名（来自实际 format 回写）
+    assert.ok(String(ffmpegCalls[0].at(-1)).includes('.opus') || String(ffmpegCalls[0].at(-1)).endsWith('.opus') || /%03d\.opus$/.test(String(ffmpegCalls[0].at(-1))), ffmpegCalls[0].at(-1));
+    assert.ok(String(ffmpegCalls[1].at(-1)).includes('.mp3'), ffmpegCalls[1].at(-1));
+    const leftover = fs.readdirSync(audioDir);
+    assert.equal(leftover.length, 0, `临时文件未清理: ${leftover.join(',')}`);
+});
+
+test('配置页已移除点歌音频格式下拉', () => {
+    const html = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+    assert.equal(html.includes('config-chat-music-format'), false, '不应再有 format 选择器 id');
+    assert.equal(html.includes('<label>音频格式</label>'), false, '不应再显示音频格式标签');
+    assert.ok(html.includes("format: 'mp3'"), '保存时应硬编码 format 兜底，避免依赖已删除 DOM');
+});
+

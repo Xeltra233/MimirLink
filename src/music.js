@@ -592,9 +592,14 @@ export class MusicBridgeClient {
             );
         }
 
+        // 必须以本次实际请求/响应格式为准，不能回写成全局 config.format
+        // 否则 voice 默认拉 opus 却落成 .mp3，ffmpeg -c copy 切段会直接失败
+        const actualFormat = MUSIC_AUDIO_FORMATS.includes(String(body.format || '').toLowerCase())
+            ? String(body.format).toLowerCase()
+            : (MUSIC_AUDIO_FORMATS.includes(String(config.format || '').toLowerCase()) ? String(config.format).toLowerCase() : 'mp3');
         return {
             buffer,
-            format: config.format,
+            format: actualFormat,
             title: decodeHeaderValue(response.headers?.get?.('x-track-title')),
             artists: decodeHeaderValue(response.headers?.get?.('x-track-artists')),
             videoId: sanitizeText(response.headers?.get?.('x-track-video-id')),
@@ -1029,44 +1034,68 @@ export class MusicCommandHandler {
             throw new Error('未配置音频临时目录');
         }
 
-        const segmentPattern = path.join(
+        const collectSegments = async (pattern, ext) => {
+            const names = await this.fileSystem.readdir(this.audioDir);
+            const prefix = path.basename(pattern).split('%03d')[0];
+            return names
+                .filter((name) => name.startsWith(prefix) && name.endsWith(`.${ext}`))
+                .sort()
+                .map((name) => path.join(this.audioDir, name));
+        };
+
+        const inputExt = path.extname(audioPath).replace(/^\./, '').toLowerCase() || String(format || 'mp3').toLowerCase();
+        const copyExt = inputExt || 'mp3';
+        const copyPattern = path.join(
             this.audioDir,
-            `music_seg_${Date.now()}_${randomBytes(3).toString('hex')}_%03d.${format}`
+            `music_seg_${Date.now()}_${randomBytes(3).toString('hex')}_%03d.${copyExt}`
         );
+
         try {
+            // 1) 优先流复制（同容器最快）
+            try {
+                await this.runCommand(this.ffmpegPath, [
+                    '-y',
+                    '-i', audioPath,
+                    '-f', 'segment',
+                    '-segment_time', String(seconds),
+                    '-reset_timestamps', '1',
+                    '-c', 'copy',
+                    copyPattern
+                ]);
+                const copied = await collectSegments(copyPattern, copyExt);
+                if (copied.length > 0) {
+                    return copied;
+                }
+            } catch (copyError) {
+                this.logger?.warn?.(`[点歌] 流复制切段失败，改用 mp3 转码切段: ${copyError.message}`);
+            }
+
+            // 2) 回退：统一转 mp3 再切段，兼容 opus/m4a 输入给 QQ 语音
+            const mp3Pattern = path.join(
+                this.audioDir,
+                `music_seg_${Date.now()}_${randomBytes(3).toString('hex')}_%03d.mp3`
+            );
             await this.runCommand(this.ffmpegPath, [
                 '-y',
                 '-i', audioPath,
                 '-f', 'segment',
                 '-segment_time', String(seconds),
                 '-reset_timestamps', '1',
-                '-c', 'copy',
-                segmentPattern
+                '-ar', '44100',
+                '-ac', '2',
+                '-c:a', 'libmp3lame',
+                '-b:a', '192k',
+                mp3Pattern
             ]);
+            const encoded = await collectSegments(mp3Pattern, 'mp3');
+            if (encoded.length > 0) {
+                return encoded;
+            }
+            throw new Error('切段后未生成音频文件');
         } catch (error) {
             this.logger?.warn?.(`[点歌] 语音切段失败，回退整段发送: ${error.message}`);
             return [audioPath];
         }
-
-        // segment 输出名形如 music_seg_..._000.mp3，按目录枚举匹配前缀
-        const dirEntries = await this.fileSystem.readdir(this.audioDir);
-        const stem = path.basename(segmentPattern).split('%03d')[0];
-        const ext = `.${format}`;
-        const segments = dirEntries
-            .filter((name) => name.startsWith(stem) && name.endsWith(ext))
-            .sort()
-            .map((name) => path.join(this.audioDir, name));
-
-        if (segments.length === 0) {
-            this.logger?.warn?.('[点歌] 切段未产出文件，回退整段发送');
-            return [audioPath];
-        }
-        if (segments.length === 1) {
-            // 只有一段时不必保留额外拷贝，直接用原文件
-            await this.fileSystem.rm(segments[0], { force: true }).catch(() => {});
-            return [audioPath];
-        }
-        return segments;
     }
 
     async writeAudioFile(track) {
