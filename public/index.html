@@ -11815,9 +11815,7 @@
                                     <input type="checkbox" id="config-chat-music-enabled" onchange="updateMusicFields(); markConfigDirty('点歌开关已修改')">
                                     启用点歌指令
                                 </label>
-                                <p class="hint-text">默认关闭。开启后可用 <code>/music 歌名</code> 搜索、<code>/music 序号</code> 或完整歌名选歌。<br>
-默认以<strong>语音</strong>发送（下载 format=opus，并按约 2 分钟切段连发）。若要发文件，在命令<strong>最后一词</strong>加格式：<code>mp3</code>/<code>m4a</code>/<code>opus</code>，或 <code>file</code>（默认 mp3）。例：<code>/music 1 mp3</code>、<code>/music 晴天 - 周杰伦 m4a</code>。<code>flac</code> 暂不支持。<br>
-选错可重发序号；退出请发专用指令（默认 <code>/music-exit</code>）。候选按「群+用户」隔离。风险：占用带宽/临时磁盘/CPU，依赖 ytmusic-bridge。</p>
+                                <p class="hint-text">默认关闭。音乐 API 使用 <a href="https://github.com/Xeltra233/youtube-music-api" target="_blank" rel="noopener noreferrer">Xeltra233/youtube-music-api</a>。</p>
                             </div>
                             <div class="form-group">
                                 <label>点歌指令文本</label>
@@ -11827,12 +11825,12 @@
                             <div class="form-group">
                                 <label>退出点歌指令文本</label>
                                 <input type="text" id="config-chat-music-exit-command" placeholder="/music-exit">
-                                <p class="hint-text">专用退出指令：发送后清空该用户候选歌单。不能含空格，留空回退 <code>/music-exit</code>。选错请重发序号；不要用 <code>/music 取消</code> 当退出。</p>
+                                <p class="hint-text">发送后清空该用户的候选歌单。不能含空格，留空回退 <code>/music-exit</code>。</p>
                             </div>
                             <div class="form-group">
                                 <label>桥接服务地址</label>
                                 <input type="text" id="config-chat-music-base-url" placeholder="http://127.0.0.1:8787">
-                                <p class="hint-text">ytmusic-bridge 的 HTTP 地址，建议只填内网/本机地址；填公网地址等于把下载能力暴露出去。</p>
+                                <p class="hint-text">音乐 API 服务地址（项目：<a href="https://github.com/Xeltra233/youtube-music-api" target="_blank" rel="noopener noreferrer">Xeltra233/youtube-music-api</a>）。</p>
                             </div>
                             <div class="form-group">
                                 <label>桥接服务 API Key</label>

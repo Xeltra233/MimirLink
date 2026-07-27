@@ -115,6 +115,10 @@ Node.js >= 22.5.0（`node:sqlite` 内置模块）。
 - 保留 `<UpdateVariable>` 不误伤
 - 带属性的标签和纯文本卡片已覆盖，复杂前端卡需自行扩展
 
+### 点歌 / 音乐语音
+- 音乐 API 使用 [youtube-music-api](https://github.com/Xeltra233/youtube-music-api)
+- 在 Web 面板填写桥接服务地址和 API Key 即可
+
 ### 人物档案
 - 两种模式：`仅bot对话（省token）` / `全量消息`
 - 支持已有画像增量或纯新消息总结
@@ -227,6 +231,7 @@ Claude Code 挂载（`.claude/settings.json`）：
 
 ## 友情链接
 
+- [youtube-music-api（点歌桥接）](https://github.com/Xeltra233/youtube-music-api)
 - [Linux.do](https://linux.do)
 
 ---
