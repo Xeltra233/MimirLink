@@ -25,9 +25,15 @@ function buildVoiceFallbackText(content, { explicitVoice = false } = {}) {
         : '语音合成失败，且没有可回退的文本回复。';
 }
 
-function buildVoicePrefixSegments(event, {
+/**
+ * 构造语音/文件消息前缀（reply / at）。
+ * 与纯文本回复链路解耦：调用方显式传入 mentionSender，避免点歌与 TTS 共用一个隐式开关后互相误伤。
+ * - 点歌：可传 mentionSender=true（用户要求点歌仍可 @）
+ * - TTS：可传 mentionSender=false（语音不走文本必须 @ 的策略）
+ */
+export function buildMediaPrefixSegments(event, {
     quoteReplyEnabled = true,
-    mentionSenderOnReply = true,
+    mentionSender = false,
     hasSentPrimary = false
 } = {}) {
     if (hasSentPrimary) {
@@ -39,11 +45,24 @@ function buildVoicePrefixSegments(event, {
         segments.push({ type: 'reply', data: { id: String(event.message_id) } });
     }
 
-    if (event?.message_type === 'group' && mentionSenderOnReply && event?.user_id) {
+    if (event?.message_type === 'group' && mentionSender && event?.user_id) {
         segments.push({ type: 'at', data: { qq: String(event.user_id) } });
     }
 
     return segments;
+}
+
+// 兼容旧名；历史参数 mentionSenderOnReply 易与文本开关混淆，新代码请用 buildMediaPrefixSegments
+function buildVoicePrefixSegments(event, {
+    quoteReplyEnabled = true,
+    mentionSenderOnReply = true,
+    hasSentPrimary = false
+} = {}) {
+    return buildMediaPrefixSegments(event, {
+        quoteReplyEnabled,
+        mentionSender: mentionSenderOnReply === true,
+        hasSentPrimary
+    });
 }
 
 export async function dispatchReply(event, processedReply, options = {}, deps = {}) {
@@ -57,7 +76,7 @@ export async function dispatchReply(event, processedReply, options = {}, deps = 
     } = deps;
 
     const ttsConfig = ttsManager?.getConfig?.() || {};
-    const { textParts } = parseVoiceTags(String(processedReply || ''));
+    const { textParts, hasVoice } = parseVoiceTags(String(processedReply || ''));
     const splitMessage = options.forceSingleMessage ? false : config.chat.splitMessage !== false;
     const segmentDelayMs = config.chat.segmentDelayMs ?? 300;
     const proactiveIntervalMs = config.chat.proactiveMessageIntervalMs ?? Math.max(segmentDelayMs, 1200);
@@ -94,9 +113,11 @@ export async function dispatchReply(event, processedReply, options = {}, deps = 
     };
 
     const sendVoice = async (audioPath) => {
-        const prefixSegments = buildVoicePrefixSegments(event, {
+        // TTS 语音不走文本「必须 @」策略：只保留可选引用，绝不拼 at。
+        // 点歌路径在 index.js 单独传 mentionSender，不会被这里影响。
+        const prefixSegments = buildMediaPrefixSegments(event, {
             quoteReplyEnabled,
-            mentionSenderOnReply,
+            mentionSender: false,
             hasSentPrimary
         });
 
@@ -133,7 +154,9 @@ export async function dispatchReply(event, processedReply, options = {}, deps = 
         const content = String(part.content || '').trim();
 
         if (part.type === 'text') {
-            if (ttsEnabled) {
+            // 无 [voice] 标签且开启 TTS：整段当语音（历史行为）
+            // 有 [voice] 标签：正文保持文字，只有 voice 段才合成，实现「文字里夹语音」
+            if (ttsEnabled && !hasVoice) {
                 if (content) {
                     await sendTtsContent(content, { explicitVoice: false });
                 }
@@ -168,7 +191,9 @@ export async function dispatchReply(event, processedReply, options = {}, deps = 
         }
 
         if (part.type === 'voice') {
-            await sendText(buildVoicePrefaceText(content));
+            // TTS 未启用时无法真正发 record，给出可读回退，避免静默丢语音意图
+            const preface = buildVoicePrefaceText(content);
+            await sendText(preface.includes('语音') ? `${preface}（当前未启用 TTS，无法发送语音消息）` : `语音内容：${content || '（空）'}（当前未启用 TTS，无法发送语音消息）`);
         }
     }
 }

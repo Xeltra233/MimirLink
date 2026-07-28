@@ -43,7 +43,7 @@ import { syncPresetFiles } from './preset-sync.js';
 import { Logger } from './logger.js';
 import { TTSManager, VOICE_TYPES } from './tts.js';
 import { MessageRuntime } from './runtime.js';
-import { dispatchReply as dispatchReplyWithDeps } from './reply-dispatcher.js';
+import { buildMediaPrefixSegments, dispatchReply as dispatchReplyWithDeps } from './reply-dispatcher.js';
 import { detectPromptInjectionRisk, buildObservationEnvelope } from './security.js';
 import { buildStandardEvent, updateStandardEventRouting } from './standard-event.js';
 import { detectChainLeak, buildChainLeakRetryMessage } from './chain-leak-detection.js';
@@ -3002,13 +3002,11 @@ async function handleMusicCommand(event, plainText) {
         onCommandAccepted: () => sendEmojiReactionForEvent(event),
         sendText: (message) => sendQuotedStatusMessage(event, message),
         sendVoice: async (audioPath) => {
-            const prefixSegments = [];
-            if (config.chat?.quoteReplyEnabled !== false && event.message_id) {
-                prefixSegments.push({ type: 'reply', data: { id: String(event.message_id) } });
-            }
-            if (event.message_type === 'group' && config.chat?.mentionSenderOnReply !== false && event.user_id) {
-                prefixSegments.push({ type: 'at', data: { qq: String(event.user_id) } });
-            }
+            // 点歌语音前缀独立决策：按用户口径保留 @（mentionSender=true），与 TTS 路径解耦
+            const prefixSegments = buildMediaPrefixSegments(event, {
+                quoteReplyEnabled: config.chat?.quoteReplyEnabled !== false,
+                mentionSender: config.chat?.mentionSenderOnReply !== false
+            });
 
             if (event.message_type === 'group') {
                 if (typeof bot.sendGroupRecord !== 'function') {
@@ -3024,13 +3022,11 @@ async function handleMusicCommand(event, plainText) {
             await bot.sendPrivateRecord(event.user_id, audioPath, prefixSegments);
         },
         sendFile: async (filePath, meta = {}) => {
-            const prefixSegments = [];
-            if (config.chat?.quoteReplyEnabled !== false && event.message_id) {
-                prefixSegments.push({ type: 'reply', data: { id: String(event.message_id) } });
-            }
-            if (event.message_type === 'group' && config.chat?.mentionSenderOnReply !== false && event.user_id) {
-                prefixSegments.push({ type: 'at', data: { qq: String(event.user_id) } });
-            }
+            // 点歌文件同样走独立前缀构建；默认仍可 @，后续改 TTS 不 at 时不会误伤这里
+            const prefixSegments = buildMediaPrefixSegments(event, {
+                quoteReplyEnabled: config.chat?.quoteReplyEnabled !== false,
+                mentionSender: config.chat?.mentionSenderOnReply !== false
+            });
             const fileName = meta.fileName || meta.name || 'track.mp3';
 
             if (event.message_type === 'group') {

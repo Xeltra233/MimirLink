@@ -799,8 +799,10 @@ test('index.js 已接入点歌指令、访问控制与语音下发', () => {
     assert.ok(handler.includes('if (!isAllowed(config, event))'), '点歌必须走访问控制');
     assert.ok(handler.includes('bot.sendGroupRecord(event.group_id, audioPath, prefixSegments)'));
     assert.ok(handler.includes('bot.sendPrivateRecord(event.user_id, audioPath, prefixSegments)'));
-    assert.ok(handler.includes("type: 'reply'"));
-    assert.ok(handler.includes("type: 'at'"));
+    // 点歌前缀与 TTS 解耦：走 buildMediaPrefixSegments，且点歌路径显式保留 mentionSender
+    assert.ok(source.includes('buildMediaPrefixSegments'), 'index 必须复用独立媒体前缀构建器');
+    assert.ok(handler.includes('buildMediaPrefixSegments(event'), '点歌 sendVoice/sendFile 必须调用独立前缀构建');
+    assert.ok(handler.includes('mentionSender: config.chat?.mentionSenderOnReply !== false'), '点歌按口径保留 @');
 });
 
 
