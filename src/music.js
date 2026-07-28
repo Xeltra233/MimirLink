@@ -9,10 +9,12 @@ import { randomBytes } from 'crypto';
 import { spawn } from 'child_process';
 
 export const MUSIC_AUDIO_FORMATS = Object.freeze(['mp3', 'm4a', 'opus']);
+// 含官方 MV 的 mp4；与纯音频格式区分，避免语音切段误吃 mp4
+export const MUSIC_DOWNLOAD_FORMATS = Object.freeze([...MUSIC_AUDIO_FORMATS, 'mp4']);
 // 选歌命令末尾可选发送参数（只认最后一个独立单词）
 export const MUSIC_TRAILING_FORMAT_TOKENS = Object.freeze(['mp3', 'm4a', 'opus', 'flac']);
 export const MUSIC_TRAILING_MODE_TOKENS = Object.freeze(['file', 'voice']);
-// 官方 MV：仅 bot 侧 delivery，不传给 /download 的 format（见 BOT-PARAMS / BOT-INTEGRATION）
+// 官方 MV：bot 侧 delivery=video；download 时用 official_video_id + format=mp4（见最新 BOT-PARAMS）
 export const MUSIC_TRAILING_VIDEO_TOKENS = Object.freeze(['mv', 'video', 'official']);
 export const MUSIC_TRAILING_PARAM_TOKENS = Object.freeze([
     ...MUSIC_TRAILING_FORMAT_TOKENS,
@@ -291,19 +293,19 @@ export function splitMusicTrailingParam(argument = '') {
  * - file => delivery=file, format=mp3
  * - mp3/m4a/opus => delivery=file, format=对应值
  * - flac => 不调 API，提示暂不支持
- * - mv/video/official => delivery=video，不产生 download format（官方 MV 不走 /download）
+ * - mv/video/official => delivery=video，format=mp4（用 official_video_id 调 /download）
  * voice/file 本身不是音频容器，不能原样传给上游。
  */
 export function resolveMusicDownloadFormat(parsed = {}, config = {}) {
     const rawDelivery = String(parsed?.deliveryMode || '').toLowerCase();
     const token = String(parsed?.format || parsed?.trailingToken || '').toLowerCase();
 
-    // 官方视频：只存在于 bot 侧，禁止映射成任何 download format
+    // 官方视频：下载 format 固定 mp4；video_id 必须用 official_video_id（见最新 BOT-PARAMS）
     if (rawDelivery === 'video' || token === 'mv' || token === 'video' || token === 'official') {
         return {
             ok: true,
             deliveryMode: 'video',
-            format: null,
+            format: 'mp4',
             reason: 'official_video'
         };
     }
@@ -635,7 +637,9 @@ export class MusicBridgeClient {
             });
         }
         const body = {
-            format: MUSIC_AUDIO_FORMATS.includes(requestedFormat) ? requestedFormat : config.format
+            format: MUSIC_DOWNLOAD_FORMATS.includes(requestedFormat)
+                ? requestedFormat
+                : (MUSIC_AUDIO_FORMATS.includes(String(config.format || '').toLowerCase()) ? config.format : 'mp3')
         };
         if (videoId) {
             body.video_id = videoId;
@@ -675,9 +679,12 @@ export class MusicBridgeClient {
 
         // 必须以本次实际请求/响应格式为准，不能回写成全局 config.format
         // 否则 voice 默认拉 opus 却落成 .mp3，ffmpeg -c copy 切段会直接失败
-        const actualFormat = MUSIC_AUDIO_FORMATS.includes(String(body.format || '').toLowerCase())
+        const headerFormat = sanitizeText(response.headers?.get?.('x-track-format') || response.headers?.get?.('x-audio-format') || '');
+        const actualFormat = MUSIC_DOWNLOAD_FORMATS.includes(String(body.format || '').toLowerCase())
             ? String(body.format).toLowerCase()
-            : (MUSIC_AUDIO_FORMATS.includes(String(config.format || '').toLowerCase()) ? String(config.format).toLowerCase() : 'mp3');
+            : (MUSIC_DOWNLOAD_FORMATS.includes(headerFormat.toLowerCase())
+                ? headerFormat.toLowerCase()
+                : (MUSIC_AUDIO_FORMATS.includes(String(config.format || '').toLowerCase()) ? String(config.format).toLowerCase() : 'mp3'));
         return {
             buffer,
             format: actualFormat,
@@ -773,10 +780,20 @@ export class MusicSessionStore {
     }
 }
 
-function buildMusicFileName(track = {}, fallbackName = '', format = 'mp3') {
-    const base = sanitizeText(track.display_name || track.title || fallbackName || 'track')
+/**
+ * 发送文件用的展示文件名。
+ * - 保留空格（不要把空格改成 +）
+ * - 若上游/标题里已经是 +，还原成空格
+ * - 仅替换路径非法字符
+ */
+export function buildMusicFileName(track = {}, fallbackName = '', format = 'mp3') {
+    const raw = sanitizeText(track.display_name || track.title || fallbackName || 'track');
+    const base = raw
+        // 防止 URL/表单编码把空格弄成 + 后直接当文件名发出去
+        .replace(/\+/g, ' ')
         .replace(/[\\/:*?"<>|]/g, '_')
         .replace(/\s+/g, ' ')
+        .trim()
         .slice(0, 80) || 'track';
     const ext = sanitizeText(format || track.format || 'mp3').toLowerCase() || 'mp3';
     return `${base}.${ext}`;
@@ -976,7 +993,8 @@ export class MusicCommandHandler {
                 };
             }
 
-            // 官方视频：只发链接，绝不调用 /download，也绝不把 official_video_id 当音轨 id
+            // 官方视频：用 official_video_id + format=mp4 下载文件再 sendFile（最新 BOT-INTEGRATION）
+            // 绝不把歌曲 video_id 当成官方 MV；下载失败/过大再回退链接
             if (deliveryMode === 'video') {
                 const official = normalizeOfficialVideoFields(picked);
                 if (!official.has_official_video) {
@@ -992,25 +1010,82 @@ export class MusicCommandHandler {
                     };
                 }
 
-                const message = buildOfficialVideoMessage(picked, official);
-                await reply(message);
-                this.logger?.info?.('[点歌] 官方视频链接已发送', {
-                    sessionKey,
-                    videoId: picked.video_id || '',
-                    officialVideoId: official.official_video_id,
-                    deliveryMode: 'video'
-                });
-                return {
-                    handled: true,
-                    ok: true,
-                    reason: 'sent_official_video',
-                    sessionKey,
-                    videoId: picked.video_id || '',
-                    officialVideoId: official.official_video_id,
-                    officialVideoUrl: official.official_video_url,
-                    deliveryMode: 'video',
-                    parts: 1
-                };
+                if (typeof sendFile !== 'function') {
+                    const message = buildOfficialVideoMessage(picked, official);
+                    await reply(message || `「${picked.display_name}」有官方视频，但当前会话不支持发文件`);
+                    return {
+                        handled: true,
+                        ok: Boolean(message),
+                        reason: message ? 'sent_official_video_link_fallback' : 'no_file_sender',
+                        sessionKey,
+                        deliveryMode: 'video',
+                        officialVideoId: official.official_video_id
+                    };
+                }
+
+                await reply(`🎬 正在下载「${picked.display_name}」官方视频文件（mp4），请稍等`);
+                try {
+                    const track = await this.client.download({
+                        videoId: official.official_video_id,
+                        format: 'mp4'
+                    });
+                    const filePath = await this.writeAudioFile(track);
+                    createdPaths.push(filePath);
+                    const fileName = buildMusicFileName(
+                        { ...track, display_name: picked.display_name },
+                        picked.display_name,
+                        track.format || 'mp4'
+                    );
+                    await sendFile(filePath, {
+                        track,
+                        label: buildTrackLabel(track, picked.display_name),
+                        picked,
+                        fileName,
+                        format: track.format || 'mp4',
+                        deliveryMode: 'video',
+                        officialVideoId: official.official_video_id
+                    });
+                    this.logger?.info?.('[点歌] 官方视频文件已发送', {
+                        sessionKey,
+                        videoId: picked.video_id || '',
+                        officialVideoId: official.official_video_id,
+                        bytes: track.buffer.length,
+                        fileName,
+                        deliveryMode: 'video'
+                    });
+                    return {
+                        handled: true,
+                        ok: true,
+                        reason: 'sent_official_video_file',
+                        sessionKey,
+                        videoId: picked.video_id || '',
+                        officialVideoId: official.official_video_id,
+                        officialVideoUrl: official.official_video_url,
+                        bytes: track.buffer.length,
+                        fileName,
+                        deliveryMode: 'video',
+                        format: track.format || 'mp4',
+                        parts: 1
+                    };
+                } catch (error) {
+                    const link = buildOfficialVideoMessage(picked, official);
+                    const tip = error instanceof MusicBridgeError
+                        ? error.message
+                        : (error?.message || '下载失败');
+                    if (link) {
+                        await reply(`官方视频文件下载失败（${tip}），先发链接：\n${link.replace(/^🎬[^\n]*\n/, '')}`);
+                        return {
+                            handled: true,
+                            ok: true,
+                            reason: 'sent_official_video_link_fallback',
+                            sessionKey,
+                            deliveryMode: 'video',
+                            officialVideoId: official.official_video_id,
+                            error: tip
+                        };
+                    }
+                    throw error;
+                }
             }
 
             const segmentSeconds = Number(config.voiceSegmentSeconds) || 0;

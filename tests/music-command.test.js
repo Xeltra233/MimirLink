@@ -17,7 +17,8 @@ import {
     splitMusicTrailingParam,
     stripLeadingMentionsForCommand,
     normalizeOfficialVideoFields,
-    buildOfficialVideoMessage
+    buildOfficialVideoMessage,
+    buildMusicFileName
 } from '../src/music.js';
 
 const BASE_CONFIG = {
@@ -778,16 +779,16 @@ test('resolveMusicDownloadFormat 按 BOT-PARAMS 映射 delivery 与 API format',
     );
     assert.deepEqual(
         resolveMusicDownloadFormat({ deliveryMode: 'video', format: null, trailingToken: 'mv' }),
-        { ok: true, deliveryMode: 'video', format: null, reason: 'official_video' }
+        { ok: true, deliveryMode: 'video', format: 'mp4', reason: 'official_video' }
     );
     assert.deepEqual(
         resolveMusicDownloadFormat({ deliveryMode: 'video', format: null, trailingToken: 'official' }),
-        { ok: true, deliveryMode: 'video', format: null, reason: 'official_video' }
+        { ok: true, deliveryMode: 'video', format: 'mp4', reason: 'official_video' }
     );
-    // 即使 delivery 字段缺失，仅 trailingToken 也能识别官方视频，且 format 必须为 null
+    // 即使 delivery 字段缺失，仅 trailingToken 也能识别官方视频，format 固定 mp4
     assert.deepEqual(
         resolveMusicDownloadFormat({ deliveryMode: 'voice', format: null, trailingToken: 'video' }),
-        { ok: true, deliveryMode: 'video', format: null, reason: 'official_video' }
+        { ok: true, deliveryMode: 'video', format: 'mp4', reason: 'official_video' }
     );
 });
 
@@ -815,7 +816,7 @@ test('normalizeOfficialVideoFields 保留官方 MV 字段且不与 video_id 混�
     );
 });
 
-test('选歌尾参 mv：发送官方链接且不调用 /download', async () => {
+test('选歌尾参 mv：用 official_video_id 下 mp4 文件发送', async () => {
     const client = createFakeClient({
         searchResponses: [{
             session_id: 's_mv',
@@ -834,7 +835,20 @@ test('选歌尾参 mv：发送官方链接且不调用 /download', async () => {
                     has_official_video: false
                 })
             ]
-        }]
+        }],
+        downloadImpl: async (args) => {
+            assert.equal(args.videoId, 'SX_r8WxC3jY', '必须用 official_video_id，不能用歌曲 video_id');
+            assert.equal(args.format, 'mp4');
+            return {
+                buffer: Buffer.from('fake-mp4'),
+                format: 'mp4',
+                title: 'Lemon',
+                artists: 'Kenshi Yonezu',
+                videoId: 'SX_r8WxC3jY',
+                durationSeconds: 255,
+                cacheHit: false
+            };
+        }
     });
     const { handler } = createHandler({ client });
 
@@ -842,18 +856,18 @@ test('选歌尾参 mv：发送官方链接且不调用 /download', async () => {
     await handler.handle({ event: GROUP_EVENT_A, plainText: '/music Lemon', ...recOk });
     const sent = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1 mv', ...recOk });
     assert.equal(sent.ok, true);
-    assert.equal(sent.reason, 'sent_official_video');
+    assert.equal(sent.reason, 'sent_official_video_file');
     assert.equal(sent.deliveryMode, 'video');
     assert.equal(sent.officialVideoId, 'SX_r8WxC3jY');
-    assert.equal(client.calls.download.length, 0, '官方视频路径禁止 /download');
+    assert.equal(client.calls.download.length, 1);
+    assert.equal(client.calls.download[0].videoId, 'SX_r8WxC3jY');
+    assert.equal(client.calls.download[0].format, 'mp4');
     assert.equal(recOk.voices.length, 0);
-    assert.equal(recOk.files.length, 0);
-    assert.ok(recOk.texts.some((t) => t.includes('https://www.youtube.com/watch?v=SX_r8WxC3jY')), recOk.texts.join('\n'));
+    assert.equal(recOk.files.length, 1);
+    assert.equal(recOk.files[0].meta.fileName, 'Lemon - Kenshi Yonezu.mp4');
+    assert.equal(String(recOk.files[0].meta.fileName).includes('+'), false, '文件名不得用 + 代替空格');
+    assert.ok(String(recOk.files[0].meta.fileName).includes(' '), '文件名应保留空格');
 
-    const recMiss = createRecorder();
-    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music Lemon', ...recMiss });
-    // 重新搜索会刷新 session；再造一次带无 MV 的结果
-    client.calls.search.length = 0;
     const client2 = createFakeClient({
         searchResponses: [{
             session_id: 's_mv2',
@@ -872,6 +886,21 @@ test('选歌尾参 mv：发送官方链接且不调用 /download', async () => {
     assert.equal(missing.reason, 'no_official_video');
     assert.equal(client2.calls.download.length, 0);
     assert.ok(rec2.texts.some((t) => t.includes('没有匹配到官方视频')), rec2.texts.join('\n'));
+});
+
+test('buildMusicFileName 保留空格，并把 + 还原成空格', () => {
+    assert.equal(
+        buildMusicFileName({ display_name: 'Lemon - Kenshi Yonezu' }, '', 'mp4'),
+        'Lemon - Kenshi Yonezu.mp4'
+    );
+    assert.equal(
+        buildMusicFileName({ display_name: 'Scream+Aim+Fire' }, '', 'mp3'),
+        'Scream Aim Fire.mp3'
+    );
+    assert.equal(
+        buildMusicFileName({ title: 'a/b:c' }, 'fallback', 'm4a'),
+        'a_b_c.m4a'
+    );
 });
 
 test('选歌默认语音；末尾 mp3 走文件发送；flac 明确拒绝', async () => {
