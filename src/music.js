@@ -33,6 +33,29 @@ function sanitizeText(value) {
     return String(value ?? '').trim();
 }
 
+/**
+ * 去掉指令前的 @bot / CQ at / 裸 @昵称，避免「@机器人 /music 9」或系统插入的提及前缀导致点歌指令匹配失败、消息漏给 AI。
+ */
+export function stripLeadingMentionsForCommand(text = '') {
+    let normalized = sanitizeText(text);
+    if (!normalized) {
+        return '';
+    }
+
+    let previous = '';
+    while (normalized && normalized !== previous) {
+        previous = normalized;
+        normalized = normalized
+            .replace(/^\[@bot\]\s*/i, '')
+            .replace(/^\[@[^\]]*\]\s*/u, '')
+            .replace(/^\[CQ:at,[^\]]*\]\s*/i, '')
+            .replace(/^@\S+\s+/u, '')
+            .trim();
+    }
+
+    return normalized;
+}
+
 function clampInteger(value, minimum, maximum, fallback) {
     const normalized = Number(value);
     if (!Number.isFinite(normalized)) {
@@ -271,7 +294,7 @@ export function parseMusicCommand(plainText = '', {
     exitCommand = DEFAULT_MUSIC_EXIT_COMMAND,
     session = null
 } = {}) {
-    const normalizedText = sanitizeText(plainText);
+    const normalizedText = stripLeadingMentionsForCommand(plainText);
     const normalizedCommand = normalizeCommandText(command, DEFAULT_MUSIC_COMMAND);
     const normalizedExitCommand = normalizeCommandText(exitCommand, DEFAULT_MUSIC_EXIT_COMMAND);
 
@@ -754,19 +777,21 @@ export class MusicCommandHandler {
             return { handled: false, ok: false, reason: 'not_command' };
         }
 
-        if (config.enabled !== true) {
-            return { handled: false, ok: false, reason: 'disabled' };
-        }
-
-        if (typeof onCommandAccepted === 'function') {
-            onCommandAccepted();
-        }
-
         const reply = async (text) => {
             if (typeof sendText === 'function') {
                 await sendText(text);
             }
         };
+
+        if (config.enabled !== true) {
+            // 已识别为点歌指令时必须拦截，不能再交给 LLM，否则会出现 AI 把 /music 9 当聊天并 @发送者
+            await reply(`点歌功能未启用。请管理员在配置里打开「启用点歌指令」，并填写音乐 API 地址（${config.baseUrl || DEFAULT_MUSIC_BASE_URL}）`);
+            return { handled: true, ok: false, reason: 'disabled', sessionKey };
+        }
+
+        if (typeof onCommandAccepted === 'function') {
+            onCommandAccepted();
+        }
 
         if (parsed.type === 'exit') {
             const existed = this.store.delete(sessionKey);

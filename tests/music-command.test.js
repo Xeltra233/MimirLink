@@ -14,7 +14,8 @@ import {
     normalizeMusicConfig,
     parseMusicCommand,
     resolveMusicDownloadFormat,
-    splitMusicTrailingParam
+    splitMusicTrailingParam,
+    stripLeadingMentionsForCommand
 } from '../src/music.js';
 
 const BASE_CONFIG = {
@@ -180,6 +181,27 @@ test('parseMusicCommand 覆盖退出优先、用法、搜索、序号与歌名�
 });
 
 
+test('stripLeadingMentionsForCommand / 带 @ 前缀仍识别点歌指令', () => {
+    assert.equal(stripLeadingMentionsForCommand('[@bot] /music 9'), '/music 9');
+    assert.equal(stripLeadingMentionsForCommand('[CQ:at,qq=123] /music 9'), '/music 9');
+    assert.equal(stripLeadingMentionsForCommand('@某人 /music 9'), '/music 9');
+    assert.equal(stripLeadingMentionsForCommand('/music 9'), '/music 9');
+
+    const session = { results: [buildResult(1, '晴天 - 周杰伦'), buildResult(9, 'Scream Aim Fire - Bullet For My Valentine')] };
+    assert.deepEqual(
+        parseMusicCommand('[@bot] /music 9', { session }),
+        { type: 'select', index: 9, raw: '9', deliveryMode: 'voice', format: null, trailingToken: null }
+    );
+    assert.deepEqual(
+        parseMusicCommand('[CQ:at,qq=10001] /music 1 mp3', { session }),
+        { type: 'select', index: 1, raw: '1', deliveryMode: 'file', format: 'mp3', trailingToken: 'mp3' }
+    );
+    assert.deepEqual(
+        parseMusicCommand('[@bot] /music-exit'),
+        { type: 'exit' }
+    );
+});
+
 test('splitMusicTrailingParam / parseMusicCommand 只认最后一词作为发送参数', () => {
     assert.deepEqual(splitMusicTrailingParam('1 mp3'), {
         body: '1',
@@ -315,14 +337,15 @@ test('formatMusicSearchList 输出序号、时长与用法提示', () => {
     assert.ok(text.includes('/music-exit'), text);
 });
 
-test('功能未启用时不拦截消息', async () => {
+test('功能未启用时仍拦截点歌指令，避免漏给 AI', async () => {
     const client = createFakeClient();
     const { handler } = createHandler({ client, config: { enabled: false } });
     const recorder = createRecorder();
     const result = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 晴天', ...recorder });
-    assert.equal(result.handled, false);
+    assert.equal(result.handled, true, '必须 handled=true，防止 /music 进入 LLM');
+    assert.equal(result.ok, false);
     assert.equal(result.reason, 'disabled');
-    assert.equal(recorder.texts.length, 0);
+    assert.ok(recorder.texts.some((text) => text.includes('点歌功能未启用')), recorder.texts.join('\n'));
     assert.equal(client.calls.search.length, 0);
 });
 
