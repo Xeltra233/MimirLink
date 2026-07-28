@@ -15,7 +15,9 @@ import {
     parseMusicCommand,
     resolveMusicDownloadFormat,
     splitMusicTrailingParam,
-    stripLeadingMentionsForCommand
+    stripLeadingMentionsForCommand,
+    normalizeOfficialVideoFields,
+    buildOfficialVideoMessage
 } from '../src/music.js';
 
 const BASE_CONFIG = {
@@ -273,6 +275,52 @@ test('splitMusicTrailingParam / parseMusicCommand 只认最后一词作为发送
         parseMusicCommand('/music Screen Aim Fire mp3'),
         { type: 'search', query: 'Screen Aim Fire', deliveryMode: 'file', format: 'mp3', trailingToken: 'mp3' }
     );
+
+    // 官方视频尾参：只认最后一词，delivery=video，不产生 format
+    assert.deepEqual(splitMusicTrailingParam('1 mv'), {
+        body: '1',
+        deliveryMode: 'video',
+        format: null,
+        trailingToken: 'mv'
+    });
+    assert.deepEqual(splitMusicTrailingParam('Lemon - Kenshi Yonezu official'), {
+        body: 'Lemon - Kenshi Yonezu',
+        deliveryMode: 'video',
+        format: null,
+        trailingToken: 'official'
+    });
+    assert.deepEqual(splitMusicTrailingParam('晴天 video'), {
+        body: '晴天',
+        deliveryMode: 'video',
+        format: null,
+        trailingToken: 'video'
+    });
+    // 单独 mv 当作普通搜索词，不剥离
+    assert.deepEqual(splitMusicTrailingParam('mv'), {
+        body: 'mv',
+        deliveryMode: 'voice',
+        format: null,
+        trailingToken: null
+    });
+    assert.deepEqual(
+        parseMusicCommand('/music 1 mv', { session }),
+        { type: 'select', index: 1, raw: '1', deliveryMode: 'video', format: null, trailingToken: 'mv' }
+    );
+    assert.deepEqual(
+        parseMusicCommand('/music Scream Aim Fire - Bullet For My Valentine video', { session }),
+        {
+            type: 'select',
+            name: 'Scream Aim Fire - Bullet For My Valentine',
+            raw: 'Scream Aim Fire - Bullet For My Valentine',
+            deliveryMode: 'video',
+            format: null,
+            trailingToken: 'video'
+        }
+    );
+    assert.deepEqual(
+        parseMusicCommand('/music Lemon official'),
+        { type: 'search', query: 'Lemon', deliveryMode: 'video', format: null, trailingToken: 'official' }
+    );
 });
 
 
@@ -316,11 +364,18 @@ test('选错可重选；退出只走专门的 /music-exit', async () => {
 });
 
 test('歌单页脚提示选错可重选，退出仅指引专用指令', () => {
-    const text = formatMusicSearchList('测试', [buildResult(1, '晴天 - 周杰伦')], { expiresInSeconds: 1800 });
+    const text = formatMusicSearchList('测试', [
+        buildResult(1, '晴天 - 周杰伦', {
+            official_video_id: 'omv1',
+            has_official_video: true
+        })
+    ], { expiresInSeconds: 1800 });
     assert.ok(text.includes('选错了可重发序号'), text);
     assert.ok(text.includes('/music-exit'), text);
     assert.equal(text.includes('/music 取消') || text.includes('或 /music 取消'), false, text);
     assert.ok(text.includes('默认语音') || text.includes('mp3'), text);
+    assert.ok(text.includes('mv'), text);
+    assert.ok(text.includes('[MV]'), text);
 });
 
 
@@ -335,6 +390,20 @@ test('formatMusicSearchList 输出序号、时长与用法提示', () => {
     assert.ok(text.includes('/music 完整歌名'), text);
     assert.ok(text.includes('30 分钟内有效'), text);
     assert.ok(text.includes('/music-exit'), text);
+    assert.ok(text.includes('mv'), '页脚应提示官方视频尾参');
+});
+
+test('usage 文案包含官方视频尾参说明', async () => {
+    const client = createFakeClient();
+    const { handler } = createHandler({ client });
+    const recorder = createRecorder();
+    const result = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music', ...recorder });
+    assert.equal(result.reason, 'usage');
+    const text = recorder.texts.join('\n');
+    assert.ok(text.includes('mv/video/official') || text.includes('官方视频'), text);
+    assert.ok(text.includes('mp3/m4a/opus/file'), text);
+    assert.equal(client.calls.download.length, 0);
+    assert.equal(client.calls.search.length, 0);
 });
 
 test('功能未启用时仍拦截点歌指令，避免漏给 AI', async () => {
@@ -707,6 +776,102 @@ test('resolveMusicDownloadFormat 按 BOT-PARAMS 映射 delivery 与 API format',
         resolveMusicDownloadFormat({ deliveryMode: 'file', format: 'flac', trailingToken: 'flac' }).ok,
         false
     );
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'video', format: null, trailingToken: 'mv' }),
+        { ok: true, deliveryMode: 'video', format: null, reason: 'official_video' }
+    );
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'video', format: null, trailingToken: 'official' }),
+        { ok: true, deliveryMode: 'video', format: null, reason: 'official_video' }
+    );
+    // 即使 delivery 字段缺失，仅 trailingToken 也能识别官方视频，且 format 必须为 null
+    assert.deepEqual(
+        resolveMusicDownloadFormat({ deliveryMode: 'voice', format: null, trailingToken: 'video' }),
+        { ok: true, deliveryMode: 'video', format: null, reason: 'official_video' }
+    );
+});
+
+test('normalizeOfficialVideoFields 保留官方 MV 字段且不与 video_id 混淆', () => {
+    assert.deepEqual(
+        normalizeOfficialVideoFields({
+            video_id: 'audio_track',
+            official_video_id: 'mv_id',
+            official_video_url: '',
+            has_official_video: true
+        }),
+        {
+            official_video_id: 'mv_id',
+            official_video_url: 'https://www.youtube.com/watch?v=mv_id',
+            has_official_video: true
+        }
+    );
+    assert.equal(normalizeOfficialVideoFields({ video_id: 'only_audio' }).has_official_video, false);
+    assert.match(
+        buildOfficialVideoMessage({ display_name: 'Lemon - Kenshi Yonezu' }, {
+            official_video_id: 'SX',
+            official_video_url: 'https://www.youtube.com/watch?v=SX'
+        }),
+        /官方视频/
+    );
+});
+
+test('选歌尾参 mv：发送官方链接且不调用 /download', async () => {
+    const client = createFakeClient({
+        searchResponses: [{
+            session_id: 's_mv',
+            expires_in: 1800,
+            results: [
+                buildResult(1, 'Lemon - Kenshi Yonezu', {
+                    video_id: 'audio_1',
+                    official_video_id: 'SX_r8WxC3jY',
+                    official_video_url: 'https://www.youtube.com/watch?v=SX_r8WxC3jY',
+                    has_official_video: true
+                }),
+                buildResult(2, 'No MV Song - Artist', {
+                    video_id: 'audio_2',
+                    official_video_id: '',
+                    official_video_url: '',
+                    has_official_video: false
+                })
+            ]
+        }]
+    });
+    const { handler } = createHandler({ client });
+
+    const recOk = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music Lemon', ...recOk });
+    const sent = await handler.handle({ event: GROUP_EVENT_A, plainText: '/music 1 mv', ...recOk });
+    assert.equal(sent.ok, true);
+    assert.equal(sent.reason, 'sent_official_video');
+    assert.equal(sent.deliveryMode, 'video');
+    assert.equal(sent.officialVideoId, 'SX_r8WxC3jY');
+    assert.equal(client.calls.download.length, 0, '官方视频路径禁止 /download');
+    assert.equal(recOk.voices.length, 0);
+    assert.equal(recOk.files.length, 0);
+    assert.ok(recOk.texts.some((t) => t.includes('https://www.youtube.com/watch?v=SX_r8WxC3jY')), recOk.texts.join('\n'));
+
+    const recMiss = createRecorder();
+    await handler.handle({ event: GROUP_EVENT_A, plainText: '/music Lemon', ...recMiss });
+    // 重新搜索会刷新 session；再造一次带无 MV 的结果
+    client.calls.search.length = 0;
+    const client2 = createFakeClient({
+        searchResponses: [{
+            session_id: 's_mv2',
+            expires_in: 1800,
+            results: [buildResult(1, 'No MV Song - Artist', {
+                video_id: 'audio_only',
+                has_official_video: false
+            })]
+        }]
+    });
+    const { handler: handler2 } = createHandler({ client: client2 });
+    const rec2 = createRecorder();
+    await handler2.handle({ event: GROUP_EVENT_A, plainText: '/music nomv', ...rec2 });
+    const missing = await handler2.handle({ event: GROUP_EVENT_A, plainText: '/music 1 official', ...rec2 });
+    assert.equal(missing.ok, false);
+    assert.equal(missing.reason, 'no_official_video');
+    assert.equal(client2.calls.download.length, 0);
+    assert.ok(rec2.texts.some((t) => t.includes('没有匹配到官方视频')), rec2.texts.join('\n'));
 });
 
 test('选歌默认语音；末尾 mp3 走文件发送；flac 明确拒绝', async () => {

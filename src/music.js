@@ -12,9 +12,12 @@ export const MUSIC_AUDIO_FORMATS = Object.freeze(['mp3', 'm4a', 'opus']);
 // 选歌命令末尾可选发送参数（只认最后一个独立单词）
 export const MUSIC_TRAILING_FORMAT_TOKENS = Object.freeze(['mp3', 'm4a', 'opus', 'flac']);
 export const MUSIC_TRAILING_MODE_TOKENS = Object.freeze(['file', 'voice']);
+// 官方 MV：仅 bot 侧 delivery，不传给 /download 的 format（见 BOT-PARAMS / BOT-INTEGRATION）
+export const MUSIC_TRAILING_VIDEO_TOKENS = Object.freeze(['mv', 'video', 'official']);
 export const MUSIC_TRAILING_PARAM_TOKENS = Object.freeze([
     ...MUSIC_TRAILING_FORMAT_TOKENS,
-    ...MUSIC_TRAILING_MODE_TOKENS
+    ...MUSIC_TRAILING_MODE_TOKENS,
+    ...MUSIC_TRAILING_VIDEO_TOKENS
 ]);
 // 末尾独立词：前面必须有正文，避免把单独的 "mp3" 搜索词误吃掉
 const MUSIC_TRAILING_PARAM_RE = new RegExp(
@@ -155,6 +158,37 @@ function normalizeNameForMatch(text) {
     return sanitizeText(text).replace(/\s+/g, ' ').toLowerCase();
 }
 
+/**
+ * 从搜索候选归一化官方 MV 字段（BOT-INTEGRATION）。
+ * video_id 是音轨；official_video_* 才是官方视频，二者不能混用。
+ */
+export function normalizeOfficialVideoFields(result = {}) {
+    const officialVideoId = sanitizeText(result.official_video_id || result.officialVideoId || '');
+    let officialVideoUrl = sanitizeText(result.official_video_url || result.officialVideoUrl || '');
+    if (!officialVideoUrl && officialVideoId) {
+        officialVideoUrl = `https://www.youtube.com/watch?v=${officialVideoId}`;
+    }
+    const hasOfficialVideo = result.has_official_video === true
+        || result.hasOfficialVideo === true
+        || Boolean(officialVideoId);
+    return {
+        official_video_id: officialVideoId,
+        official_video_url: officialVideoUrl,
+        has_official_video: hasOfficialVideo && Boolean(officialVideoId || officialVideoUrl)
+    };
+}
+
+export function buildOfficialVideoMessage(picked = {}, official = {}) {
+    const title = sanitizeText(picked.display_name || picked.title || '所选歌曲');
+    const url = sanitizeText(official.official_video_url);
+    const id = sanitizeText(official.official_video_id);
+    if (!url && !id) {
+        return '';
+    }
+    const link = url || `https://www.youtube.com/watch?v=${id}`;
+    return `🎬 「${title}」官方视频：\n${link}`;
+}
+
 function matchesCommandPrefix(text, command) {
     if (text === command) {
         return true;
@@ -232,6 +266,15 @@ export function splitMusicTrailingParam(argument = '') {
         };
     }
 
+    if (token === 'mv' || token === 'video' || token === 'official') {
+        return {
+            body,
+            deliveryMode: 'video',
+            format: null,
+            trailingToken: token
+        };
+    }
+
     // mp3/m4a/opus/flac => 文件发送 + 指定格式
     return {
         body,
@@ -248,11 +291,24 @@ export function splitMusicTrailingParam(argument = '') {
  * - file => delivery=file, format=mp3
  * - mp3/m4a/opus => delivery=file, format=对应值
  * - flac => 不调 API，提示暂不支持
+ * - mv/video/official => delivery=video，不产生 download format（官方 MV 不走 /download）
  * voice/file 本身不是音频容器，不能原样传给上游。
  */
 export function resolveMusicDownloadFormat(parsed = {}, config = {}) {
-    const deliveryMode = parsed?.deliveryMode === 'file' ? 'file' : 'voice';
+    const rawDelivery = String(parsed?.deliveryMode || '').toLowerCase();
     const token = String(parsed?.format || parsed?.trailingToken || '').toLowerCase();
+
+    // 官方视频：只存在于 bot 侧，禁止映射成任何 download format
+    if (rawDelivery === 'video' || token === 'mv' || token === 'video' || token === 'official') {
+        return {
+            ok: true,
+            deliveryMode: 'video',
+            format: null,
+            reason: 'official_video'
+        };
+    }
+
+    const deliveryMode = rawDelivery === 'file' ? 'file' : 'voice';
 
     if (token === 'flac') {
         return {
@@ -384,12 +440,14 @@ export function formatMusicSearchList(query, results = [], {
     const lines = results.map((result) => {
         const duration = formatDuration(result);
         const durationText = duration ? `（${duration}）` : '';
-        return `${result.index}. ${sanitizeText(result.display_name)}${durationText}`;
+        const official = normalizeOfficialVideoFields(result);
+        const mvMark = official.has_official_video ? ' [MV]' : '';
+        return `${result.index}. ${sanitizeText(result.display_name)}${durationText}${mvMark}`;
     });
     const minutes = Math.max(1, Math.round(Number(expiresInSeconds) / 60) || 1);
     const header = `🎵 「${sanitizeText(query)}」的搜索结果（${results.length} 条${truncated ? '，上游还有更多' : ''}）`;
     const footer = [
-        `回复 ${command} 序号 选歌，例如 ${command} 1（默认语音；末尾加 mp3 可发文件）`,
+        `回复 ${command} 序号 选歌，例如 ${command} 1（默认语音；末尾加 mp3 发文件，加 mv 发官方视频）`,
         `也可以回复 ${command} 完整歌名`,
         `选错了可重发序号；退出请发 ${exitCommand}`,
         `${minutes} 分钟内有效`
@@ -807,6 +865,7 @@ export class MusicCommandHandler {
                 `${config.command} 歌名 关键词 —— 搜索歌曲`,
                 `${config.command} 序号 或 ${config.command} 完整歌名 —— 选歌（默认语音）`,
                 `${config.command} 序号 mp3/m4a/opus/file —— 选歌并发送文件`,
+                `${config.command} 序号 mv/video/official —— 发送官方视频链接（有则发，无则提示）`,
                 `选错了可重发序号/歌名；退出请发 ${config.exitCommand}`
             ].join('\n'));
             return { handled: true, ok: true, reason: 'usage', sessionKey };
@@ -836,7 +895,11 @@ export class MusicCommandHandler {
             this.store.set(sessionKey, {
                 sessionId: String(payload.session_id),
                 query,
-                results,
+                // 保留官方视频字段，供尾参 mv/video/official 选歌使用
+                results: results.map((item) => ({
+                    ...item,
+                    ...normalizeOfficialVideoFields(item)
+                })),
                 ttlMs
             });
 
@@ -910,6 +973,43 @@ export class MusicCommandHandler {
                     sessionKey,
                     format: resolved.format || null,
                     deliveryMode
+                };
+            }
+
+            // 官方视频：只发链接，绝不调用 /download，也绝不把 official_video_id 当音轨 id
+            if (deliveryMode === 'video') {
+                const official = normalizeOfficialVideoFields(picked);
+                if (!official.has_official_video) {
+                    await reply(`「${picked.display_name}」没有匹配到官方视频。可改发 ${config.command} ${picked.index || parsed.index || 1} 听音频，或换一首再试 mv`);
+                    return {
+                        handled: true,
+                        ok: false,
+                        reason: 'no_official_video',
+                        sessionKey,
+                        deliveryMode: 'video',
+                        videoId: picked.video_id || '',
+                        officialVideoId: ''
+                    };
+                }
+
+                const message = buildOfficialVideoMessage(picked, official);
+                await reply(message);
+                this.logger?.info?.('[点歌] 官方视频链接已发送', {
+                    sessionKey,
+                    videoId: picked.video_id || '',
+                    officialVideoId: official.official_video_id,
+                    deliveryMode: 'video'
+                });
+                return {
+                    handled: true,
+                    ok: true,
+                    reason: 'sent_official_video',
+                    sessionKey,
+                    videoId: picked.video_id || '',
+                    officialVideoId: official.official_video_id,
+                    officialVideoUrl: official.official_video_url,
+                    deliveryMode: 'video',
+                    parts: 1
                 };
             }
 
