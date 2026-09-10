@@ -1198,6 +1198,8 @@ export class AIClient {
      */
     async chat(messages, overrides = {}) {
         const options = this.resolveChatOptions(overrides);
+        // 图片转述等专用请求可显式关闭备用模型切换，避免把原始图片转交给纯文本模型
+        const allowModelFallback = overrides.allowModelFallback !== false;
         this.logPipelineStage('开始执行 chat', {
             model: options.model || null,
             messageCount: Array.isArray(messages) ? messages.length : 0,
@@ -1289,10 +1291,10 @@ export class AIClient {
                 }
             }
 
-            // 备用模型切换
+            // 备用模型切换（allowModelFallback:false 时保持专用模型，不切换）
             const backupModel = this.config.chat?.backupModel;
             const backupProviderId = this.config.chat?.backupModelProviderId;
-            if (backupModel && backupProviderId) {
+            if (allowModelFallback && backupModel && backupProviderId) {
                 const backupProvider = this.getConfiguredProviders().find(p => p.id === backupProviderId);
                 if (backupProvider) {
                     this.logPipelineStage('降级全失败，尝试切换到备用模型', { provider: backupProviderId, model: backupModel });
@@ -1323,10 +1325,10 @@ export class AIClient {
             errorText: String(primaryResult.errorText || '').slice(0, 500)
         });
 
-        // 备用模型切换
+        // 备用模型切换（allowModelFallback:false 时保持专用模型，不切换）
         const backupModel = this.config.chat?.backupModel;
         const backupProviderId = this.config.chat?.backupModelProviderId;
-        if (backupModel && backupProviderId) {
+        if (allowModelFallback && backupModel && backupProviderId) {
             const backupProvider = this.getConfiguredProviders().find(p => p.id === backupProviderId);
             if (backupProvider) {
                 this.logPipelineStage('尝试切换到备用模型', { provider: backupProviderId, model: backupModel });

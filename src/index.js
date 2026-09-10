@@ -36,6 +36,7 @@ import { CharacterManager } from './character.js';
 import { WorldBookManager } from './worldbook.js';
 import { PromptBuilder } from './prompt.js';
 import { AIClient } from './ai.js';
+import { ImageInputError, normalizeImageCaptionConfig, getOneBotMessageSegments, prepareImageInput, attachImageParts } from './image-input.js';
 import { SessionManager } from './session.js';
 import { RegexProcessor } from './regex.js';
 import { setupRoutes } from './routes.js';
@@ -394,6 +395,10 @@ function normalizeAIConfig(config) {
     config.chat = config.chat || {};
     config.chat.modelProviderId = toOptionalString(config.chat.modelProviderId);
     config.chat.model = toOptionalString(config.chat.model);
+    config.chat.varparseModelProviderId = toOptionalString(config.chat.varparseModelProviderId);
+    config.chat.varparseModel = normalizeAIModelId(config.chat.varparseModel);
+    // 图片转述模型：留空表示不启用，只有显式选择模型时才规范化 provider
+    normalizeImageCaptionConfig(config);
 
     if (config.ai.variableParsing && typeof config.ai.variableParsing === 'object' && !Array.isArray(config.ai.variableParsing)) {
         config.ai.variableParsing.providerId = toOptionalString(config.ai.variableParsing.providerId);
@@ -3131,6 +3136,28 @@ async function processBatch(batch) {
             if (shouldRunLlm && injectionRisk.level !== 'none') {
                 logger.warn(`[安全] 疑似注入 (${injectionRisk.level}) [${sessionId}] 规则:${injectionRisk.matchedRules.join(',')}`, injectionRisk);
             }
+
+            // 图片输入：留空时把图片直传聊天模型；显式选择图片转述模型时先转述，只把转述文本并入本轮输入
+            let imageInput = { mode: 'none', imageCount: 0, imageParts: [], captionText: '' };
+            if (shouldRunLlm) {
+                try {
+                    imageInput = await prepareImageInput({ items: batch.items, config, bot, aiClient });
+                } catch (error) {
+                    if (error instanceof ImageInputError) {
+                        logger.warn(`[图片] 本轮图片处理失败 [${sessionId}]: ${error.message}`);
+                        await dispatchReply(event, `⚠️ ${error.message}`);
+                        return;
+                    }
+                    throw error;
+                }
+                if (imageInput.mode === 'caption' && imageInput.captionText) {
+                    // 转述文本属于不可信图片内容，按普通用户输入同样清洗后再并入本轮输入，并随会话历史保存
+                    processedInput = `${processedInput}\n\n${sanitizeForInjection(imageInput.captionText, config, event.user_id)}`;
+                    logger.info('[图片] 已使用专用模型转述', { sessionId, imageCount: imageInput.imageCount, mode: 'caption' });
+                } else if (imageInput.mode === 'direct') {
+                    logger.info('[图片] 图片直传聊天模型', { sessionId, imageCount: imageInput.imageCount, mode: 'direct' });
+                }
+            }
             runtimeContext = {
                 sessionId,
                 memoryScope: batch.memoryScope,
@@ -3346,6 +3373,17 @@ async function processBatch(batch) {
                 }
             } catch (e) { logger.warn('[变量] 宏解析失败:', e.message); }
 
+            // 直传模式：把图片 part 附加到当前 user_input，历史文本与占位符保持不变
+            if (imageInput.mode === 'direct' && imageInput.imageParts.length > 0) {
+                try {
+                    attachImageParts(messages, imageInput.imageParts);
+                } catch (error) {
+                    logger.warn(`[图片] 附加图片到聊天请求失败 [${sessionId}]: ${error.message}`);
+                    await dispatchReply(event, '⚠️ 图片处理失败，请重新发送图片后再试。');
+                    return;
+                }
+            }
+
             logger.info('[执行] Prompt 构建完成', {
                 sessionId,
                 messageCount: messages.length,
@@ -3472,12 +3510,35 @@ async function processBatch(batch) {
                 replyPreview: reply.slice(0, 200),
                 reasoningLength: typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent.length : 0
             });
-            const { extractTaggedContent, extractVisibleContent } = await import('./variable-bridge.js');
+            const { extractTaggedContent, extractVisibleContent, extractAndApplyVariables } = await import('./variable-bridge.js');
             const reasoningContent = (
                 extractTaggedContent(reply, 'thinking')
                 || (typeof replyResult?.reasoningContent === 'string' ? replyResult.reasoningContent.trim() : '')
             );
-            const visibleReply = extractVisibleContent(reply);
+            // 变量作用域：按用户隔离，与下方额外解析共用一个 scope
+            const varNamespace = runtimeContext?.recallNamespace;
+            const varScopeOpts = varNamespace
+                ? {
+                    scopeType: 'user_persistent',
+                    scopeKey: event.user_id ? `user:${event.user_id}` : varNamespace.scopeKey,
+                    characterName: varNamespace.characterName,
+                    presetName: varNamespace.presetName
+                }
+                : null;
+            // 变量桥接：从完整主回复提取 <UpdateVariable> 块并写入变量存储。
+            // 必须基于完整回复提取：块可能位于 <content> 之外，只取可见内容会丢失这些更新。
+            let mainVariableExtraction = { cleanedOutput: reply, applied: [], protocolPresent: false };
+            if (varScopeOpts) {
+                try {
+                    mainVariableExtraction = extractAndApplyVariables(reply, sessionManager, varScopeOpts);
+                    if (mainVariableExtraction.applied.length > 0) {
+                        logger.info('[变量] 已应用', { count: mainVariableExtraction.applied.length, patches: mainVariableExtraction.applied });
+                    } else if (mainVariableExtraction.protocolPresent) {
+                        logger.info('[变量] 主回复含有效 UpdateVariable（空更新），跳过额外模型解析');
+                    }
+                } catch (e) { logger.warn('[变量] 提取失败:', e.message); }
+            }
+            const visibleReply = extractVisibleContent(mainVariableExtraction.cleanedOutput);
             let processedReply = regexProcessor.processOutput(visibleReply);
             // 清洗 ST 卡常见内部标签（draft_notes / thinking / cot 等）
             try {
@@ -3488,41 +3549,25 @@ async function processBatch(batch) {
                     logger.info(`[清洗] 标签剥离: ${beforeLen}→${processedReply.length} 字`);
                 }
             } catch (e) { logger.warn('[变量] 标签清洗失败:', e.message); }
-            // 变量桥接：提取 <UpdateVariable> 块并写入变量存储
-            try {
-                const { extractAndApplyVariables } = await import('./variable-bridge.js');
-                const ns = runtimeContext?.recallNamespace;
-                if (ns) {
-                    const varScopeKey = event.user_id ? `user:${event.user_id}` : ns.scopeKey;
-                    const scopeOpts = {
-                        scopeType: 'user_persistent', scopeKey: varScopeKey,
-                        characterName: ns.characterName, presetName: ns.presetName
-                    };
-                    const result = extractAndApplyVariables(processedReply, sessionManager, scopeOpts);
-                    processedReply = result.cleanedOutput;
-                    if (result.applied.length > 0) {
-                        logger.info('[变量] 已应用', { count: result.applied.length, patches: result.applied });
-                    }
+            // 额外模型解析：仅当主回复没有有效 UpdateVariable 协议输出（空数组 [] 也算）时，异步调用一次
+            if (varScopeOpts && !mainVariableExtraction.protocolPresent && config.ai?.variableParsing?.enabled !== false) {
+                setImmediate(async () => {
+                    try {
+                        const vpModel = config.chat?.varparseModel || config.ai?.variableParsing?.model || config.ai.model;
+                        const vpProviderId = config.chat?.varparseModelProviderId || config.ai?.variableParsing?.providerId || config.ai.activeProviderId;
+                        if (!config.chat?.varparseModel && !config.ai?.variableParsing?.model) { return; } // 未配置变量解析模型则跳过
+                        const vpOverrides = buildAIOverridesFromProviderSelection(config, {
+                            providerId: vpProviderId,
+                            model: vpModel
+                        });
 
-                    // 额外模型解析：主回复未含 UpdateVariable 时，异步调 AI 提取变量
-                    if (result.applied.length === 0 && config.ai?.variableParsing?.enabled !== false) {
-                        setImmediate(async () => {
-                            try {
-                                const vpModel = config.chat?.varparseModel || config.ai?.variableParsing?.model || config.ai.model;
-                                const vpProviderId = config.chat?.varparseModelProviderId || config.ai?.variableParsing?.providerId || config.ai.activeProviderId;
-                                if (!config.chat?.varparseModel && !config.ai?.variableParsing?.model) { return; } // 未配置变量解析模型则跳过
-                                const vpOverrides = buildAIOverridesFromProviderSelection(config, {
-                                    providerId: vpProviderId,
-                                    model: vpModel
-                                });
+                        let varStatus = '';
+                        try {
+                            const { buildVariableStatusBlock } = await import('./variable-bridge.js');
+                            varStatus = buildVariableStatusBlock(sessionManager, varScopeOpts) || '';
+                        } catch {}
 
-                                let varStatus = '';
-                                try {
-                                    const { buildVariableStatusBlock } = await import('./variable-bridge.js');
-                                    varStatus = buildVariableStatusBlock(sessionManager, scopeOpts) || '';
-                                } catch {}
-
-                                const varParsePrompt = `你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。
+                        const varParsePrompt = `你是变量更新解析器。根据对话分析变量变化，输出 JSON Patch。
 
 当前变量：
 ${varStatus || '(无)'}
@@ -3535,23 +3580,21 @@ ${varStatus || '(无)'}
 [{"op":"replace","path":"/变量名","value":新值}]
 </UpdateVariable>`;
 
-                                const vpMessages = [{ role: 'user', content: varParsePrompt }];
-                                const vpResult = await aiClient.chat(vpMessages, {
-                                    temperature: 0.1, maxTokens: 1024,
-                                    ...vpOverrides
-                                });
-                                const vpReply = aiClient.getVisibleResponseContent(vpResult);
-                                if (vpReply && vpReply.includes('<UpdateVariable>')) {
-                                    const vpExtract = extractAndApplyVariables(vpReply, sessionManager, scopeOpts);
-                                    if (vpExtract.applied.length > 0) {
-                                        logger.info('[变量-额外解析] 已应用', { count: vpExtract.applied.length, patches: vpExtract.applied });
-                                    }
-                                }
-                            } catch (e) { logger.warn('[变量-额外解析] 失败:', e.message); }
+                        const vpMessages = [{ role: 'user', content: varParsePrompt }];
+                        const vpResult = await aiClient.chat(vpMessages, {
+                            temperature: 0.1, maxTokens: 1024,
+                            ...vpOverrides
                         });
-                    }
-                }
-            } catch (e) { logger.warn('[变量] 提取失败:', e.message); }
+                        const vpReply = aiClient.getVisibleResponseContent(vpResult);
+                        if (vpReply && vpReply.includes('<UpdateVariable>')) {
+                            const vpExtract = extractAndApplyVariables(vpReply, sessionManager, varScopeOpts);
+                            if (vpExtract.applied.length > 0) {
+                                logger.info('[变量-额外解析] 已应用', { count: vpExtract.applied.length, patches: vpExtract.applied });
+                            }
+                        }
+                    } catch (e) { logger.warn('[变量-额外解析] 失败:', e.message); }
+                });
+            }
             const sendReasoningToQQ = config.chat?.sendReasoningToQQ === true;
             const replyToSend = sendReasoningToQQ && reasoningContent
                 ? buildDebugReplyWithReasoning(reasoningContent, processedReply)

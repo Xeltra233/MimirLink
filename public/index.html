@@ -11445,7 +11445,12 @@
                             <div class="form-group full">
                                 <label>变量解析模型（可选）</label>
                                 <select id="config-chat-varparse-model-ref"></select>
-                                <p class="hint-text">额外模型解析变量更新（如好感度变化）。DS不擅长此格式，建议选Claude/Gemini。留空不启用</p>
+                                <p class="hint-text">仅当聊天模型未输出有效 &lt;UpdateVariable&gt;（输出空数组 [] 也算已处理）时，额外调用一次此模型提取变量更新（如好感度变化）。DS 不擅长此格式，建议选 Claude/Gemini。留空不启用；清空后旧版 ai.variableParsing 配置也会同步清空。</p>
+                            </div>
+                            <div class="form-group full">
+                                <label>图片转述模型（可选）</label>
+                                <select id="config-chat-image-caption-model-ref"></select>
+                                <p class="hint-text">留空不启用：图片直接交给聊天模型处理，非多模态聊天模型将无法识别图片。选择后：发图时先调用此模型转述图片，再把转述文本交给聊天模型，每次发图会额外产生一次模型调用（按所选供应商计费）；转述失败不会退回文本模型识图。</p>
                             </div>
                         </div>
                     </div>
@@ -19336,7 +19341,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
 
         function refreshAIModelSelectOptions() {
             const providers = (aiProviderEntries || []).filter(e => e.baseUrl);
-            const targetIds = ['config-chat-model-ref', 'config-chat-backup-model-ref', 'config-chat-varparse-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
+            const targetIds = ['config-chat-model-ref', 'config-chat-backup-model-ref', 'config-chat-varparse-model-ref', 'config-chat-image-caption-model-ref', 'config-memory-participant-profile-model', 'config-memory-summary-model'];
             targetIds.forEach((selectId) => {
                 const select = document.getElementById(selectId);
                 if (!select) return;
@@ -19360,7 +19365,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                     select.appendChild(group);
                 });
                 // 为可选模型下拉加"不启用"选项
-                if (selectId === 'config-chat-varparse-model-ref' || selectId === 'config-chat-backup-model-ref') {
+                if (selectId === 'config-chat-varparse-model-ref' || selectId === 'config-chat-backup-model-ref' || selectId === 'config-chat-image-caption-model-ref') {
                     const emptyOpt = document.createElement('option');
                     emptyOpt.value = '';
                     emptyOpt.textContent = '— 不启用 —';
@@ -19772,6 +19777,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             };
             requireSelectedProviderKey(draft.chat.backupModelProviderId, '备用模型');
             requireSelectedProviderKey(draft.chat.varparseModelProviderId, '变量解析模型');
+            requireSelectedProviderKey(draft.chat.imageCaptionModelProviderId, '图片转述模型');
             if (draft.memory?.participantProfile?.enabled) {
                 requireSelectedProviderKey(draft.memory?.participantProfile?.providerId, '人物档案分析模型');
             }
@@ -20441,6 +20447,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-model-ref').value = buildAIModelRef(currentConfig.chat?.modelProviderId || currentConfig.ai?.activeProviderId || '', currentConfig.chat?.model || currentConfig.ai?.model || '');
                 document.getElementById('config-chat-backup-model-ref').value = buildAIModelRef(currentConfig.chat?.backupModelProviderId || '', currentConfig.chat?.backupModel || '');
                 document.getElementById('config-chat-varparse-model-ref').value = buildAIModelRef(currentConfig.chat?.varparseModelProviderId || currentConfig.ai?.variableParsing?.providerId || '', currentConfig.chat?.varparseModel || currentConfig.ai?.variableParsing?.model || '');
+                document.getElementById('config-chat-image-caption-model-ref').value = buildAIModelRef(currentConfig.chat?.imageCaptionModelProviderId || '', currentConfig.chat?.imageCaptionModel || '');
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
                 const summaryLegacySelection = parseAIModelRef(currentConfig.memory?.summary?.model || '');
                 const summaryProviderId = currentConfig.memory?.summary?.modelProviderId
@@ -20669,6 +20676,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
             const chatModelSelection = getSelectedAIModelRef('config-chat-model-ref');
             const backupModelSelection = getSelectedAIModelRef('config-chat-backup-model-ref');
             const varparseModelSelection = getSelectedAIModelRef('config-chat-varparse-model-ref');
+            const imageCaptionModelSelection = getSelectedAIModelRef('config-chat-image-caption-model-ref');
             const participantProfileModelSelection = getSelectedAIModelRef('config-memory-participant-profile-model');
             const summaryModelSelection = getSelectedAIModelRef('config-memory-summary-model');
 
@@ -20740,6 +20748,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     backupModel: backupModelSelection.model || '',
                     varparseModelProviderId: varparseModelSelection.providerId || '',
                     varparseModel: varparseModelSelection.model || '',
+                    imageCaptionModelProviderId: imageCaptionModelSelection.providerId || '',
+                    imageCaptionModel: imageCaptionModelSelection.model || '',
                     accessControlMode: document.getElementById('config-chat-access-mode').value,
                     triggerMode: document.getElementById('config-chat-trigger-mode').value,
                     triggerPrefix: document.getElementById('config-chat-trigger').value,

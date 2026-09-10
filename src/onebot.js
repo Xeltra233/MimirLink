@@ -544,6 +544,11 @@ export class OneBotClient extends EventEmitter {
         return this.connected;
     }
 
+    /** 解析 OneBot 缓存图片标识；调用方仅使用返回的 URL 或内联图片。 */
+    async getImage(file) {
+        return this._call('get_image', { file: String(file) });
+    }
+
     getStatus() {
         return {
             connected: this.connected,

@@ -92,10 +92,13 @@ export function stripInternalTags(text) {
 }
 
 export function extractAndApplyVariables(rawOutput, sessionManager, scopeOptions) {
-    if (!rawOutput || !sessionManager) return { cleanedOutput: rawOutput, applied: [] };
+    // protocolPresent：主回复是否给出了有效的 UpdateVariable 协议输出（JSON 数组，空数组 [] 也算），
+    // 用于抑制额外的模型变量解析，避免主模型已处理变量时重复调用。
+    if (!rawOutput || !sessionManager) return { cleanedOutput: rawOutput, applied: [], protocolPresent: false, blockCount: 0 };
 
     const applied = [];
     let cleanedOutput = rawOutput;
+    let protocolPresent = false;
 
     const matches = [...rawOutput.matchAll(UPDATE_VARIABLE_TAG_REGEX)];
 
@@ -104,6 +107,7 @@ export function extractAndApplyVariables(rawOutput, sessionManager, scopeOptions
         try {
             const patches = JSON.parse(blockContent);
             if (Array.isArray(patches)) {
+                protocolPresent = true;
                 for (const patch of patches) {
                     applyPatch(patch, sessionManager, scopeOptions);
                     applied.push(patch);
@@ -120,7 +124,7 @@ export function extractAndApplyVariables(rawOutput, sessionManager, scopeOptions
 
     cleanedOutput = cleanedOutput.replace(/\n{3,}/g, '\n\n').trim();
 
-    return { cleanedOutput, applied };
+    return { cleanedOutput, applied, protocolPresent, blockCount: matches.length };
 }
 
 export function scanVariableUsage(sources = []) {

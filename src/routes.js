@@ -1672,6 +1672,16 @@ export function setupRoutes(app, config, saveConfig, managers) {
 				|| newConfig.onebot?.tokenMode !== undefined && newConfig.onebot.tokenMode !== config.onebot?.tokenMode
 			);
 			mergeConfig(config, newConfig);
+			// 聊天设置是变量解析模型的唯一前端入口；保存时同步遗留的 ai.variableParsing，
+			// 使“清空模型”能真正禁用额外解析，而不会被旧配置继续接管。
+			if (newConfig?.chat && Object.prototype.hasOwnProperty.call(newConfig.chat, 'varparseModel')) {
+				config.ai = config.ai || {};
+				config.ai.variableParsing = (config.ai.variableParsing && typeof config.ai.variableParsing === 'object') ? config.ai.variableParsing : {};
+				config.ai.variableParsing.providerId = typeof newConfig.chat.varparseModelProviderId === 'string' ? newConfig.chat.varparseModelProviderId.trim() : '';
+				config.ai.variableParsing.model = typeof newConfig.chat.varparseModel === 'string' ? newConfig.chat.varparseModel.trim() : '';
+				delete config.ai.variableParsing.baseUrl;
+				delete config.ai.variableParsing.apiKey;
+			}
 			normalizeAccessControlConfig();
 			applyRuntimeConfig();
             clearParticipantProfileTimers();
