@@ -41,7 +41,9 @@ test('admin config UI exposes and persists emoji reaction switch', () => {
     assert.ok(html.includes("currentConfig.chat?.emojiReactionId || '289'"));
     assert.ok(html.includes("emojiReaction: document.getElementById('config-chat-emoji-reaction').checked"));
     assert.ok(html.includes("emojiReactionId: document.getElementById('config-chat-emoji-reaction-id').value.trim() || '289'"));
-    assert.ok(html.includes('set_msg_emoji_like'));
+    // 接口名属于实现细节，不在页面文案里断言，改为校验实际调用位置
+    const onebotSource = fs.readFileSync(new URL('../src/onebot.js', import.meta.url), 'utf8');
+    assert.ok(onebotSource.includes("'set_msg_emoji_like'"));
 });
 
 test('example config keeps emoji reaction off unless enabled', () => {

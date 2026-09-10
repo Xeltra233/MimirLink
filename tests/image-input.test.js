@@ -483,3 +483,13 @@ test('未开启继续回复时转述失败仍提示用户且不静默吞掉', as
         config: config({ imageCaptionModel: 'vision-model' }), aiClient
     }), error => error instanceof ImageInputError && /图片转述失败/.test(error.message));
 });
+
+// 配置页需要在输入框里预填内置默认提示词并提供「恢复默认」，因此默认值必须由配置接口下发，
+// 同时该字段只用于前端展示，保存时必须被剥离，不能落进 config.json
+test('内置默认转述提示词随配置接口下发，且保存时被剥离', async () => {
+    const fs = await import('node:fs');
+    const routesSource = fs.readFileSync(new URL('../src/routes.js', import.meta.url), 'utf8');
+    assert.ok(routesSource.includes("import { DEFAULT_IMAGE_CAPTION_PROMPT } from './image-input.js';"));
+    assert.ok(routesSource.includes('imageCaptionPromptDefault: DEFAULT_IMAGE_CAPTION_PROMPT'));
+    assert.ok(routesSource.includes('delete value.imageCaptionPromptDefault;'));
+});

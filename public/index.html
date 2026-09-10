@@ -508,6 +508,25 @@
             font-size: 0.82rem;
         }
 
+        .field-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .field-row label {
+            margin-bottom: 0;
+        }
+
+        button.field-row-reset {
+            flex: 0 0 auto;
+            width: auto;
+            padding: 3px 10px;
+            font-size: 0.76rem;
+            line-height: 1.6;
+        }
+
         input, select, textarea {
             width: 100%;
             padding: 7px 12px;
@@ -11718,7 +11737,6 @@
         <div class="panel" id="config">
             <div class="config-page-head">
                 <h2>系统配置</h2>
-                <p class="config-page-intro">按分类管理连接、聊天、工具、记忆和模型设置；修改后保存即可立即生效。</p>
             </div>
             <div class="config-subtabs">
                 <button type="button" class="config-subtab active" data-config-panel="overview" onclick="setConfigSubPanel('overview')">总览</button>
@@ -11737,7 +11755,6 @@
                     <div class="card">
                         <div class="config-card-header">
                             <h3>配置总览</h3>
-                            <p class="config-card-intro">先按上面的分类进入具体配置；常用入口是模型、预设、AI 搜索、记忆和权限。</p>
                         </div>
                         <div class="dashboard-quick-links">
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('model')"><strong>模型供应</strong><span>多供应商、API Key、Base URL、模型拉取和探测</span></button>
@@ -11752,7 +11769,6 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>OneBot 连接</h3>
-                        <p class="config-card-intro">支持 WS（正向WS连接）和 HTTP（事件上报+API调用）两种模式</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subgrid">
@@ -11762,7 +11778,6 @@
                                     <option value="ws">WebSocket（正向WS）</option>
                                     <option value="http">HTTP（事件上报 + API调用）</option>
                                 </select>
-                                <p class="hint-text">WS：MimirLink 主动连 OneBot / HTTP：OneBot 往 /onebot/event 推事件</p>
                             </div>
                             <div class="form-group">
                                 <label id="config-onebot-url-label">连接地址</label>
@@ -11788,7 +11803,6 @@
                 <div class="card card--wide">
                     <div class="config-card-header">
                         <h3>聊天设置</h3>
-                        <p class="config-card-intro">配置会话、触发和访问控制</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">&#x804A;&#x5929;&#x6A21;&#x578B;</div>
@@ -11806,7 +11820,7 @@
                             <div class="form-group full">
                                 <label>变量解析模型（可选）</label>
                                 <select id="config-chat-varparse-model-ref"></select>
-                                <p class="hint-text">仅当聊天模型未输出有效 &lt;UpdateVariable&gt;（输出空数组 [] 也算已处理）时，额外调用一次此模型提取变量更新（如好感度变化）。DS 不擅长此格式，建议选 Claude/Gemini。留空不启用；清空后旧版 ai.variableParsing 配置也会同步清空。</p>
+                                <p class="hint-text">仅当聊天模型未输出有效 &lt;UpdateVariable&gt;（输出空数组 [] 也算已处理）时，额外调用一次此模型提取变量更新（如好感度变化）。DS 不擅长此格式，建议选 Claude/Gemini。留空不启用。</p>
                             </div>
                             <div class="form-group full">
                                 <label>图片转述模型（可选）</label>
@@ -11826,12 +11840,12 @@
                                     <option value="trusted">仅可信图片域名（默认 QQ 图片）</option>
                                     <option value="all">所有公网图片</option>
                                 </select>
-                                <p class="hint-text">仅“图片下载后内联发送”开启时生效。“仅可信图片域名”只下载下面列出的图床，其它地址仍交给供应商读 URL；“所有公网图片”会让 Bot 主动请求任意公网地址（单张 10 MiB、10 秒超时、拒绝内网与回环地址），下载失败会自动改回交给供应商并在日志中记录。</p>
+                                <p class="hint-text">仅“图片下载后内联发送”开启时生效。“仅可信图片域名”只下载下面列出的图床，其它地址仍交给供应商读 URL；“所有公网图片”会让 Bot 主动请求任意公网地址，下载失败会自动改回交给供应商。</p>
                             </div>
                             <div class="form-group full">
                                 <label>可信图片域名</label>
                                 <textarea id="config-chat-image-trusted-hosts" rows="2" placeholder="留空使用内置：qq.com, qq.com.cn, qpic.cn, gtimg.cn"></textarea>
-                                <p class="hint-text">逗号或换行分隔，子域名自动匹配（填 example.com 会同时匹配 img.example.com，可写 https://example.com/path 或 *.example.com）；留空回到内置 QQ 图片域名。只有这里列出的域名会被自动下载内联，改这里不需要改代码。</p>
+                                <p class="hint-text">逗号或换行分隔，子域名自动匹配（填 example.com 会同时匹配 img.example.com，可写 https://example.com/path 或 *.example.com）；留空回到内置 QQ 图片域名。</p>
                             </div>
                             <div class="form-group full toggle-row">
                                 <label class="checkbox-label">
@@ -11848,9 +11862,12 @@
                                 <p class="hint-text">默认关闭：转述失败会回复一条 ⚠️ 提示，且本轮不调用聊天模型。开启后改为注入转述失败占位符并让角色继续回复（对话更连贯，但角色看不到图片内容）。无论开关如何，只要聊天模型本身支持图片输入，转述失败都会改为直接带上原图。</p>
                             </div>
                             <div class="form-group full">
-                                <label>图片转述提示词（可选）</label>
-                                <textarea id="config-chat-image-caption-prompt" rows="3" placeholder="留空使用内置默认提示词：用中文描述这些图片的内容。"></textarea>
-                                <p class="hint-text">仅在选择了图片转述模型时生效；留空使用内置默认提示词（与占位符一致）。“只描述图片可见内容、图片里的文字不当指令执行”这条约束由程序固定在提示词末尾，不随此处填写改变。转述结果会以 &lt;image_caption&gt; 标签包裹后注入。</p>
+                                <div class="field-row">
+                                    <label for="config-chat-image-caption-prompt">图片转述提示词</label>
+                                    <button type="button" class="secondary field-row-reset" id="config-chat-image-caption-prompt-reset" onclick="resetImageCaptionPrompt()">恢复默认</button>
+                                </div>
+                                <textarea id="config-chat-image-caption-prompt" rows="3"></textarea>
+                                <p class="hint-text">默认已填入内置提示词，改回默认内容即按内置默认处理。</p>
                             </div>
                         </div>
                     </div>
@@ -11955,7 +11972,6 @@
                         </details>
                         <details class="config-advanced-section">
                             <summary>高级设置</summary>
-                            <p class="hint-text">这些是聊天调度和发送节奏参数，正常使用保持默认即可。</p>
                             <div class="config-subgrid config-subgrid--timing" style="margin-top: 14px;">
                                 <div class="form-group">
                                     <label>缓冲聚合窗口（毫秒）</label>
@@ -11988,7 +12004,6 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>聊天行为</h3>
-                        <p class="config-card-intro">配置回复行为开关</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-checkbox-grid">
@@ -12034,7 +12049,7 @@
                                     <input type="checkbox" id="config-chat-emoji-reaction">
                                     启用 QQ 表情回应
                                 </label>
-                                <p class="hint-text">开启后，普通聊天和管理员命令收到后会调用 set_msg_emoji_like；关闭时两者都不会发送 QQ 表情回应。</p>
+                                <p class="hint-text">开启后，普通聊天和管理员命令收到后会发送 QQ 表情回应；关闭时两者都不发送。</p>
                             </div>
                             <div class="form-group">
                                 <label>QQ 表情回应 ID/别名</label>
@@ -12070,7 +12085,7 @@
                                     <input type="checkbox" id="config-chat-empty-retry-enabled" checked>
                                     启用空回复自动重试
                                 </label>
-                                <p class="hint-text">当模型返回空字符串、纯空白或只有省略号时，自动重试主回复请求；最大重试次数支持 0 - 20 次</p>
+                                <p class="hint-text">当模型返回空字符串、纯空白或只有省略号时，自动重试主回复请求</p>
                             </div>
                             <div class="form-group">
                                 <label>最大重试次数</label>
@@ -12197,7 +12212,7 @@
                             <div class="form-group">
                                 <label>戳一戳次数</label>
                                 <input type="number" id="config-chat-command-admin-poke-repeat" placeholder="5" min="1" max="10">
-                                <p class="hint-text">默认 5 下；过高会造成打扰，服务端限制为 1 - 10。</p>
+                                <p class="hint-text">默认 5 下；过高会造成打扰</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
@@ -12220,7 +12235,6 @@
                                     <input type="checkbox" id="config-chat-music-enabled" onchange="updateMusicFields(); markConfigDirty('点歌开关已修改')">
                                     启用点歌指令
                                 </label>
-                                <p class="hint-text">默认关闭。音乐 API 使用 <a href="https://github.com/Xeltra233/youtube-music-api" target="_blank" rel="noopener noreferrer">Xeltra233/youtube-music-api</a>。</p>
                             </div>
                             <div class="form-group">
                                 <label>点歌指令文本</label>
@@ -12235,22 +12249,21 @@
                             <div class="form-group">
                                 <label>桥接服务地址</label>
                                 <input type="text" id="config-chat-music-base-url" placeholder="http://127.0.0.1:8787">
-                                <p class="hint-text">音乐 API 服务地址（项目：<a href="https://github.com/Xeltra233/youtube-music-api" target="_blank" rel="noopener noreferrer">Xeltra233/youtube-music-api</a>）。</p>
                             </div>
                             <div class="form-group">
                                 <label>桥接服务 API Key</label>
                                 <input type="password" id="config-chat-music-api-key" placeholder="桥接服务未开鉴权时留空" autocomplete="new-password">
-                                <p class="hint-text">对应桥接服务的 <code>X-API-Key</code>。已保存的 Key 不会回显，留空表示不修改。</p>
+                                <p class="hint-text">已保存的 Key 不会回显，留空表示不修改。</p>
                             </div>
                             <div class="form-group">
                                 <label>候选条数</label>
                                 <input type="number" id="config-chat-music-limit" placeholder="10" min="1" max="20">
-                                <p class="hint-text">一次搜索返回给群里的候选数量，服务端限制 1 - 20；太多会把群消息刷得很长。</p>
+                                <p class="hint-text">一次搜索返回给群里的候选数量</p>
                             </div>
                             <div class="form-group">
                                 <label>最低匹配分</label>
                                 <input type="number" id="config-chat-music-min-score" placeholder="0.35" min="0" max="1" step="0.05">
-                                <p class="hint-text">0 - 1。调高结果更准但更容易搜不到，调低会混入无关曲目。</p>
+                                <p class="hint-text">调高更容易搜不到，调低会混入无关曲目</p>
                             </div>
                             <details style="margin-top:8px">
                                 <summary>点歌详细配置</summary>
@@ -12258,17 +12271,17 @@
                                     <div class="form-group">
                                         <label>单曲最长时长（秒）</label>
                                         <input type="number" id="config-chat-music-max-duration" placeholder="900" min="0" max="7200">
-                                        <p class="hint-text">超过此时长的候选会被拒绝下载，防止有人点几小时的合集。填 0 表示不限制（不推荐）。</p>
+                                        <p class="hint-text">超过此时长的候选会被拒绝下载。填 0 表示不限制</p>
                                     </div>
                                     <div class="form-group">
                                         <label>语音切段时长（秒）</label>
                                         <input type="number" id="config-chat-music-voice-segment" placeholder="120" min="0" max="600">
-                                        <p class="hint-text">仅对「语音发送」生效。QQ 语音单条约 2 分钟；超过会用 ffmpeg 切段顺序连发。默认 120；0=不切段（不推荐）。文件发送不会切段。</p>
+                                        <p class="hint-text">仅对「语音发送」生效。超过此长度会切段顺序连发。填 0 表示不切段。</p>
                                     </div>
                                     <div class="form-group">
                                         <label>音频体积上限（MB）</label>
                                         <input type="number" id="config-chat-music-max-filesize" placeholder="30" min="1" max="200">
-                                        <p class="hint-text">超过上限直接丢弃并提示换歌。QQ 语音对大文件容错很差，建议不超过 30MB。</p>
+                                        <p class="hint-text">超过上限直接丢弃并提示换歌</p>
                                     </div>
                                     <div class="form-group">
                                         <label>搜索超时（毫秒）</label>
@@ -12277,12 +12290,12 @@
                                     <div class="form-group">
                                         <label>下载超时（毫秒）</label>
                                         <input type="number" id="config-chat-music-download-timeout" placeholder="300000" min="5000" max="600000">
-                                        <p class="hint-text">下载 + 转码可能很慢，建议保持 300000（5 分钟）以上，太小会频繁超时失败。</p>
+                                        <p class="hint-text">下载与转码超时；太小会频繁超时失败</p>
                                     </div>
                                     <div class="form-group">
                                         <label>候选有效期（毫秒）</label>
                                         <input type="number" id="config-chat-music-session-ttl" placeholder="1800000" min="60000" max="3600000">
-                                        <p class="hint-text">超时后需要重新搜索。实际有效期取本值与桥接服务返回值的较小者。</p>
+                                        <p class="hint-text">超时后需要重新搜索</p>
                                     </div>
                                 </div>
                             </details>
@@ -12310,12 +12323,12 @@
                                     <input type="checkbox" id="config-ai-tool-text-fallback-enabled">
                                     启用文本工具兜底
                                 </label>
-                                <p class="hint-text">模型不支持原生 tool_calls 时，用 JSON 协议兜底</p>
+                                <p class="hint-text">模型不支持原生工具调用时使用 JSON 协议兜底</p>
                             </div>
                             <div class="form-group">
                                 <label>文本工具最大轮次</label>
                                 <input type="number" id="config-ai-tool-text-fallback-max-rounds" placeholder="3" min="1" max="8">
-                                <p class="hint-text">模型不支持原生 tool_calls 时使用 JSON 协议兜底；达到轮次后必须输出最终正文，避免反复套娃。</p>
+                                <p class="hint-text">模型不支持原生工具调用时使用 JSON 协议兜底；达到轮次后必须输出最终正文</p>
                             </div>
                             <div class="form-group">
                                 <label>搜索方式</label>
@@ -12327,7 +12340,7 @@
                                     <option value="brave">Brave（免 Key）</option>
                                     <option value="serpapi">SerpAPI（Google 结果 API，需 Key）</option>
                                 </select>
-                                <p class="hint-text">除 Tavily/SerpAPI 需 Key 外，其余免 Key。建议默认 Bing 或 DuckDuckGo，失败时可启用 Bing 回退。</p>
+                                <p class="hint-text">除 Tavily/SerpAPI 需 Key 外，其余免 Key</p>
                             </div>
                             <details style="margin-top:8px">
                                 <summary>搜索详细配置</summary>
@@ -12387,7 +12400,6 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>记忆与人物档案</h3>
-                        <p class="config-card-intro">配置记忆存储、摘要和人物档案</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">存储与摘要</div>
@@ -12445,7 +12457,7 @@
                                     <input type="checkbox" id="config-memory-participant-profile-retry" checked>
                                     LLM失败自动重试
                                 </label>
-                                <p class="hint-text">调用失败重试2次，仍失败挂起下次触发再试</p>
+                                <p class="hint-text">调用失败重试 2 次，仍失败则下次触发时再试</p>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>人物档案黑名单 participantId（逗号分隔）</label>
@@ -12487,7 +12499,7 @@
                                     <option value="profile_plus_messages">锚点附近全量上下文 + 已有画像</option>
                                     <option value="messages_only">锚点附近全量上下文 无画像</option>
                                 </select>
-                                <p class="hint-text">分析会保留对话上下文并按说话人拆开：目标人物 / Bot / 第三者。档案结论只写目标人物本人发言；Bot 与第三者仅作背景，不会当成目标人物说的。bot_only = 只取与 Bot 有交互的对话上下文；全量上下文 = 目标人物锚点附近的群/私聊上下文。有画像 = 合并已有档案增量更新；无画像 = 仅依据新增消息总结。</p>
+                                <p class="hint-text">分析按说话人拆开：目标人物 / Bot / 第三者；档案只依据目标人物本人的发言更新，Bot 与第三者仅作背景。bot_only = 只取与 Bot 有交互的对话上下文；全量上下文 = 锚点附近的群/私聊；有画像 = 增量合并；无画像 = 仅按新增消息总结。</p>
                             </div>
                             <div class="form-group full">
                                 <label>档案专用模型</label>
@@ -12504,7 +12516,6 @@
                     <div class="card card--wide model-provider-card">
                         <div class="config-card-header">
                             <h3>模型供应</h3>
-                            <p class="config-card-intro">管理 AI 供应商与模型</p>
                         </div>
                         <div class="model-provider-layout">
                             <aside class="model-provider-sidebar">
@@ -12577,7 +12588,6 @@
                 <div class="card card--wide">
                     <div class="config-card-header">
                         <h3>预设与运行时预览</h3>
-                        <p class="config-card-intro">配置预设和运行时预览</p>
                     </div>
                     <input type="file" id="preset-import-file" accept="application/json,.json" style="display:none" onchange="importPresetFile(this)">
                     <pre id="preset-import-report" class="model-meta-box" style="display:none;"></pre>
@@ -12660,7 +12670,6 @@
                                         <div class="form-group" style="margin: 0;">
                                             <label>AI 响应超时（秒，可自定义）</label>
                                             <input type="number" id="config-ai-timeout" placeholder="60" min="1" max="3600" step="1">
-                                            <p class="hint-text">建议 60 秒以上</p>
                                         </div>
                                     </div>
                                 </div>
@@ -12710,7 +12719,7 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>MCP 接口</h3>
-                        <p class="config-card-intro">外部工具（Claude Code/Codex）通过此端点调用靶场能力</p>
+                        <p class="config-card-intro">供外部工具通过 MCP 调用靶场能力</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subgrid">
@@ -12718,12 +12727,11 @@
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-mcp-enabled" checked> 启用 MCP
                                 </label>
-                                <p class="hint-text">关闭后 /mcp 端点不可用</p>
                             </div>
                             <div class="form-group">
                                 <label>端点路径</label>
                                 <input type="text" id="config-mcp-path" placeholder="/mcp" value="/mcp">
-                                <p class="hint-text">默认 /mcp，修改后需重启生效</p>
+                                <p class="hint-text">修改后需重启生效</p>
                             </div>
                         </div>
                         <div class="meta-box" style="margin-top:12px;white-space:normal">
@@ -12754,12 +12762,12 @@
                             <div class="form-group">
                                 <label>日志保留天数</label>
                                 <input type="number" id="config-server-log-retention-days" placeholder="14" min="0" max="3650" step="1">
-                                <p class="hint-text">到期的历史 .log 文件会由服务端自动删除；0 表示关闭自动删除。当前正在写入的日志不会被删除。</p>
+                                <p class="hint-text">到期日志自动删除；0 表示关闭自动删除</p>
                             </div>
                             <div class="form-group">
                                 <label>日志清理检查间隔（分钟）</label>
                                 <input type="number" id="config-server-log-cleanup-interval-minutes" placeholder="60" min="1" max="1440" step="1">
-                                <p class="hint-text">服务端按此间隔检查过期日志；过小会增加磁盘扫描频率，建议保持 60 分钟。</p>
+                                <p class="hint-text">过期日志的检查间隔</p>
                             </div>
                         </div>
                     </div>
@@ -12813,7 +12821,7 @@
                                 </div>
                             </div>
                             <textarea id="range-message" rows="5" style="width:100%;font-family:monospace;font-size:0.82rem;resize:vertical;" placeholder="输入要测试的消息"></textarea>
-                            <p class="hint-text">这里是单次测试输入；MCP 触发的靶场测试也会自动同步到中间画布和右侧结果区。</p>
+                            <p class="hint-text">单次测试输入</p>
                             <div class="range-chat-status" id="range-test-status" style="display:none"><span class="range-state-dot running"></span>AI 回复中...<button class="secondary range-status-inline-btn" data-range-action="stop-ai">打断</button></div>
                         </div>
 
@@ -20354,9 +20362,6 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 if (musicDraft.command.length > 100 || musicDraft.exitCommand.length > 100) {
                     warnings.push('点歌指令文本过长，实际使用时不便输入和识别');
                 }
-                if (!isLocalAIBaseUrl(musicDraft.baseUrl)) {
-                    warnings.push('点歌桥接服务地址不是本机地址，请确认这是可信的内网服务，避免把下载能力暴露到公网');
-                }
                 if (musicDraft.maxDurationSeconds === 0) {
                     warnings.push('点歌未限制单曲时长，可能被点几小时的长视频拖垮下载和语音发送');
                 }
@@ -20552,6 +20557,22 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (inlineToggle) inlineToggle.checked = normalized !== 'provider';
             if (scopeSelect) scopeSelect.value = normalized === 'inline' ? 'all' : 'trusted';
             updateImageFetchModeFields();
+        }
+
+        // 内置默认提示词随配置接口下发，避免前后端各写一份
+        function getDefaultImageCaptionPrompt() {
+            const value = currentConfig?.chat?.imageCaptionPromptDefault;
+            return typeof value === 'string' ? value : '';
+        }
+
+        function resetImageCaptionPrompt() {
+            const textarea = document.getElementById('config-chat-image-caption-prompt');
+            const defaultPrompt = getDefaultImageCaptionPrompt();
+            if (!textarea || !defaultPrompt) {
+                return;
+            }
+            textarea.value = defaultPrompt;
+            markConfigDirty('图片转述提示词已恢复默认');
         }
 
         // 点歌未启用时禁用所有细项，避免误以为配置已生效
@@ -20915,7 +20936,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                     : (currentConfig.chat?.imageTrustedHosts || '');
                 document.getElementById('config-chat-image-skip-caption').checked = currentConfig.chat?.imageCaptionSkipWhenModelSupportsImage !== false;
                 document.getElementById('config-chat-image-caption-fail-continue').checked = currentConfig.chat?.imageCaptionFailContinue === true;
-                document.getElementById('config-chat-image-caption-prompt').value = currentConfig.chat?.imageCaptionPrompt || '';
+                document.getElementById('config-chat-image-caption-prompt').value = currentConfig.chat?.imageCaptionPrompt || getDefaultImageCaptionPrompt();
                 document.getElementById('config-memory-participant-profile-model').value = buildAIModelRef(participantProfileProviderId, participantProfileModel);
                 const summaryLegacySelection = parseAIModelRef(currentConfig.memory?.summary?.model || '');
                 const summaryProviderId = currentConfig.memory?.summary?.modelProviderId
@@ -21223,7 +21244,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     imageTrustedHosts: document.getElementById('config-chat-image-trusted-hosts').value.trim(),
                     imageCaptionSkipWhenModelSupportsImage: document.getElementById('config-chat-image-skip-caption').checked,
                     imageCaptionFailContinue: document.getElementById('config-chat-image-caption-fail-continue').checked,
-                    imageCaptionPrompt: document.getElementById('config-chat-image-caption-prompt').value.trim(),
+                    imageCaptionPrompt: (() => {
+                        const value = document.getElementById('config-chat-image-caption-prompt').value.trim();
+                        // 与内置默认一致时不写进配置，保持「跟随内置默认」语义
+                        return value === getDefaultImageCaptionPrompt().trim() ? '' : value;
+                    })(),
                     accessControlMode: document.getElementById('config-chat-access-mode').value,
                     triggerMode: document.getElementById('config-chat-trigger-mode').value,
                     triggerPrefix: document.getElementById('config-chat-trigger').value,
@@ -21507,7 +21532,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     <p class="hint-text" style="margin-bottom:8px;">检测到以下类别，选择要恢复的内容：</p>
                     <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px;">${checkboxHtml}</div>
                     ${hasMemory ? '<p style="color:var(--danger);margin-bottom:8px;font-size:0.85rem;">⚠️ 记忆库包含聊天记录，恢复将覆盖当前数据！</p>' : ''}
-                    <p class="hint-text">恢复前会自动备份当前状态到 data/restore-backups/。</p>
+                    <p class="hint-text">恢复前会自动备份当前状态。</p>
                     <div class="btn-group" style="margin-top:16px;justify-content:flex-end;">
                         <button class="secondary" id="restore-cancel-btn">取消</button>
                         <button id="restore-confirm-btn">确认恢复</button>

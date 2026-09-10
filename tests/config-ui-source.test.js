@@ -238,3 +238,41 @@ test('保存配置时已保存密钥以掩码回传，不会被空值清空', ()
     assert.equal(payload[1].apiKey, '');
     assert.equal(payload[2].apiKey, 'sk-new');
 });
+
+// 图片转述提示词：输入框直接填内置默认值，旁边给「恢复默认」按钮；
+// 与内置默认一致时保存为空值，保持「跟随内置默认」语义
+test('图片转述提示词默认填入输入框并可一键恢复默认', () => {
+    assert.ok(source.includes('id="config-chat-image-caption-prompt-reset"'));
+    assert.ok(source.includes('onclick="resetImageCaptionPrompt()"'));
+    assert.ok(source.includes("document.getElementById('config-chat-image-caption-prompt').value = currentConfig.chat?.imageCaptionPrompt || getDefaultImageCaptionPrompt();"));
+    assert.ok(source.includes("return value === getDefaultImageCaptionPrompt().trim() ? '' : value;"));
+    assert.equal(/#config-chat-image-caption-prompt[^>]*placeholder=/.test(source)
+        || /id="config-chat-image-caption-prompt"[^>]*placeholder=/.test(source), false, '默认值已填入输入框，不应再依赖占位提示');
+});
+
+test('恢复默认按钮把输入框写回内置默认值并标记未保存', () => {
+    const start = source.indexOf('function getDefaultImageCaptionPrompt()');
+    const end = source.indexOf('// 点歌未启用时禁用所有细项', start);
+    assert.ok(start >= 0 && end > start, '未找到默认提示词相关函数');
+
+    const textarea = { value: '' };
+    const dirty = [];
+    const context = {
+        currentConfig: { chat: { imageCaptionPromptDefault: '用中文描述这些图片的内容。' } },
+        document: { getElementById: (id) => (id === 'config-chat-image-caption-prompt' ? textarea : null) },
+        markConfigDirty: (message) => dirty.push(message),
+    };
+    vm.createContext(context);
+    vm.runInContext(source.slice(start, end), context);
+
+    context.resetImageCaptionPrompt();
+    assert.equal(textarea.value, '用中文描述这些图片的内容。');
+    assert.equal(dirty.length, 1);
+
+    // 没有下发默认值时不动输入框，避免把用户已经填好的内容清掉
+    context.currentConfig = { chat: {} };
+    textarea.value = '自定义要求';
+    context.resetImageCaptionPrompt();
+    assert.equal(textarea.value, '自定义要求');
+    assert.equal(dirty.length, 1);
+});

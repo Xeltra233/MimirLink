@@ -17,6 +17,7 @@ import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
 import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, runConfiguredWebSearch } from './tools.js';
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 import { syncPresetFiles } from './preset-sync.js';
+import { DEFAULT_IMAGE_CAPTION_PROMPT } from './image-input.js';
 import { collectParticipantGroupIds, resolveParticipantIdentityFromOneBot } from './participant-identity.js';
 import { describeModelCapabilities, resolveModelImageSupport, findModelEntry } from './model-capabilities.js';
 
@@ -1386,6 +1387,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
         delete value.hasAccessToken;
         delete value.passwordSet;
         delete value.sessionSecretSet;
+        delete value.imageCaptionPromptDefault;
         for (const child of Object.values(value)) {
             stripClientOnlyConfigFlags(child);
         }
@@ -1598,7 +1600,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
             onebot: safeOneBotConfig,
             chat: {
                 ...(config.chat || {}),
-                music: safeMusicConfig
+                music: safeMusicConfig,
+                // 内置默认转述提示词下发给配置页预填与「恢复默认」按钮使用，保存时会被剥离
+                imageCaptionPromptDefault: DEFAULT_IMAGE_CAPTION_PROMPT
             },
             imports: {
                 ...(config.imports || {}),
