@@ -168,3 +168,33 @@ test('config UI 内联脚本可以正常解析（防止模板字符串改坏整�
         assert.doesNotThrow(() => new Function(code), `第 ${index + 1} 个内联脚本块存在语法错误`);
     });
 });
+
+// 面板必须与 .shell-layout 同级：漏删一个 div 会把 #logs / #prompt-range 套进 #config，
+// 配置页一隐藏，日志页就永远量到 0×0（表现为"日志 tab 打不开"）
+test('面板 div 层级完整：#config / #prompt-range / #logs 都是 .shell-layout 的直接子节点', () => {
+    const stack = [];
+    const parents = {};
+    const tokenRe = /<div\b[^>]*>|<\/div>/gi;
+    let match;
+    while ((match = tokenRe.exec(source))) {
+        const token = match[0];
+        if (token.startsWith('</')) {
+            stack.pop();
+            continue;
+        }
+        const id = (token.match(/id="([^"]+)"/) || [])[1] || '';
+        const cls = (token.match(/class="([^"]+)"/) || [])[1] || '';
+        const parent = stack[stack.length - 1];
+        if (['config', 'prompt-range', 'logs'].includes(id)) {
+            parents[id] = parent?.cls || '';
+        }
+        stack.push({ id, cls });
+    }
+    ['config', 'prompt-range', 'logs'].forEach((panelId) => {
+        assert.match(
+            parents[panelId] || '',
+            /shell-layout/,
+            `#${panelId} 没有挂在 .shell-layout 下，面板闭合标签可能缺失`,
+        );
+    });
+});

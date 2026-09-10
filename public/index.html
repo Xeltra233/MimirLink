@@ -11813,7 +11813,6 @@
                                 <select id="config-chat-image-caption-model-ref"></select>
                                 <p class="hint-text">留空不启用：图片直接交给聊天模型处理，非多模态聊天模型将无法识别图片。选择后：发图或回复图片消息时先调用此模型转述图片，再把转述文本交给聊天模型，每次发图会额外产生一次模型调用（按所选供应商计费）；转述失败不会退回文本模型识图。</p>
                             </div>
-                            <div class="form-group full">
                             <div class="form-group full toggle-row">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-image-inline-enabled" checked onchange="updateImageFetchModeFields()">
