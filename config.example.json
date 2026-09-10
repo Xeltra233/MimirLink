@@ -82,6 +82,8 @@
     "varparseModelProviderId": "",
     "imageCaptionModel": "",
     "imageCaptionModelProviderId": "",
+    "imageCaptionPrompt": "",
+    "imageFetchMode": "auto",
     "triggerMode": "auto",
     "requireAtInGroup": true,
     "triggerPrefix": "",

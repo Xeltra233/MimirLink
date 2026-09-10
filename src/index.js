@@ -3162,7 +3162,11 @@ async function processBatch(batch) {
                     processedInput = `${processedInput}\n\n${sanitizeForInjection(imageInput.captionText, config, event.user_id)}`;
                     logger.info('[图片] 已使用专用模型转述', { sessionId, imageCount: imageInput.imageCount, mode: 'caption' });
                 } else if (imageInput.mode === 'direct') {
-                    logger.info('[图片] 图片直传聊天模型', { sessionId, imageCount: imageInput.imageCount, mode: 'direct' });
+                    const inlineCount = imageInput.imageParts.filter(part => String(part.image_url?.url || '').startsWith('data:')).length;
+                    logger.info('[图片] 图片直传聊天模型', { sessionId, imageCount: imageInput.imageCount, inlineCount, mode: 'direct' });
+                }
+                for (const warning of imageInput.warnings || []) {
+                    logger.warn(`[图片] ${warning}`, { sessionId });
                 }
             }
             runtimeContext = {

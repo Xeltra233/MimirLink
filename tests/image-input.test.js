@@ -1,11 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+    DEFAULT_IMAGE_CAPTION_PROMPT,
     IMAGE_INPUT_LIMITS,
     ImageInputError,
     normalizeImageCaptionConfig,
     getImageCaptionOverrides,
+    getImageCaptionPrompt,
     getOneBotMessageSegments,
+    isTrustedImageHost,
+    normalizeImageFetchMode,
     prepareImageInput,
     attachImageParts
 } from '../src/image-input.js';
@@ -29,7 +33,12 @@ const noopClient = { chat() { throw new Error('不应调用专用模型'); } };
 test('图片转述默认留空；空模型不会因 provider 存在而启用', () => {
     const empty = {};
     normalizeImageCaptionConfig(empty);
-    assert.deepEqual(empty.chat, { imageCaptionModelProviderId: '', imageCaptionModel: '' });
+    assert.deepEqual(empty.chat, {
+        imageCaptionModelProviderId: '', imageCaptionModel: '',
+        imageCaptionPrompt: '', imageFetchMode: 'auto'
+    });
+    assert.equal(getImageCaptionPrompt({}), DEFAULT_IMAGE_CAPTION_PROMPT);
+    assert.equal(getImageCaptionPrompt({ chat: { imageCaptionPrompt: '  自定义转述要求  ' } }), '自定义转述要求');
     const cfg = config({ imageCaptionModelProviderId: 'vision', imageCaptionModel: '  ' });
     normalizeImageCaptionConfig(cfg);
     assert.equal(getImageCaptionOverrides(cfg), null);
@@ -210,4 +219,127 @@ test('引用图片与直发图片共用张数上限，不静默丢弃', async ()
         ],
         config: config(), aiClient: noopClient
     }), /最多/);
+});
+
+// 图片获取方式：默认 auto 只对可信图片域名下载后内联，其余交给供应商读 URL
+const PNG_BYTES = Buffer.from(PNG, 'base64');
+const trustedHostResolver = async () => [{ address: '203.0.113.9', family: 4 }];
+const pngResponse = (bytes = PNG_BYTES, headers = {}) => new Response(bytes, {
+    status: 200,
+    headers: { 'content-type': 'image/png', 'content-length': String(bytes.length), ...headers }
+});
+const withFetch = async (impl, run) => {
+    const original = globalThis.fetch;
+    globalThis.fetch = impl;
+    try { return await run(); } finally { globalThis.fetch = original; }
+};
+
+test('图片获取方式默认 auto，显式取值才切换', () => {
+    assert.equal(normalizeImageFetchMode(undefined), 'auto');
+    assert.equal(normalizeImageFetchMode(' INLINE '), 'inline');
+    assert.equal(normalizeImageFetchMode('provider'), 'provider');
+    assert.equal(normalizeImageFetchMode('unknown'), 'auto');
+    assert.equal(isTrustedImageHost('https://multimedia.nt.qq.com.cn/download?file=x'), true);
+    assert.equal(isTrustedImageHost('https://gchat.qpic.cn/gchatpic_new/0/0-0-0/0'), true);
+    assert.equal(isTrustedImageHost('https://img.example/a.png'), false);
+    assert.equal(isTrustedImageHost('https://notqq.com.evil.example/a.png'), false);
+});
+
+test('auto 模式对 QQ 图片域名下载后内联，模型收到的是 base64', async () => {
+    const calls = [];
+    const result = await withFetch(async (url) => { calls.push(url); return pngResponse(); }, () => prepareImageInput({
+        items: items(image({ url: 'https://multimedia.nt.qq.com.cn/download?file=abc&rkey=1' })),
+        config: config(), aiClient: noopClient, resolveHost: trustedHostResolver
+    }));
+    assert.equal(calls.length, 1);
+    assert.equal(result.warnings.length, 0);
+    assert.match(result.imageParts[0].image_url.url, /^data:image\/png;base64,/);
+});
+
+test('auto 模式对非可信域名不下载，保持原 URL 交给供应商', async () => {
+    const calls = [];
+    const result = await withFetch(async (url) => { calls.push(url); return pngResponse(); }, () => prepareImageInput({
+        items: items(image({ url: 'https://img.example/a.png' })),
+        config: config(), aiClient: noopClient, resolveHost: trustedHostResolver
+    }));
+    assert.equal(calls.length, 0);
+    assert.equal(result.imageParts[0].image_url.url, 'https://img.example/a.png');
+});
+
+test('provider 模式一律不下载，即使域名可信', async () => {
+    const calls = [];
+    const result = await withFetch(async (url) => { calls.push(url); return pngResponse(); }, () => prepareImageInput({
+        items: items(image({ url: 'https://multimedia.nt.qq.com.cn/download?file=abc' })),
+        config: config({ imageFetchMode: 'provider' }), aiClient: noopClient, resolveHost: trustedHostResolver
+    }));
+    assert.equal(calls.length, 0);
+    assert.equal(result.imageParts[0].image_url.url, 'https://multimedia.nt.qq.com.cn/download?file=abc');
+});
+
+test('inline 模式对公网普通域名也下载内联', async () => {
+    const result = await withFetch(async () => pngResponse(), () => prepareImageInput({
+        items: items(image({ url: 'https://img.example/a.png' })),
+        config: config({ imageFetchMode: 'inline' }), aiClient: noopClient, resolveHost: trustedHostResolver
+    }));
+    assert.match(result.imageParts[0].image_url.url, /^data:image\/png;base64,/);
+});
+
+test('拒绝下载解析到内网的地址，且记录回退原因', async () => {
+    const calls = [];
+    const result = await withFetch(async (url) => { calls.push(url); return pngResponse(); }, () => prepareImageInput({
+        items: items(image({ url: 'https://multimedia.nt.qq.com.cn/internal.png' })),
+        config: config(), aiClient: noopClient,
+        resolveHost: async () => [{ address: '127.0.0.1', family: 4 }]
+    }));
+    assert.equal(calls.length, 0);
+    assert.equal(result.imageParts[0].image_url.url, 'https://multimedia.nt.qq.com.cn/internal.png');
+    assert.match(result.warnings.join(' '), /内网/);
+});
+
+test('直连内网 IP 的图片地址不会被下载', async () => {
+    const calls = [];
+    const result = await withFetch(async (url) => { calls.push(url); return pngResponse(); }, () => prepareImageInput({
+        items: items(image({ url: 'https://192.168.1.10/a.png' })),
+        config: config({ imageFetchMode: 'inline' }), aiClient: noopClient
+    }));
+    assert.equal(calls.length, 0);
+    assert.match(result.warnings.join(' '), /内网/);
+});
+
+test('下载失败或返回非图片时回退为供应商读取并记录原因', async () => {
+    const failing = await withFetch(async () => new Response('nope', { status: 500 }), () => prepareImageInput({
+        items: items(image({ url: 'https://multimedia.nt.qq.com.cn/a.png' })),
+        config: config(), aiClient: noopClient, resolveHost: trustedHostResolver
+    }));
+    assert.equal(failing.imageParts[0].image_url.url, 'https://multimedia.nt.qq.com.cn/a.png');
+    assert.match(failing.warnings.join(' '), /下载失败/);
+
+    const wrongType = await withFetch(async () => pngResponse(Buffer.from('<html></html>'), { 'content-type': 'text/html' }), () => prepareImageInput({
+        items: items(image({ url: 'https://multimedia.nt.qq.com.cn/a.png' })),
+        config: config(), aiClient: noopClient, resolveHost: trustedHostResolver
+    }));
+    assert.match(wrongType.warnings.join(' '), /不是图片/);
+});
+
+test('转述请求使用可编辑的提示词，留空回退默认', async () => {
+    const requests = [];
+    const aiClient = {
+        async chat(messages, overrides) { requests.push({ messages, overrides }); return { content: '图1：一只猫。' }; },
+        getVisibleResponseContent(result) { return result.content; }
+    };
+    const custom = '只输出画面里的文字，不要推测。';
+    await prepareImageInput({
+        items: items(image({ file: DATA_URL })),
+        config: config({ imageCaptionModelProviderId: 'vision', imageCaptionModel: 'vision-model', imageCaptionPrompt: custom }),
+        aiClient
+    });
+    await prepareImageInput({
+        items: items(image({ file: DATA_URL })),
+        config: config({ imageCaptionModelProviderId: 'vision', imageCaptionModel: 'vision-model', imageCaptionPrompt: '   ' }),
+        aiClient
+    });
+    const promptOf = (request) => request.messages[0].content.find(part => part.type === 'text').text;
+    assert.equal(promptOf(requests[0]), custom);
+    assert.equal(promptOf(requests[1]), DEFAULT_IMAGE_CAPTION_PROMPT);
+    assert.ok(requests.every(request => request.messages[0].content.filter(part => part.type === 'image_url').length === 1));
 });
