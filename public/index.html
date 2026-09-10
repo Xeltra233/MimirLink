@@ -19651,6 +19651,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 baseUrl: entry.baseUrl || resolved.baseUrl || '',
                 apiKey: typeof entry.apiKey === 'string' ? entry.apiKey : '',
                 hasSavedApiKey,
+                // 保存路径按键名 hasApiKey 判断是否回传掩码，这里保持同一语义，避免已保存密钥被空值覆盖
+                hasApiKey: hasSavedApiKey,
                 model: entry.model || models.find((model) => model.enabled)?.id || models[0]?.id || '',
                 models
             };
@@ -19666,7 +19668,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 const normalized = normalizeAIProviderEntry(entry, index);
                 const apiKey = normalized.apiKey && normalized.apiKey !== '******'
                     ? normalized.apiKey
-                    : (normalized.hasApiKey ? '******' : '');
+                    : ((normalized.hasApiKey || normalized.hasSavedApiKey) ? '******' : '');
                 return {
                     id: normalized.id,
                     name: normalized.name,

@@ -198,3 +198,43 @@ test('面板 div 层级完整：#config / #prompt-range / #logs 都是 .shell-la
         );
     });
 });
+
+// 保存配置时，服务端已保存的密钥必须用掩码回传：曾经因为读不到标记字段而回传空字符串，
+// 结果每次保存都把三个供应商的密钥清空，表现是拉取模型全部 401
+test('保存配置时已保存密钥以掩码回传，不会被空值清空', () => {
+    const normStart = source.indexOf('function normalizeAIProviderEntry(entry = {}, index = 0)');
+    const normEnd = source.indexOf('function getActiveAIProviderEntry()', normStart);
+    const saveStart = source.indexOf('function getAIProviderEntriesForSave()');
+    const saveEnd = source.indexOf('function isChatModel(', saveStart);
+    assert.ok(normStart >= 0 && normEnd > normStart, '未找到 normalizeAIProviderEntry');
+    assert.ok(saveStart >= 0 && saveEnd > saveStart, '未找到 getAIProviderEntriesForSave');
+
+    const context = {
+        aiProviderEntries: [],
+        activeAIProviderId: 'default',
+        buildResolvedAIConfig: (draft) => ({
+            provider: draft.provider,
+            baseUrl: draft.baseUrl,
+            apiKey: draft.apiKey,
+            model: draft.model,
+        }),
+        getAIProviderTypeLabel: () => '类型',
+        normalizeAIModelEntries: (models) => models || [],
+        createAIProviderId: () => 'provider-test',
+        syncActiveAIProviderFromInputs: () => {},
+    };
+    vm.createContext(context);
+    vm.runInContext(source.slice(normStart, normEnd), context);
+    vm.runInContext(source.slice(saveStart, saveEnd), context);
+
+    context.aiProviderEntries = [
+        { id: 'default', name: '已保存密钥的供应商', provider: 'openai-compatible', baseUrl: 'https://a.example/v1', apiKey: '', hasApiKey: true, models: [] },
+        { id: 'provider-2', name: '未配置密钥的供应商', provider: 'openai-compatible', baseUrl: 'https://b.example/v1', apiKey: '', hasApiKey: false, hasSavedApiKey: false, models: [] },
+        { id: 'provider-3', name: '本次输入的密钥', provider: 'openai-compatible', baseUrl: 'https://c.example/v1', apiKey: 'sk-new', hasApiKey: true, hasSavedApiKey: false, models: [] },
+    ];
+
+    const payload = context.getAIProviderEntriesForSave();
+    assert.equal(payload[0].apiKey, '******', '已保存密钥必须以掩码回传，否则服务端密钥会被清空');
+    assert.equal(payload[1].apiKey, '');
+    assert.equal(payload[2].apiKey, 'sk-new');
+});
