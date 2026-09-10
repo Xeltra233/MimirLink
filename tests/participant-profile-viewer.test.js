@@ -1427,13 +1427,6 @@ test('ai model routes use config fallback and explicit overrides', async () => {
             async listModels(options) {
                 aiCalls.push({ type: 'listModels', options });
                 return [{ id: 'gpt-4o-mini', recommendedMaxTokens: 16384 }];
-            },
-            async probeModel(model, options) {
-                aiCalls.push({ type: 'probeModel', model, options });
-                return {
-                    model: { id: model, recommendedMaxTokens: 8192 },
-                    availableModels: [{ id: model, recommendedMaxTokens: 8192 }]
-                };
             }
         }
     });
@@ -1493,42 +1486,7 @@ test('ai model routes use config fallback and explicit overrides', async () => {
             }, scenario.name);
         }
 
-        const probeCases = [
-            {
-                name: '掩码 Key 沿用已保存 provider Key',
-                body: {
-                    providerId: 'provider-saved',
-                    baseUrl: 'https://saved-provider.example/v1',
-                    apiKey: '******',
-                    model: 'saved-model'
-                },
-                expectedModel: 'saved-model',
-                expected: { baseUrl: 'https://saved-provider.example/v1', apiKey: 'saved-provider-secret' }
-            },
-            {
-                name: '无 providerId 时允许显式覆盖',
-                body: {
-                    baseUrl: 'https://override.example/v1',
-                    apiKey: 'override-secret',
-                    model: 'claude-sonnet-4-5'
-                },
-                expectedModel: 'claude-sonnet-4-5',
-                expected: { baseUrl: 'https://override.example/v1', apiKey: 'override-secret' }
-            }
-        ];
-
-        for (const scenario of probeCases) {
-            const data = await postAI('/api/ai/probe', scenario.body);
-            assert.equal(data.autoMaxTokens, 8192, scenario.name);
-            assert.equal(data.model.id, scenario.expectedModel, scenario.name);
-            assert.deepEqual(aiCalls.at(-1), {
-                type: 'probeModel',
-                model: scenario.expectedModel,
-                options: scenario.expected
-            }, scenario.name);
-        }
-
-        assert.equal(aiCalls.length, listCases.length + probeCases.length);
+        assert.equal(aiCalls.length, listCases.length);
     } finally {
         await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
     }
@@ -1649,7 +1607,6 @@ test('admin UI includes provider-first AI config hooks and defaults', () => {
     assert.ok(html.includes('id="config-ai-provider-hint"'));
     assert.ok(html.includes('updateAIProviderFields({ applyDefaultBaseUrl: true, applyDefaultModel: true })'));
     assert.ok(html.includes('fetchAIModels()'));
-    assert.ok(html.includes('probeAIModel()'));
     assert.ok(html.includes('function buildResolvedAIConfig(draft = {}, options = {})'));
     assert.ok(html.includes('function updateAIProviderFields(options = {})'));
     assert.ok(html.includes('provider: normalizedProvider'));
@@ -1657,7 +1614,6 @@ test('admin UI includes provider-first AI config hooks and defaults', () => {
     assert.ok(html.includes("body: JSON.stringify(draft)"));
     assert.ok(html.includes("currentConfig.onebot?.hasAccessToken ? '已配Token，留空表示不修改' : '留空表示无需认证'"));
     assert.ok(!html.includes('currentConfig.onebot?.accessToken ?'));
-    assert.ok(html.includes('已根据上游元数据填入推荐 Tokens'));
     assert.ok(html.includes("function markConfigSaved(message = '配置已保存')"));
     assert.ok(html.includes("showToast('配置已保存')"));
     assert.ok(!html.includes('设置已保'));
@@ -1727,7 +1683,8 @@ test('admin UI includes provider-first AI config hooks and defaults', () => {
     assert.ok(html.includes('function sortAIModelsForQuickList(models = [])'));
     assert.ok(html.includes('const normalizedModels = sortAIModelsForQuickList(models);'));
     assert.ok(html.includes('model.enabled !== false'));
-    assert.ok(html.includes('availableAIModels = normalizeAIModelEntries(models);'));
+    // 拉取回来的候选带来源标记（pulled: true）：加入后未识别模型默认按支持图片处理
+    assert.ok(html.includes('availableAIModels = normalizeAIModelEntries(models).map((model) => ({ ...model, pulled: true }));'));
     assert.ok(!html.includes('entry.models = mergedModels;'));
     assert.ok(html.includes('onclick="addAIModelToActiveProvider({ id:'));
     assert.ok(html.includes('background: conic-gradient(var(--accent) 0deg'));

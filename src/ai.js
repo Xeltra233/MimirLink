@@ -1,6 +1,7 @@
 /**
  * AI API 客户端模块
  */
+import { inferModelSupportsImage } from './model-capabilities.js';
 
 export class AIClient {
     constructor(config, logger = console) {
@@ -848,51 +849,6 @@ export class AIClient {
         };
     }
 
-    extractModelTokenInfo(model = {}) {
-        const pickNumber = (...values) => {
-            for (const value of values) {
-                if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
-                    return value;
-                }
-                if (typeof value === 'string' && value.trim() && Number.isFinite(Number(value))) {
-                    const parsed = Number(value);
-                    if (parsed > 0) {
-                        return parsed;
-                    }
-                }
-            }
-            return null;
-        };
-
-        const inputTokens = pickNumber(
-            model.context_window,
-            model.input_token_limit,
-            model.max_input_tokens,
-            model.capabilities?.input_token_limit,
-            model.capabilities?.max_input_tokens,
-            model.limits?.input,
-            model.limits?.context
-        );
-
-        const outputTokens = pickNumber(
-            model.max_output_tokens,
-            model.output_token_limit,
-            model.max_completion_tokens,
-            model.capabilities?.output_token_limit,
-            model.capabilities?.max_output_tokens,
-            model.limits?.output,
-            model.completion_tokens
-        );
-
-        const recommendedMaxTokens = outputTokens || pickNumber(model.default_max_tokens, model.defaultMaxTokens);
-
-        return {
-            contextWindow: inputTokens,
-            maxOutputTokens: outputTokens,
-            recommendedMaxTokens
-        };
-    }
-
     extractAssistantMessage(data = {}) {
         return data?.choices?.[0]?.message || {};
     }
@@ -1105,14 +1061,13 @@ export class AIClient {
         throw new Error('文本工具兜底轮次过多，已停止继续请求');
     }
     normalizeModel(model = {}) {
-        const tokenInfo = this.extractModelTokenInfo(model);
+        const id = model.id || model.name || model.model || 'unknown-model';
         return {
-            id: model.id || model.name || model.model || 'unknown-model',
+            id,
             name: model.name || model.id || model.model || 'unknown-model',
             ownedBy: model.owned_by || model.provider || model.organization || '',
-            contextWindow: tokenInfo.contextWindow,
-            maxOutputTokens: tokenInfo.maxOutputTokens,
-            recommendedMaxTokens: tokenInfo.recommendedMaxTokens,
+            // 按模型名识别的图片输入能力：true/false/null（null=无法判断，交给面板手动指定）
+            supportsImage: inferModelSupportsImage(id),
             raw: model
         };
     }
@@ -1150,47 +1105,7 @@ export class AIClient {
         return models.map((model) => this.normalizeModel(model));
     }
 
-    async probeModel(modelId, options = {}) {
-        const resolvedModelId = String(modelId || '').trim();
-        if (!resolvedModelId) {
-            throw new Error('\u672a\u6307\u5b9a\u8981\u63a2\u6d4b\u7684\u6a21\u578b');
-        }
 
-        const probeOverrides = {
-            ...options,
-            model: resolvedModelId,
-            maxTokens: 1,
-            temperature: 0
-        };
-        const payload = this.buildChatPayload([
-            { role: 'system', content: 'You are a connectivity probe. Reply with OK only.' },
-            { role: 'user', content: 'ping' }
-        ], probeOverrides);
-
-        const result = await this.sendChatRequest(payload, probeOverrides);
-        if (!result.ok) {
-            throw new Error(`\u6a21\u578b\u63a2\u6d4b\u5931\u8d25: ${result.status} - ${result.errorText}`);
-        }
-
-        const responseModel = result.data?.model || resolvedModelId;
-        const normalized = this.normalizeModel({
-            id: responseModel,
-            name: responseModel,
-            raw: {
-                usage: result.data?.usage || null,
-                finishReason: result.data?.choices?.[0]?.finish_reason || null
-            }
-        });
-
-        return {
-            model: normalized,
-            probeResponse: {
-                id: result.data?.id || null,
-                usage: result.data?.usage || null,
-                finishReason: result.data?.choices?.[0]?.finish_reason || null
-            }
-        };
-    }
 
     /**
      * 调用 AI API

@@ -18,6 +18,7 @@ import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFrom
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 import { syncPresetFiles } from './preset-sync.js';
 import { collectParticipantGroupIds, resolveParticipantIdentityFromOneBot } from './participant-identity.js';
+import { describeModelCapabilities, resolveModelImageSupport, findModelEntry } from './model-capabilities.js';
 
 function estimateTokenCount(text) {
     if (!text) return 0;
@@ -4163,32 +4164,41 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
-    app.post('/api/ai/probe', requireAuth, async (req, res) => {
+    // 模型图片输入能力识别（只查规则表，不请求上游）
+    app.post('/api/ai/model-capabilities', requireAuth, (req, res) => {
         try {
-            const { model } = req.body || {};
-            const { baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey } = resolveAIProviderRequestConfig(req.body || {});
-            const result = await aiClient.probeModel(model, {
-                baseUrl: resolvedBaseUrl,
-                apiKey: resolvedApiKey
-            });
-            logger.info(`[API ${req.requestId || 'no-id'}] 模型探测完成`, {
-                baseUrl: resolvedBaseUrl || '',
-                model,
-                resolvedModel: result.model?.id || result.model?.name || '',
-                probeOnly: true,
-                autoMaxTokens: result.model?.recommendedMaxTokens || result.model?.maxOutputTokens || null
-            });
-            res.json({
-                success: true,
-                model: result.model,
-                probeResponse: result.probeResponse || null,
-                autoMaxTokens: result.model?.recommendedMaxTokens || result.model?.maxOutputTokens || null
-            });
+            // models 支持字符串或 { id, pulled } 对象：pulled 表示该模型来自「拉取模型」列表
+            const rawModels = Array.isArray(req.body?.models) ? req.body.models : [];
+            const items = rawModels.slice(0, 500).map((item) => {
+                if (item && typeof item === 'object') {
+                    return { id: String(item.id || item.name || '').trim(), pulled: item.pulled === true };
+                }
+                return { id: String(item || '').trim(), pulled: false };
+            }).filter((item) => item.id);
+            const providerId = String(req.body?.providerId || '').trim();
+            const providers = Array.isArray(config.ai?.providers) ? config.ai.providers : [];
+            const provider = providers.find((item) => item?.id === providerId) || null;
+            const capabilities = describeModelCapabilities(items.map((item) => item.id));
+            // 供应商级与模型级显式设置优先于按名称识别；未识别时按「是否拉取添加」取默认
+            for (const item of items) {
+                const id = item.id;
+                const entry = findModelEntry(provider, id);
+                const resolved = resolveModelImageSupport(provider, entry || (item.pulled ? { id, pulled: true } : id));
+                capabilities[id] = {
+                    ...capabilities[id],
+                    supported: resolved.supported,
+                    source: resolved.source,
+                    reason: resolved.reason
+                };
+            }
+            res.json({ success: true, capabilities });
         } catch (error) {
-            logger.error('探测模型元数据失败', error);
+            logger.error('模型能力识别失败', error);
             res.status(500).json({ success: false, error: error.message });
         }
     });
+
+
 
     // ==================== 日志 ====================
 

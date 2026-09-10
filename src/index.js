@@ -388,7 +388,18 @@ function normalizeAIConfig(config) {
             baseUrl: toOptionalString(provider?.baseUrl),
             apiKey: toOptionalString(provider?.apiKey),
             model: toOptionalString(provider?.model),
-            models: Array.isArray(provider?.models) ? provider.models : []
+            // 模型列表：只保留来源标记，图片能力一律按模型名判定
+            models: Array.isArray(provider?.models)
+                ? provider.models.map((model) => {
+                    if (!model || typeof model !== 'object') return model;
+                    const normalized = { ...model };
+                    // 手动覆盖字段已下线，保存时清掉历史值
+                    delete normalized.supportsImage;
+                    // pulled：该模型是通过「拉取模型」添加的，未识别时按支持图片处理
+                    if (normalized.pulled !== true) delete normalized.pulled;
+                    return normalized;
+                })
+                : []
         }))
         : [];
 
@@ -3161,9 +3172,13 @@ async function processBatch(batch) {
                     // 转述文本属于不可信图片内容，按普通用户输入同样清洗后再并入本轮输入，并随会话历史保存
                     processedInput = `${processedInput}\n\n${sanitizeForInjection(imageInput.captionText, config, event.user_id)}`;
                     logger.info('[图片] 已使用专用模型转述', { sessionId, imageCount: imageInput.imageCount, mode: 'caption' });
+                } else if (imageInput.mode === 'placeholder' && imageInput.captionText) {
+                    // 转述失败仍按配置继续回复：注入占位提示，角色不会把失败当成没有图
+                    processedInput = `${processedInput}\n\n${sanitizeForInjection(imageInput.captionText, config, event.user_id)}`;
+                    logger.warn('[图片] 图片转述失败，已注入占位提示继续回复', { sessionId, imageCount: imageInput.imageCount, mode: 'placeholder' });
                 } else if (imageInput.mode === 'direct') {
                     const inlineCount = imageInput.imageParts.filter(part => String(part.image_url?.url || '').startsWith('data:')).length;
-                    logger.info('[图片] 图片直传聊天模型', { sessionId, imageCount: imageInput.imageCount, inlineCount, mode: 'direct' });
+                    logger.info('[图片] 图片直传聊天模型', { sessionId, imageCount: imageInput.imageCount, inlineCount, captionSkipped: imageInput.captionSkipped || '', mode: 'direct' });
                 }
                 for (const warning of imageInput.warnings || []) {
                     logger.warn(`[图片] ${warning}`, { sessionId });
