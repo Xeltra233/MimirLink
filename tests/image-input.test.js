@@ -154,3 +154,60 @@ for (const failure of ['empty', 'reject']) {
         });
     });
 }
+
+// 引用（回复）消息中的图片：与直发图片共用同一识图链路
+const quotedItem = (segments, replyToMessageId = 1, eventMessage = [{ type: 'reply', data: { id: replyToMessageId } }, { type: 'text', data: { text: '这是啥' } }]) => ({
+    event: { message_id: 9, user_id: 10001, message: eventMessage },
+    replyToMessageId,
+    replyImageSegments: segments
+});
+
+test('引用消息中的图片在留空时直传给聊天模型', async () => {
+    const result = await prepareImageInput({
+        items: [quotedItem([image({ url: 'https://img.example/quoted.png' })])],
+        config: config(), aiClient: noopClient
+    });
+    assert.equal(result.mode, 'direct');
+    assert.equal(result.imageCount, 1);
+    assert.deepEqual(result.imageParts.map(p => p.image_url.url), ['https://img.example/quoted.png']);
+});
+
+test('引用图片在已选转述模型时同样先转述', async () => {
+    const requests = [];
+    const aiClient = {
+        async chat(messages, overrides) { requests.push({ messages, overrides }); return { content: '引用图：一只猫。' }; },
+        getVisibleResponseContent(result) { return result.content; }
+    };
+    const result = await prepareImageInput({
+        items: [quotedItem([image({ file: DATA_URL })])],
+        config: config({ imageCaptionModelProviderId: 'vision', imageCaptionModel: 'vision-model' }), aiClient
+    });
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].overrides.model, 'vision-model');
+    assert.equal(requests[0].messages[0].content.filter(p => p.type === 'image_url').length, 1);
+    assert.equal(result.mode, 'caption');
+    assert.match(result.captionText, /一只猫/);
+});
+
+test('同一批多人引用同一张图时去重，不与直发图片重复计数', async () => {
+    const result = await prepareImageInput({
+        items: [
+            quotedItem([image({ url: 'https://img.example/quoted.png' })], 77),
+            quotedItem([image({ url: 'https://img.example/quoted.png' })], 77),
+            items(image({ url: 'https://img.example/direct.png' }))[0]
+        ],
+        config: config(), aiClient: noopClient
+    });
+    assert.equal(result.imageCount, 2);
+    assert.deepEqual(result.imageParts.map(p => p.image_url.url), ['https://img.example/direct.png', 'https://img.example/quoted.png']);
+});
+
+test('引用图片与直发图片共用张数上限，不静默丢弃', async () => {
+    await assert.rejects(prepareImageInput({
+        items: [
+            items(...Array.from({ length: IMAGE_INPUT_LIMITS.maxImages }, () => image({ file: DATA_URL })))[0],
+            quotedItem([image({ url: 'https://img.example/quoted.png' })], 78)
+        ],
+        config: config(), aiClient: noopClient
+    }), /最多/);
+});

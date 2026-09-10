@@ -10557,6 +10557,271 @@
         }
         /* Logs scrollbar glass polish: end */
 
+        /* ===== Config Layout Balance: start ===== */
+        /* 参考 NapCat WebUI / AstrBot 配置页：内容居中收窄、字段成组平铺、间距收紧、字阶提升 */
+
+        /* 1) 内容居中收窄：配置页单列居中，宽屏不再横向铺散 */
+        .shell-layout > .panel:not(#config):not(#prompt-range):not(#logs) {
+            max-width: 1280px !important;
+        }
+        .shell-layout > #config.panel.active {
+            max-width: 960px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+
+        /* 2) tab：居中胶囊、字号加大、点击区更高 */
+        #config .config-subtabs {
+            justify-content: center !important;
+            gap: 4px !important;
+            padding: 6px !important;
+        }
+        #config .config-subtab {
+            font-size: 0.92rem !important;
+            min-height: 38px !important;
+            padding: 8px 16px !important;
+            border-radius: 10px !important;
+            letter-spacing: 0.01em !important;
+        }
+        #config .config-subtab.active {
+            font-weight: 700 !important;
+        }
+        .tabs .tab {
+            font-size: 0.95rem !important;
+            min-height: 42px !important;
+            padding: 9px 14px !important;
+        }
+
+        /* 3) 卡片与分区节奏：内边距舒展，分区之间细线衔接 */
+        #config .card {
+            padding: 24px 26px !important;
+            border-radius: 18px !important;
+        }
+        #config .config-subsection {
+            margin-top: 16px !important;
+            padding-top: 16px !important;
+        }
+        #config .config-subsection:first-of-type {
+            margin-top: 4px !important;
+            padding-top: 0 !important;
+            border-top: none !important;
+        }
+        #config .config-subsection-title {
+            font-size: 1rem !important;
+            letter-spacing: 0.01em !important;
+            margin-bottom: 4px !important;
+        }
+
+        /* 4) 字段块：标签在控件上方，控件与说明依次堆叠 */
+        #config .form-group,
+        #config .form-group.full,
+        #config .field,
+        #config .field.full,
+        #config .config-field,
+        #config .config-field.full,
+        #config .setting-row {
+            display: grid !important;
+            grid-template-columns: minmax(0, 1fr) !important;
+            align-items: start !important;
+            column-gap: 0 !important;
+            row-gap: 6px !important;
+            width: 100% !important;
+            margin-bottom: 0 !important;
+        }
+        #config .form-group > label:not(.checkbox-label),
+        #config .field > label:not(.checkbox-label),
+        #config .config-field > label:not(.checkbox-label),
+        #config .setting-row > label:not(.checkbox-label) {
+            grid-column: 1 !important;
+            padding-top: 0 !important;
+            font-size: 0.82rem !important;
+            font-weight: 600 !important;
+            color: var(--text-muted, #64748b) !important;
+            line-height: 1.4 !important;
+        }
+        #config .form-group > input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+        #config .form-group > select,
+        #config .form-group > textarea,
+        #config .form-group > .control,
+        #config .field > input:not([type='checkbox']):not([type='radio']):not([type='range']),
+        #config .field > select,
+        #config .field > .control,
+        #config .config-field > input:not([type='checkbox']):not([type='radio']):not([type='range']),
+        #config .config-field > select,
+        #config .config-field > .control,
+        #config .setting-row > input:not([type='checkbox']):not([type='radio']):not([type='range']),
+        #config .setting-row > select,
+        #config .setting-row > .control {
+            grid-column: 1 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        #config .form-group.full > input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+        #config .form-group.full > select,
+        #config .form-group.full > .control,
+        #config .field.full > input:not([type='checkbox']):not([type='radio']):not([type='range']),
+        #config .field.full > select,
+        #config .field.full > .control,
+        #config .config-field.full > input:not([type='checkbox']):not([type='radio']):not([type='range']),
+        #config .config-field.full > select,
+        #config .config-field.full > .control {
+            max-width: 100% !important;
+        }
+        #config .form-group.full:has(textarea),
+        #config .field.full:has(textarea),
+        #config .config-field.full:has(textarea) {
+            grid-column: 1 / -1 !important;
+        }
+        #config .form-group > textarea,
+        #config .field > textarea,
+        #config .config-field > textarea {
+            grid-column: 1 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+        }
+        #config .form-group > .hint-text,
+        #config .field > .hint-text,
+        #config .config-field > .hint-text,
+        #config .setting-row > .hint-text {
+            grid-column: 1 !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            font-size: 0.76rem !important;
+            line-height: 1.55 !important;
+        }
+
+        /* 5) 字段成组平铺：常规 2 列、紧凑区 3 列，full 字段整行 */
+        #config .config-subsection {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)) !important;
+            gap: 18px 26px !important;
+            align-items: start !important;
+        }
+        #config .config-subsection > * {
+            grid-column: 1 / -1 !important;
+        }
+        #config .config-subsection > button {
+            grid-column: auto !important;
+            justify-self: start !important;
+            width: auto !important;
+            min-width: 132px !important;
+        }
+        #config .config-subsection > .config-button-row {
+            grid-column: 1 / -1 !important;
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+            align-items: center !important;
+        }
+        #config .config-button-row > button {
+            margin-left: 0 !important;
+        }
+        #config .config-subsection > .form-group:not(:has(textarea)),
+        #config .config-subsection > .field:not(:has(textarea)),
+        #config .config-subsection > .config-field:not(:has(textarea)) {
+            grid-column: auto !important;
+        }
+        #config .config-subgrid {
+            display: grid !important;
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr)) !important;
+            gap: 18px 26px !important;
+            align-items: start !important;
+        }
+        #config .config-subgrid--compact {
+            grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)) !important;
+            gap: 16px 20px !important;
+        }
+        #config .config-subgrid .form-group,
+        #config .config-subgrid .field,
+        #config .config-subgrid .config-field {
+            grid-template-columns: minmax(0, 1fr) !important;
+            margin-bottom: 0 !important;
+        }
+        #config .config-subgrid .form-group > input,
+        #config .config-subgrid .form-group > select,
+        #config .config-subgrid .form-group > .control,
+        #config .config-subgrid .form-group > textarea,
+        #config .config-subgrid .form-group > .hint-text {
+            max-width: 100% !important;
+        }
+        #config .config-subgrid .form-group.full,
+        #config .config-subgrid .field.full,
+        #config .config-subgrid .config-field.full {
+            grid-column: auto !important;
+        }
+        #config .config-subgrid .form-group.full:has(textarea),
+        #config .config-subgrid .field.full:has(textarea),
+        #config .config-subgrid .config-field.full:has(textarea) {
+            grid-column: 1 / -1 !important;
+        }
+
+        /* 6) 复选框组与说明段落：整行、紧凑 */
+        #config .config-checkbox-grid {
+            gap: 8px 18px !important;
+        }
+        #config .form-group:has(.checkbox-label) > .hint-text {
+            max-width: 100% !important;
+        }
+
+        /* 7) 高级折叠区：自定义三角标，位置可控，展开内容与标题左对齐 */
+        #config details.config-advanced-section {
+            padding: 12px 16px !important;
+        }
+        #config details.config-advanced-section > summary {
+            display: block !important;
+            list-style: none !important;
+            position: relative !important;
+            padding: 2px 0 2px 18px !important;
+            line-height: 1.5 !important;
+        }
+        #config details.config-advanced-section > summary::marker,
+        #config details.config-advanced-section > summary::-webkit-details-marker {
+            display: none !important;
+            content: none !important;
+        }
+        #config details.config-advanced-section > summary::before {
+            content: '\25B8' !important;
+            position: absolute !important;
+            left: 0 !important;
+            top: 50% !important;
+            transform: translateY(-50%) !important;
+            font-size: 0.95em !important;
+            line-height: 1 !important;
+            color: color-mix(in srgb, var(--text-muted) 80%, var(--accent) 20%) !important;
+            transition: transform 0.15s ease !important;
+        }
+        #config details.config-advanced-section[open] > summary::before {
+            content: '\25BE' !important;
+        }
+        #config details.config-advanced-section[open] > summary {
+            margin-bottom: 12px !important;
+        }
+        #config details.config-advanced-section > *:not(summary) {
+            padding-left: 18px !important;
+        }
+
+        /* 8) 窄屏回到单列堆叠 */
+        @media (max-width: 900px) {
+            #config .config-subgrid,
+            #config .config-subgrid--compact {
+                grid-template-columns: 1fr !important;
+            }
+            #config .form-group,
+            #config .field,
+            #config .config-field,
+            #config .setting-row {
+                grid-template-columns: 1fr !important;
+            }
+            #config .form-group > input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+            #config .form-group > select,
+            #config .form-group > textarea,
+            #config .form-group > .control,
+            #config .form-group > .hint-text {
+                max-width: 100% !important;
+            }
+        }
+        /* ===== Config Layout Balance: end ===== */
+
     </style>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
     <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
@@ -11450,7 +11715,7 @@
                             <div class="form-group full">
                                 <label>图片转述模型（可选）</label>
                                 <select id="config-chat-image-caption-model-ref"></select>
-                                <p class="hint-text">留空不启用：图片直接交给聊天模型处理，非多模态聊天模型将无法识别图片。选择后：发图时先调用此模型转述图片，再把转述文本交给聊天模型，每次发图会额外产生一次模型调用（按所选供应商计费）；转述失败不会退回文本模型识图。</p>
+                                <p class="hint-text">留空不启用：图片直接交给聊天模型处理，非多模态聊天模型将无法识别图片。选择后：发图或回复图片消息时先调用此模型转述图片，再把转述文本交给聊天模型，每次发图会额外产生一次模型调用（按所选供应商计费）；转述失败不会退回文本模型识图。</p>
                             </div>
                         </div>
                     </div>
@@ -12328,7 +12593,7 @@
                                 <p class="hint-text">默认 /mcp，修改后需重启生效</p>
                             </div>
                         </div>
-                        <div class="meta-box" style="margin-top:12px">
+                        <div class="meta-box" style="margin-top:12px;white-space:normal">
                             <strong>挂载配置</strong> (.claude/settings.json):<br>
                             <code>{"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}</code>
                         </div>
@@ -12344,8 +12609,10 @@
                     <div class="config-subsection">
                         <div class="config-subsection-title">备份与恢复</div>
                         <p class="hint-text" style="margin-bottom:12px;">备份导出为 .tar.gz 文件。恢复时自动识别内容并支持选择类别。</p>
-                        <button class="success" onclick="showBackupModal()">📥 导出备份</button>
-                        <button class="secondary" onclick="document.getElementById('config-restore-file').click()" style="margin-left:8px;">📤 恢复备份</button>
+                        <div class="config-button-row">
+                            <button class="success" onclick="showBackupModal()">📥 导出备份</button>
+                            <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 恢复备份</button>
+                        </div>
                         <input type="file" id="config-restore-file" accept=".tar.gz,.tgz" style="display:none" onchange="inspectRestoreFile(event)">
                     </div>
                     <div class="config-subsection">

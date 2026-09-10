@@ -127,8 +127,24 @@ async function resolveImage(data = {}, bot) {
 }
 
 export async function prepareImageInput({ items = [], config = {}, bot, aiClient }) {
+    // 图片可来自本条消息本身，也可来自被引用（回复）的消息：回复一张图提问同样应进入识图链路。
     const images = items.flatMap(item => getOneBotMessageSegments(item.event?.message || item.event?.raw_message)
         .filter(segment => segment.type === 'image'));
+    const quotedImages = [];
+    const quotedSeen = new Set();
+    for (const item of items) {
+        const quotedSegments = Array.isArray(item.replyImageSegments) ? item.replyImageSegments : [];
+        for (const segment of quotedSegments) {
+            if (segment?.type !== 'image') continue;
+            const data = segment.data || {};
+            // 同一批里多人引用同一条消息时避免重复附加同一张图
+            const identity = `${item.replyToMessageId || ''}|${text(data.url) || text(data.file) || ''}`;
+            if (quotedSeen.has(identity)) continue;
+            quotedSeen.add(identity);
+            quotedImages.push(segment);
+        }
+    }
+    images.push(...quotedImages);
     const imageCount = images.length;
     if (!imageCount) return { mode: 'none', imageCount: 0, imageParts: [], captionText: '' };
     if (imageCount > IMAGE_INPUT_LIMITS.maxImages) {

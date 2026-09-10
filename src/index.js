@@ -1056,6 +1056,7 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
         senderId: '',
         senderName: '',
         quotedText: '',
+        imageSegments: [],
         fetchStatus: replyToMessageId ? 'pending' : 'none',
         fetchReason: replyToMessageId ? '' : 'no_reply_segment'
     };
@@ -1081,6 +1082,8 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
             || replyMessage?.nickname
             || ''
         );
+        const replySegments = getOneBotMessageSegments(replyMessage?.message);
+        const replyImageSegments = replySegments.filter((segment) => segment?.type === 'image');
         const replyText = sanitizeContent(
             extractDisplayTextFromSegments(replyMessage?.message)
             || replyMessage?.raw_message
@@ -1094,6 +1097,7 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
                 senderId,
                 senderName,
                 quotedText: replyText,
+                imageSegments: replyImageSegments,
                 toBot: senderId ? senderId === String(bot.selfId || '') : null,
                 fetchStatus: 'resolved_empty',
                 fetchReason: 'reply_message_empty'
@@ -1106,6 +1110,7 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
             senderId,
             senderName,
             quotedText: replyText,
+            imageSegments: replyImageSegments,
             fetchStatus: 'resolved',
             fetchReason: ''
         };
@@ -1177,6 +1182,8 @@ ${plainText}` : plainText);
         replyToMessageId,
         replyToBot: replyInfo.toBot === true,
         replyInfo,
+        // 被引用消息中的图片段：供图片输入链路识别“回复一张图”的场景
+        replyImageSegments: Array.isArray(replyInfo.imageSegments) ? replyInfo.imageSegments : [],
         messageSegments,
         standardEvent,
         structuredText
@@ -3877,7 +3884,7 @@ async function handleMessage(event) {
     }
 
     const messageInfo = await extractMessageInfo(config, event, bot);
-    const { plainText, isAtMe, structuredText, replyToMessageId, replyToBot, replyInfo, messageSegments, standardEvent } = messageInfo;
+    const { plainText, isAtMe, structuredText, replyToMessageId, replyToBot, replyInfo, replyImageSegments, messageSegments, standardEvent } = messageInfo;
 
     // /llm 指令：管理员切换 LLM 开关
     if (plainText.trim() === '/llm' && isAdminUser(config, event.user_id)) {
@@ -3985,6 +3992,7 @@ async function handleMessage(event) {
         replyToMessageId,
         replyToBot,
         replyInfo,
+        replyImageSegments,
         messageSegments,
         standardEvent,
         triggerReason,
