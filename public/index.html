@@ -6931,9 +6931,7 @@
         }
 
         #config .config-subtabs {
-            position: sticky;
-            top: 0;
-            z-index: 5;
+            position: static;
             padding: 8px;
             margin-bottom: 14px;
             border: 1px solid var(--border);
@@ -7943,9 +7941,8 @@
         }
 
         #config .config-subtabs {
-            position: sticky !important;
-            top: 0 !important;
-            z-index: 5 !important;
+            position: static !important;
+            z-index: auto !important;
             display: flex !important;
             flex-wrap: wrap !important;
             gap: 6px !important;
@@ -11760,7 +11757,7 @@
                         <div class="dashboard-quick-links">
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('model')"><strong>模型供应</strong><span>多供应商、API Key、Base URL、模型拉取和探测</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('preset')"><strong>预设 / 请求参数</strong><span>预设提示词温度Tokens、超时和运行时预览</span></button>
-                            <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('search')"><strong>搜索与联网工具</strong><span>DuckDuckGo 移植版、SearXNG、Tavily/Brave/SerpAPI、正文读取和即时工具</span></button>
+                            <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('search')"><strong>搜索与联网工具</strong><span>DuckDuckGo、SearXNG、Tavily/Brave/SerpAPI、正文读取和即时工具</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('mcp')"><strong>MCP 客户端</strong><span>连接外部 MCP 服务器，管理服务器与工具</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('memory')"><strong>记忆与人物档案</strong><span>数据库、摘要、人物档案分析和注入</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('chat')"><strong>聊天与权限</strong><span>触发方式、访问控制、节流和回复行为</span></button>
