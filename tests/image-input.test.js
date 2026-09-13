@@ -493,3 +493,54 @@ test('内置默认转述提示词随配置接口下发，且保存时被剥离',
     assert.ok(routesSource.includes('imageCaptionPromptDefault: DEFAULT_IMAGE_CAPTION_PROMPT'));
     assert.ok(routesSource.includes('delete value.imageCaptionPromptDefault;'));
 });
+
+test('合并转发里的多张图片一并进入识图链路', async () => {
+    const result = await prepareImageInput({
+        items: [{
+            event: { message_id: 1, user_id: 10001, message: [{ type: 'text', data: { text: '看这些图' } }] },
+            forwardImageSegments: [
+                { type: 'image', data: { url: 'https://img.example/fwd-1.png' } },
+                { type: 'image', data: { url: 'https://img.example/fwd-2.png' } }
+            ]
+        }],
+        config: config(), aiClient: noopClient
+    });
+    assert.equal(result.mode, 'direct');
+    assert.equal(result.imageCount, 2);
+    assert.deepEqual(result.imageParts.map(p => p.image_url.url), [
+        'https://img.example/fwd-1.png', 'https://img.example/fwd-2.png'
+    ]);
+});
+
+test('转发图片与直发图片合并计数，重复图片去重', async () => {
+    const result = await prepareImageInput({
+        items: [{
+            event: {
+                message_id: 2, user_id: 10001,
+                message: [image({ url: 'https://img.example/own.png' })]
+            },
+            forwardImageSegments: [
+                { type: 'image', data: { url: 'https://img.example/own.png' } },
+                { type: 'image', data: { url: 'https://img.example/fwd.png' } }
+            ]
+        }],
+        config: config(), aiClient: noopClient
+    });
+    assert.equal(result.imageCount, 2);
+    assert.deepEqual(result.imageParts.map(p => p.image_url.url).sort(), [
+        'https://img.example/fwd.png', 'https://img.example/own.png'
+    ]);
+});
+
+test('转发图片超出单轮上限时截断并给出提示，而不是整轮失败', async () => {
+    const forwardImageSegments = Array.from({ length: IMAGE_INPUT_LIMITS.maxImages + 3 }, (_, index) => (
+        { type: 'image', data: { url: `https://img.example/fwd-${index}.png` } }
+    ));
+    const result = await prepareImageInput({
+        items: [{ event: { message_id: 3, user_id: 10001, message: [{ type: 'text', data: { text: '图很多' } }] }, forwardImageSegments }],
+        config: config(), aiClient: noopClient
+    });
+    assert.equal(result.imageCount, IMAGE_INPUT_LIMITS.maxImages);
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], /另有 3 张图片超出单轮/);
+});

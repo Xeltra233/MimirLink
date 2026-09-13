@@ -16499,6 +16499,12 @@
             }
         }
 
+        function downloadMemoryDatabase(event, dbPath) {
+            event?.stopPropagation?.();
+            if (!dbPath) return;
+            window.location.href = `/api/memory/download?path=${encodeURIComponent(dbPath)}`;
+        }
+
         async function switchActiveDatabase(dbPath) {
             try {
                 const res = await fetch('/api/memory/activate', {
@@ -16554,6 +16560,7 @@
                                 <div class="meta">${escapeHtml(bindingText)}</div>
                                 <div class="meta">${escapeHtml(statsText)}</div>
                             </div>
+                            <button class="secondary" onclick="downloadMemoryDatabase(event, '${escapeHtml(db.path)}')">下载</button>
                         </div>
                     `;
                 }).join('');

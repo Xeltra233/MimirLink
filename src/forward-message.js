@@ -2,8 +2,10 @@
  * 合并转发（OneBot forward 消息段）读取支持
  * - 识别消息中的 forward 段
  * - 通过 OneBot get_forward_msg 拉取被合并的聊天记录并渲染为可读文本
+ * - 抽取记录中的图片段，交给图片转述链路（多条消息里的多张图都能读到）
  * - 兼容 go-cqhttp / NapCat / Lagrange 等不同返回结构
  */
+import { getOneBotMessageSegments } from './image-input.js';
 
 const DEFAULT_MAX_NODES = 30;
 const DEFAULT_MAX_CHARS = 2500;
@@ -102,6 +104,32 @@ export function renderForwardNodeContent(content, renderSegment = null) {
 }
 
 /**
+ * 从合并转发节点中抽取图片段（按出现顺序，跨多条消息累计）。
+ * @returns {Array<{ segment:object, nodeIndex:number, nodeName:string, nodeUserId:string }>}
+ */
+export function collectForwardImageSegments(nodes = [], { max = Number.POSITIVE_INFINITY } = {}) {
+    const limited = Math.max(0, Number(max) || 0) || Number.POSITIVE_INFINITY;
+    const images = [];
+    for (let nodeIndex = 0; nodeIndex < nodes.length && images.length < limited; nodeIndex += 1) {
+        const node = nodes[nodeIndex] || {};
+        const segments = Array.isArray(node.content)
+            ? node.content
+            : getOneBotMessageSegments(node.content);
+        for (const segment of segments) {
+            if (!segment || typeof segment !== 'object' || segment.type !== 'image') continue;
+            images.push({
+                segment,
+                nodeIndex,
+                nodeName: toText(node.name),
+                nodeUserId: toText(node.userId)
+            });
+            if (images.length >= limited) break;
+        }
+    }
+    return images;
+}
+
+/**
  * 拉取并渲染合并转发内容。
  * @returns {Promise<{ok:boolean, count?:number, transcript?:string, error?:string}>}
  */
@@ -167,10 +195,15 @@ export async function fetchForwardTranscript({
         return { ok: false, error: '合并转发内容为空' };
     }
 
+    const imageSegments = collectForwardImageSegments(nodes);
+    const imageNote = imageSegments.length > 0 ? `|含图片${imageSegments.length}张` : '';
+
     return {
         ok: true,
         count: nodes.length,
-        transcript: `[合并转发聊天记录|共${nodes.length}条]\n${lines.join('\n')}\n[/合并转发]`
+        nodes,
+        imageSegments,
+        transcript: `[合并转发聊天记录|共${nodes.length}条${imageNote}]\n${lines.join('\n')}\n[/合并转发]`
     };
 }
 

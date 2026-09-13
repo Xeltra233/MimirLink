@@ -1099,6 +1099,7 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
         );
         const replySegments = getOneBotMessageSegments(replyMessage?.message);
         const replyImageSegments = replySegments.filter((segment) => segment?.type === 'image');
+        const forwardImageSegments = [];
         let replyText = sanitizeContent(
             extractDisplayTextFromSegments(replyMessage?.message)
             || replyMessage?.raw_message
@@ -1117,6 +1118,12 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
             const transcripts = forwardResults.map((result) => (result.ok
                 ? result.transcript
                 : `[合并转发聊天记录|读取失败:${result.error}]`));
+            // 记录里的图片段同样进入识图链路（多条消息里的多张图都算）
+            for (const result of forwardResults) {
+                if (result.ok && Array.isArray(result.imageSegments)) {
+                    forwardImageSegments.push(...result.imageSegments.map((item) => item.segment));
+                }
+            }
             replyText = sanitizeContent([replyText.replace(/\[消息段:forward\]/g, '').trim(), ...transcripts].join('\n'));
         }
 
@@ -1127,6 +1134,7 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
                 senderName,
                 quotedText: replyText,
                 imageSegments: replyImageSegments,
+                forwardImageSegments,
                 toBot: senderId ? senderId === String(bot.selfId || '') : null,
                 fetchStatus: 'resolved_empty',
                 fetchReason: 'reply_message_empty'
@@ -1140,6 +1148,7 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
             senderName,
             quotedText: replyText,
             imageSegments: replyImageSegments,
+            forwardImageSegments,
             fetchStatus: 'resolved',
             fetchReason: ''
         };
@@ -1175,6 +1184,7 @@ async function extractMessageInfo(config, event, bot) {
 
     // 直接发送合并转发时，拉取聊天记录正文供模型阅读
     const forwardSegments = findForwardSegments(segments);
+    const forwardImageSegments = [];
     if (forwardSegments.length > 0) {
         const forwardResults = await fetchForwardTranscripts({
             bot,
@@ -1187,8 +1197,12 @@ async function extractMessageInfo(config, event, bot) {
             const target = messageSegments[forwardSegments[index].index];
             if (result.ok) {
                 plainText += `\n${result.transcript}`;
+                // 记录里的图片段 → 识图链路（多条消息里的多张图都算）
+                if (Array.isArray(result.imageSegments)) {
+                    forwardImageSegments.push(...result.imageSegments.map((item) => item.segment));
+                }
                 if (target) {
-                    target.forward = { id: forwardSegments[index].id, count: result.count };
+                    target.forward = { id: forwardSegments[index].id, count: result.count, imageCount: Array.isArray(result.imageSegments) ? result.imageSegments.length : 0 };
                 }
             } else if (target) {
                 target.forward = { id: forwardSegments[index].id, error: result.error };
@@ -1236,6 +1250,11 @@ ${plainText}` : plainText);
         replyInfo,
         // 被引用消息中的图片段：供图片输入链路识别“回复一张图”的场景
         replyImageSegments: Array.isArray(replyInfo.imageSegments) ? replyInfo.imageSegments : [],
+        // 合并转发（本条消息或引用消息）里的图片段：多条消息里的多张图都进识图链路
+        forwardImageSegments: [
+            ...(Array.isArray(replyInfo.forwardImageSegments) ? replyInfo.forwardImageSegments : []),
+            ...forwardImageSegments
+        ],
         messageSegments,
         standardEvent,
         structuredText

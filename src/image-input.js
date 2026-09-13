@@ -342,13 +342,46 @@ export async function prepareImageInput({ items = [], config = {}, bot, aiClient
         }
     }
     images.push(...quotedImages);
-    const imageCount = images.length;
-    if (!imageCount) return { mode: 'none', imageCount: 0, imageParts: [], captionText: '', warnings: [] };
-    if (imageCount > IMAGE_INPUT_LIMITS.maxImages) {
+    const baseCount = images.length;
+    if (baseCount > IMAGE_INPUT_LIMITS.maxImages) {
         throw new ImageInputError(`单轮最多识别 ${IMAGE_INPUT_LIMITS.maxImages} 张图片，请分批发送。`);
     }
+
+    // 合并转发记录里的图片：多条消息里的多张图一并进入识图；超出单轮上限时截断而不是整轮失败
+    const forwardImages = [];
+    // 直发/引用已出现的图片不再重复计入（同一张图被转发又直发时只算一次）
+    const seenImageSources = new Set(images.map((segment) => {
+        const data = segment?.data || {};
+        return text(data.url) || text(data.file) || '';
+    }));
+    const forwardSeen = new Set();
+    for (const item of items) {
+        const entries = Array.isArray(item.forwardImageSegments) ? item.forwardImageSegments : [];
+        for (const entry of entries) {
+            const segment = entry?.segment && entry.segment.type ? entry.segment : entry;
+            if (!segment || segment.type !== 'image') continue;
+            const data = segment.data || {};
+            const source = text(data.url) || text(data.file) || '';
+            if (source && seenImageSources.has(source)) continue;
+            const identity = `forward|${item.forwardId || ''}|${source}`;
+            if (forwardSeen.has(identity)) continue;
+            forwardSeen.add(identity);
+            if (source) seenImageSources.add(source);
+            forwardImages.push(segment);
+        }
+    }
+    const forwardBudget = Math.max(0, IMAGE_INPUT_LIMITS.maxImages - baseCount);
+    const keptForwardImages = forwardImages.slice(0, forwardBudget);
+    const droppedForwardImages = forwardImages.length - keptForwardImages.length;
+    images.push(...keptForwardImages);
+    const forwardWarning = droppedForwardImages > 0
+        ? `合并转发里另有 ${droppedForwardImages} 张图片超出单轮 ${IMAGE_INPUT_LIMITS.maxImages} 张上限，本轮未识别。`
+        : '';
+
+    const imageCount = images.length;
+    if (!imageCount) return { mode: 'none', imageCount: 0, imageParts: [], captionText: '', warnings: forwardWarning ? [forwardWarning] : [] };
     const imageParts = [];
-    const warnings = [];
+    const warnings = forwardWarning ? [forwardWarning] : [];
     const fetchMode = normalizeImageFetchMode(config.chat?.imageFetchMode);
     let totalBytes = 0;
     for (const image of images) {

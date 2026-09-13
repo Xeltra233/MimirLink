@@ -3289,6 +3289,35 @@ export function setupRoutes(app, config, saveConfig, managers) {
         }
     });
 
+    // 下载记忆库文件（只允许已知记忆库；下载前尽力落盘 WAL）
+    app.get('/api/memory/download', requireAuth, async (req, res) => {
+        try {
+            const requested = String(req.query?.path || '').trim();
+            if (!requested) {
+                return res.status(400).json({ success: false, error: '缺少 path 参数' });
+            }
+            const databases = await listKnownMemoryDatabases();
+            const basename = path.basename(requested.replace(/\\/g, '/'));
+            const target = databases.find((db) => (
+                db.path === requested
+                || sanitizePathForClient(db.path) === requested
+                || path.basename(db.path) === basename
+            ));
+            if (!target) {
+                logger.warn(`[记忆库] 下载被拒绝（不在已知列表）: ${requested}`);
+                return res.status(404).json({ success: false, error: '未找到该记忆库' });
+            }
+            try { sessionManager.checkpoint?.(); } catch {}
+            const filename = path.basename(target.path);
+            logger.info(`[记忆库] 下载: ${filename}`);
+            res.setHeader('Cache-Control', 'no-store');
+            return res.download(target.path, filename);
+        } catch (error) {
+            logger.error('下载记忆库失败', error);
+            return res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
     app.post('/api/memory/activate', requireAuth, async (req, res) => {
         try {
             const { dbPath } = req.body || {};

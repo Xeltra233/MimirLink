@@ -7,7 +7,8 @@ import {
     renderCqString,
     renderForwardNodeContent,
     fetchForwardTranscript,
-    fetchForwardTranscripts
+    fetchForwardTranscripts,
+    collectForwardImageSegments
 } from '../src/forward-message.js';
 import { buildStandardEvent } from '../src/standard-event.js';
 
@@ -180,4 +181,43 @@ test('standard-event 将 forward 段标记为合并转发聊天记录', () => {
     });
     assert.equal(standardEvent.segments?.[0]?.readableText, '合并转发聊天记录');
     assert.match(standardEvent.inputHeader, /segments:合并转发聊天记录/);
+});
+
+test('collectForwardImageSegments 抽取多条消息里的多张图片（含 CQ 字符串内容）', () => {
+    const nodes = [
+        { name: '甲', userId: '1', content: [{ type: 'text', data: { text: '看图' } }, { type: 'image', data: { url: 'https://img.example/1.png' } }] },
+        { name: '乙', userId: '2', content: [{ type: 'image', data: { file: '2.jpg' } }, { type: 'image', data: { file: '3.jpg' } }] },
+        { name: '丙', userId: '3', content: '[CQ:image,file=4.png][CQ:text]' },
+        { name: '丁', userId: '4', content: [{ type: 'text', data: { text: '没有图' } }] }
+    ];
+    const images = collectForwardImageSegments(nodes);
+    assert.equal(images.length, 4);
+    assert.deepEqual(images.map((item) => item.nodeName), ['甲', '乙', '乙', '丙']);
+    assert.deepEqual(images.map((item) => item.segment.data.url || item.segment.data.file), [
+        'https://img.example/1.png', '2.jpg', '3.jpg', '4.png'
+    ]);
+    // max 限制按出现顺序截断
+    assert.equal(collectForwardImageSegments(nodes, { max: 2 }).length, 2);
+    assert.equal(collectForwardImageSegments([], { max: 3 }).length, 0);
+});
+
+test('fetchForwardTranscript 返回图片段并在头部标注图片数量', async () => {
+    const bot = {
+        _call: async () => ([
+            { user_id: '1', nickname: '小明', message: [{ type: 'image', data: { url: 'https://img.example/a.png' } }] },
+            { user_id: '2', nickname: '小红', message: [{ type: 'image', data: { file: 'b.jpg' } }, { type: 'text', data: { text: '这张也是' } }] }
+        ])
+    };
+    const result = await fetchForwardTranscript({ bot, forwardId: 'fwd-img', logger: silentLogger });
+    assert.equal(result.ok, true);
+    assert.equal(result.imageSegments.length, 2);
+    assert.match(result.transcript, /[合并转发聊天记录|共2条|含图片2张]/);
+    assert.equal(result.nodes.length, 2);
+});
+
+test('没有图片的合并转发不产生图片段', async () => {
+    const bot = { _call: async () => ([{ user_id: '1', nickname: '甲', message: [{ type: 'text', data: { text: '纯文字' } }] }]) };
+    const result = await fetchForwardTranscript({ bot, forwardId: 'fwd-text', logger: silentLogger });
+    assert.equal(result.imageSegments.length, 0);
+    assert.doesNotMatch(result.transcript, /含图片/);
 });

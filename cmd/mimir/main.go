@@ -7,16 +7,25 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"mimirlink/internal/backup"
 	"mimirlink/internal/config"
 	"mimirlink/internal/datacheck"
+	"mimirlink/internal/panel"
 )
 
 const version = "0.1.0-dev"
@@ -32,6 +41,8 @@ func main() {
 		restore     = flag.String("restore", "", "从备份归档恢复数据")
 		includeKeys = flag.Bool("include-keys", false, "导出时包含密钥（默认脱敏）")
 		categories  = flag.String("categories", "", "备份分类，逗号分隔（默认全部）")
+		serve       = flag.Bool("serve", false, "启动面板 HTTP 服务")
+		port        = flag.Int("port", 0, "覆盖监听端口（默认取 config.server.port）")
 		showVer     = flag.Bool("version", false, "输出版本")
 	)
 	flag.Parse()
@@ -44,6 +55,13 @@ func main() {
 	absoluteRoot, err := filepath.Abs(*rootDir)
 	if err != nil {
 		fail("解析根目录失败: %v", err)
+	}
+
+	if *serve {
+		if err := servePanel(absoluteRoot, *port); err != nil {
+			fail("面板服务失败: %v", err)
+		}
+		return
 	}
 
 	if *roundtrip != "" {
@@ -119,6 +137,7 @@ func main() {
 		fmt.Println("  -backup <路径>           导出备份（可加 -include-keys / -categories）")
 		fmt.Println("  -inspect <归档>          识别备份分类")
 		fmt.Println("  -restore <归档>          从备份恢复")
+		fmt.Println("  -serve                   启动面板 HTTP 服务（可加 -port）")
 		fmt.Println("  -version                 输出版本")
 		return
 	}
@@ -137,6 +156,51 @@ func main() {
 		return
 	}
 	fmt.Print(report.Summary())
+}
+
+func servePanel(rootDir string, portOverride int) error {
+	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	if err != nil {
+		return err
+	}
+	port := portOverride
+	if port == 0 {
+		port = int(document.Int("server.port", 18081))
+	}
+	host := document.String("server.host")
+	if host == "" {
+		host = "0.0.0.0"
+	}
+	server, err := panel.NewServer(panel.Options{
+		RootDir:  rootDir,
+		Document: document,
+		Logger:   log.New(os.Stdout, "", log.LstdFlags),
+	})
+	if err != nil {
+		return err
+	}
+	address := net.JoinHostPort(host, strconv.Itoa(port))
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return fmt.Errorf("监听 %s 失败: %w", address, err)
+	}
+	httpServer := &http.Server{Handler: server.Handler(), ReadHeaderTimeout: 15 * time.Second}
+	fmt.Printf("MimirLink(Go) 面板已启动: http://%s （认证: %v，数据目录: %s）\n", address, document.Bool("auth.enabled"), server.DataDir())
+
+	go func() {
+		signalChannel := make(chan os.Signal, 1)
+		signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+		<-signalChannel
+		shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = httpServer.Shutdown(shutdownContext)
+	}()
+
+	if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	fmt.Println("面板已停止")
+	return nil
 }
 
 func splitCategories(raw string) []string {

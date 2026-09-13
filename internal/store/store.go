@@ -100,6 +100,23 @@ func (d *DB) Exec(query string, args ...any) (sql.Result, error) {
 	return d.handle.Exec(query, args...)
 }
 
+// Checkpoint 尽力把 WAL 落盘，保证下载/备份到的文件是完整的。
+func Checkpoint(path string) {
+	if _, err := os.Stat(path); err != nil {
+		return
+	}
+	slash := filepath.ToSlash(path)
+	if !strings.HasPrefix(slash, "/") {
+		slash = "/" + slash
+	}
+	handle, err := sql.Open("sqlite", "file://"+slash+"?_pragma=busy_timeout(3000)")
+	if err != nil {
+		return
+	}
+	defer handle.Close()
+	_, _ = handle.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+}
+
 // TableNames 返回库内所有用户表。
 func (d *DB) TableNames() ([]string, error) {
 	rows, err := d.handle.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
