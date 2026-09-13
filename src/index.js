@@ -483,13 +483,6 @@ function ensureCommandAndToolConfig(config) {
 
     config.memory.participantProfile.manualCommand = config.chat.commands.participantProfileManual.command;
 
-    const textToolFallback = config.ai.tools.textToolFallback || {};
-    config.ai.tools.webSearch = normalizeWebSearchConfig(webSearch);
-
-    config.ai.tools.textToolFallback = {
-        enabled: typeof textToolFallback.enabled === 'boolean' ? textToolFallback.enabled : false,
-        maxRounds: clampInteger(textToolFallback.maxRounds, 1, 8, 3)
-    };
 
     config.ai.tools.sendMention = {
         enabled: typeof sendMention.enabled === 'boolean' ? sendMention.enabled : false

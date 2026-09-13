@@ -909,157 +909,6 @@ export class AIClient {
         ];
     }
 
-    buildTextToolFallbackMessages(messages, instruction) {
-        const normalizedMessages = Array.isArray(messages)
-            ? messages.map((message) => ({ ...message }))
-            : [];
-        const normalizedInstruction = String(instruction || '').trim();
-        if (!normalizedInstruction) {
-            return normalizedMessages;
-        }
-
-        return [
-            {
-                role: 'system',
-                content: normalizedInstruction,
-                meta: { source: 'text_tool_fallback' }
-            },
-            ...normalizedMessages
-        ];
-    }
-
-    extractJsonObjectCandidates(text = '') {
-        const source = String(text || '');
-        const candidates = [];
-        const pushCandidate = (value) => {
-            const normalized = String(value || '').trim();
-            if (normalized && !candidates.includes(normalized)) {
-                candidates.push(normalized);
-            }
-        };
-
-        pushCandidate(source);
-        const codeBlockMatches = source.match(/```(?:json)?\s*([\s\S]*?)```/ig) || [];
-        for (const block of codeBlockMatches) {
-            const cleaned = block.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-            pushCandidate(cleaned);
-        }
-
-        const firstBrace = source.indexOf('{');
-        const lastBrace = source.lastIndexOf('}');
-        if (firstBrace >= 0 && lastBrace > firstBrace) {
-            pushCandidate(source.slice(firstBrace, lastBrace + 1));
-        }
-
-        return candidates;
-    }
-
-    parseTextToolFallbackResponse(rawText = '') {
-        const candidates = this.extractJsonObjectCandidates(rawText);
-        for (const candidate of candidates) {
-            try {
-                const parsed = JSON.parse(candidate);
-                if (parsed && typeof parsed === 'object') {
-                    return parsed;
-                }
-            } catch {
-                continue;
-            }
-        }
-        throw new Error('文本工具兜底解析失败：模型未返回合法 JSON');
-    }
-
-    normalizeTextToolFallbackCalls(payload = {}) {
-        const rawCalls = Array.isArray(payload?.tool_calls)
-            ? payload.tool_calls
-            : payload?.tool_call && typeof payload.tool_call === 'object'
-                ? [payload.tool_call]
-                : [];
-
-        return rawCalls.map((call, index) => ({
-            id: call?.id || `text-tool-call-${Date.now()}-${index + 1}`,
-            type: 'function',
-            name: String(call?.name || '').trim(),
-            arguments: call?.arguments && typeof call.arguments === 'object' ? call.arguments : {},
-            rawArguments: JSON.stringify(call?.arguments && typeof call.arguments === 'object' ? call.arguments : {})
-        })).filter((call) => call.name);
-    }
-
-    buildTextToolResultMessage(toolCall, toolResult) {
-        return {
-            role: 'user',
-            content: JSON.stringify({
-                action: 'tool_result',
-                tool_name: toolCall.name,
-                tool_call_id: toolCall.id,
-                result: toolResult
-            }, null, 2),
-            meta: { source: 'text_tool_result' }
-        };
-    }
-
-    async runTextToolFallback(messages, toolContext = {}, overrides = {}) {
-        const fallbackConfig = toolContext?.textToolFallback || {};
-        const instruction = String(fallbackConfig.instruction || '').trim();
-        const maxRounds = Number(fallbackConfig.maxRounds) || 3;
-        if (!instruction) {
-            throw new Error('文本工具兜底未提供协议说明');
-        }
-
-        let conversation = this.buildTextToolFallbackMessages(messages, instruction);
-        for (let round = 0; round < maxRounds; round += 1) {
-            const payload = this.buildChatPayload(conversation, overrides);
-            this.logPipelineStage('文本工具兜底请求开始', {
-                round: round + 1,
-                maxRounds,
-                messageCount: conversation.length,
-                payload: this.buildPayloadPreview(payload)
-            });
-
-            const result = await this.sendChatRequest(payload, overrides);
-            if (!result.ok) {
-                throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
-            }
-
-            const extracted = await this.extractChatContentWithPrefillFallback(result.data, conversation, overrides);
-            const rawReply = this.getVisibleResponseContent(extracted);
-            const parsed = this.parseTextToolFallbackResponse(rawReply);
-            const action = String(parsed?.action || '').trim().toLowerCase();
-
-            if (action === 'final') {
-                const finalContent = typeof parsed.content === 'string' ? parsed.content.trim() : '';
-                if (!finalContent) {
-                    throw new Error('文本工具兜底解析失败：final 缺少 content');
-                }
-                return {
-                    ...extracted,
-                    content: finalContent
-                };
-            }
-
-            if (action !== 'tool_calls') {
-                throw new Error('文本工具兜底解析失败：未知 action');
-            }
-
-            const toolCalls = this.normalizeTextToolFallbackCalls(parsed);
-            if (toolCalls.length === 0) {
-                throw new Error('文本工具兜底解析失败：tool_calls 为空');
-            }
-
-            conversation.push({
-                role: 'assistant',
-                content: rawReply,
-                meta: { source: 'text_tool_fallback_reply' }
-            });
-
-            for (const toolCall of toolCalls) {
-                const toolResult = await this.executeSingleToolCall(toolCall, toolContext);
-                conversation.push(this.buildTextToolResultMessage(toolCall, toolResult));
-            }
-        }
-
-        throw new Error('文本工具兜底轮次过多，已停止继续请求');
-    }
     normalizeModel(model = {}) {
         const id = model.id || model.name || model.model || 'unknown-model';
         return {
@@ -1291,7 +1140,6 @@ export class AIClient {
     async chatWithTools(messages, toolContext = {}, overrides = {}) {
         const tools = Array.isArray(toolContext?.tools) ? toolContext.tools : [];
         const handlers = toolContext?.handlers || {};
-        const textToolFallbackEnabled = toolContext?.textToolFallback?.enabled === true;
 
         if (tools.length === 0) {
             return this.chat(messages, overrides);
@@ -1307,8 +1155,7 @@ export class AIClient {
                 round: round + 1,
                 toolCount: tools.length,
                 messageCount: conversation.length,
-                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean),
-                textToolFallbackEnabled
+                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean)
             });
 
             let result = await this.sendChatRequest(payload, effectiveOverrides);
@@ -1335,14 +1182,6 @@ export class AIClient {
                     }
                 }
                 if (!result.ok) {
-                    if (textToolFallbackEnabled && this.isDegradedFunctionError(primaryErrorText)) {
-                        this.logPipelineStage('原生工具调用失败，切换文本工具兜底', {
-                            round: round + 1,
-                            status: result.status,
-                            errorText: String(primaryErrorText || '').slice(0, 500)
-                        });
-                        return this.runTextToolFallback(messages, toolContext, effectiveOverrides);
-                    }
                     throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
                 }
             }

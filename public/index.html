@@ -11174,7 +11174,7 @@
                 <button class="secondary" onclick="openCharacterManager()">📋 管理角色</button>
             </div>
             <p class="hint-text">
-                💡 支持 SillyTavern 格式的角色卡 PNG 文件（包含 tEXt/iTXt 块的角色数据）
+                支持 SillyTavern 角色卡 PNG
             </p>
             <!-- 角色管理弹窗 -->
             <div id="character-manager-modal" class="modal-overlay" style="display:none;">
@@ -11183,7 +11183,7 @@
                         <h3 style="margin:0;">角色管理</h3>
                         <button class="secondary" onclick="closeCharacterManager()" style="padding:4px 10px;font-size:1.1rem;line-height:1;">×</button>
                     </div>
-                    <p class="hint-text" style="margin-bottom:10px;">点击条目切换角色，勾选框可批量选中用于导出/删除</p>
+                    <p class="hint-text" style="margin-bottom:10px;"></p>
                     <div id="character-manager-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>
                     <div style="display:flex;align-items:center;gap:8px;margin-top:12px;justify-content:flex-end;">
                         <span class="meta-inline" id="character-manager-count">已选 0 项</span>
@@ -11223,7 +11223,7 @@
                 <button class="secondary" onclick="openWorldBookManager()">📋 管理世界书</button>
             </div>
             <p class="hint-text">
-                💡 支持 SillyTavern 格式的世界书 JSON 文件（WorldInfo 格式）
+                支持 SillyTavern 世界书 JSON
             </p>
             <!-- 世界书管理弹窗 -->
             <div id="worldbook-manager-modal" class="modal-overlay" style="display:none;">
@@ -11232,7 +11232,7 @@
                         <h3 style="margin:0;">世界书管理</h3>
                         <button class="secondary" onclick="closeWorldBookManager()" style="padding:4px 10px;font-size:1.1rem;line-height:1;">×</button>
                     </div>
-                    <p class="hint-text" style="margin-bottom:10px;">点击条目切换世界书，勾选框可批量选中用于导出/删除</p>
+                    <p class="hint-text" style="margin-bottom:10px;"></p>
                     <div id="worldbook-manager-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>
                     <div style="display:flex;align-items:center;gap:8px;margin-top:12px;justify-content:flex-end;">
                         <span class="meta-inline" id="worldbook-manager-count">已选 0 项</span>
@@ -11367,7 +11367,7 @@
                             <h3>🔰 初始化脚本</h3>
                             <span class="meta-inline" id="variable-init-char-label">点击展开</span>
                         </summary>
-                        <p class="hint-text">新用户首次互动时自动创建变量。绑定到角色卡，JSON格式。</p>
+                        <p class="hint-text">新用户首次互动时自动创建；JSON 格式。</p>
                         <div style="display:flex;gap:8px;margin-bottom:8px;">
                             <select id="variable-init-char-select" onchange="onInitCharSelect()" style="flex:1;">
                                 <option value="">— 选择角色 —</option>
@@ -11781,7 +11781,7 @@
                             <div class="form-group">
                                 <label id="config-onebot-url-label">连接地址</label>
                                 <input type="text" id="config-onebot-url" placeholder="ws://127.0.0.1:3001">
-                                <p class="hint-text" id="config-onebot-url-hint">WS 模式填 ws://host:port，HTTP 模式填 http://host:port</p>
+                                <p class="hint-text" id="config-onebot-url-hint">WS: ws://host:port ｜ HTTP: http://host:port</p>
                             </div>
                             <div class="form-group">
                                 <label>Access Token（可选）</label>
@@ -11809,7 +11809,7 @@
                             <div class="form-group full">
                                 <label>&#x804A;&#x5929;&#x4F7F;&#x7528;&#x6A21;&#x578B;</label>
                                 <select id="config-chat-model-ref"></select>
-                                <p class="hint-text">&#x5148;&#x5728;&#x201C;&#x6A21;&#x578B;&#x4F9B;&#x5E94;&#x5546;&#x201D;&#x91CC;&#x7ED9;&#x4F9B;&#x5E94;&#x5546;&#x6DFB;&#x52A0;&#x5E76;&#x542F;&#x7528;&#x6A21;&#x578B;&#xFF0C;&#x8FD9;&#x91CC;&#x9009;&#x62E9;&#x804A;&#x5929;&#x5B9E;&#x9645;&#x4F7F;&#x7528;&#x7684;&#x6A21;&#x578B;&#x3002;</p>
+                                <p class="hint-text">需先在“模型供应”里启用模型。</p>
                             </div>
                             <div class="form-group full">
                                 <label>备用模型（可选）</label>
@@ -11819,19 +11819,19 @@
                             <div class="form-group full">
                                 <label>变量解析模型（可选）</label>
                                 <select id="config-chat-varparse-model-ref"></select>
-                                <p class="hint-text">仅当聊天模型未输出有效 &lt;UpdateVariable&gt;（输出空数组 [] 也算已处理）时，额外调用一次此模型提取变量更新（如好感度变化）。DS 不擅长此格式，建议选 Claude/Gemini。留空不启用。</p>
+                                <p class="hint-text">主回复没有给出有效变量更新时，额外调用一次提取变量变化；留空不启用。</p>
                             </div>
                             <div class="form-group full">
                                 <label>图片转述模型（可选）</label>
                                 <select id="config-chat-image-caption-model-ref"></select>
-                                <p class="hint-text">留空不启用：图片直接交给聊天模型处理，非多模态聊天模型将无法识别图片。选择后：发图或回复图片消息时先调用此模型转述图片，再把转述文本交给聊天模型，每次发图会额外产生一次模型调用（按所选供应商计费）；转述失败不会退回文本模型识图。</p>
+                                <p class="hint-text">留空则图片直接交给聊天模型（非多模态模型看不到图）。选择后先用此模型转述再交给聊天模型，每次发图多一次调用。</p>
                             </div>
                             <div class="form-group full toggle-row">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-image-inline-enabled" checked onchange="updateImageFetchModeFields()">
                                     图片下载后内联发送（推荐）
                                 </label>
-                                <p class="hint-text">部分中转渠道不会去抓取图片 URL，会出现“模型看不到图片”。开启后 Bot 先把图片下载成 base64 再交给模型，可绕开这类渠道；关闭则一律把图片 URL 交给模型供应商读取。</p>
+                                <p class="hint-text">中转渠道读不到图片 URL 时开启：先把图片下载成 base64 再交给模型。</p>
                             </div>
                             <div class="form-group full">
                                 <label>内联下载范围</label>
@@ -11839,26 +11839,26 @@
                                     <option value="trusted">仅可信图片域名（默认 QQ 图片）</option>
                                     <option value="all">所有公网图片</option>
                                 </select>
-                                <p class="hint-text">仅“图片下载后内联发送”开启时生效。“仅可信图片域名”只下载下面列出的图床，其它地址仍交给供应商读 URL；“所有公网图片”会让 Bot 主动请求任意公网地址，下载失败会自动改回交给供应商。</p>
+                                <p class="hint-text">仅在上一条开启时生效：只下载下面列出的域名。</p>
                             </div>
                             <div class="form-group full">
                                 <label>可信图片域名</label>
                                 <textarea id="config-chat-image-trusted-hosts" rows="2" placeholder="留空使用内置：qq.com, qq.com.cn, qpic.cn, gtimg.cn"></textarea>
-                                <p class="hint-text">逗号或换行分隔，子域名自动匹配（填 example.com 会同时匹配 img.example.com，可写 https://example.com/path 或 *.example.com）；留空回到内置 QQ 图片域名。</p>
+                                <p class="hint-text">逗号或换行分隔，子域名自动匹配；留空使用内置 QQ 图片域名。</p>
                             </div>
                             <div class="form-group full toggle-row">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-image-skip-caption" checked>
                                     主模型能看图时跳过转述
                                 </label>
-                                <p class="hint-text">勾选后：当聊天模型的供应商在“模型供应”里勾选了“支持图片输入（多模态）”，图片直接交给聊天模型，不再额外调用转述模型（省一次调用、保留原图细节）。取消勾选则始终按转述模型配置执行。</p>
+                                <p class="hint-text">聊天模型支持图片输入时跳过转述，直接交给聊天模型。</p>
                             </div>
                             <div class="form-group full toggle-row">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-image-caption-fail-continue">
                                     转述失败也继续回复
                                 </label>
-                                <p class="hint-text">默认关闭：转述失败会回复一条 ⚠️ 提示，且本轮不调用聊天模型。开启后改为注入转述失败占位符并让角色继续回复（对话更连贯，但角色看不到图片内容）。无论开关如何，只要聊天模型本身支持图片输入，转述失败都会改为直接带上原图。</p>
+                                <p class="hint-text">转述失败时让角色继续回复（角色看不到图片内容）。</p>
                             </div>
                             <div class="form-group full">
                                 <div class="field-row">
@@ -11866,7 +11866,7 @@
                                     <button type="button" class="secondary field-row-reset" id="config-chat-image-caption-prompt-reset" onclick="resetImageCaptionPrompt()">恢复默认</button>
                                 </div>
                                 <textarea id="config-chat-image-caption-prompt" rows="3"></textarea>
-                                <p class="hint-text">默认已填入内置提示词，改回默认内容即按内置默认处理。</p>
+                                <p class="hint-text">改回默认内容即使用内置提示词。</p>
                             </div>
                         </div>
                     </div>
@@ -11947,7 +11947,7 @@
                         </div>
                         <details class="config-advanced-section">
                             <summary>防注入过滤</summary>
-                            <p class="hint-text">非管理员消息在到达 AI 之前会被过滤，防止伪造管理员指令或身份。管理员消息不受影响。</p>
+                            <p class="hint-text">非管理员消息里的指令前缀会被过滤。</p>
                             <div class="config-subgrid config-subgrid--compact" style="margin-top: 14px;">
                                 <div class="form-group">
                                     <label>启用防注入过滤</label>
@@ -11960,12 +11960,12 @@
                                 <div class="form-group">
                                     <label>管理员指令前缀</label>
                                     <input type="text" id="config-chat-injection-prefix" placeholder="&">
-                                    <p class="hint-text">世界书中用于触发管理员指令的前缀符号。非管理员消息中出现此前缀开头的行会被替换为全角字符</p>
+                                    <p class="hint-text">非管理员消息中以此前缀开头的行会被替换为全角字符</p>
                                 </div>
                                 <div class="form-group">
                                     <label>替换为字符</label>
                                     <input type="text" id="config-chat-injection-replacement" placeholder="＆">
-                                    <p class="hint-text">将指令前缀替换为此字符（建议用对应的全角符号）</p>
+                                    <p class="hint-text">建议用对应的全角字符</p>
                                 </div>
                             </div>
                         </details>
@@ -12041,38 +12041,38 @@
                                     <input type="checkbox" id="config-chat-human-control" checked>
                                     启用人类群聊决策规则
                                 </label>
-                                <p class="hint-text">通用规则：读消息头、引用、表情和退场信号，控制旧梗复读与低信息量回复；不包含具体角色设定。</p>
+                                <p class="hint-text">控制复读与低信息量回复的通用规则，不含角色设定。</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-emoji-reaction">
                                     启用 QQ 表情回应
                                 </label>
-                                <p class="hint-text">开启后，普通聊天和管理员命令收到后会发送 QQ 表情回应；关闭时两者都不发送。</p>
+                                <p class="hint-text">开启后普通聊天与命令都会回应表情。</p>
                             </div>
                             <div class="form-group">
                                 <label>QQ 表情回应 ID/别名</label>
                                 <input type="text" id="config-chat-emoji-reaction-id" placeholder="289 或 点赞 / 狗头">
-                                <p class="hint-text">支持 QQ 原生表情 ID，也支持默认、收到、点赞、爱心、狗头等别名；仍然只有启用 QQ 表情回应时才会发送。</p>
+                                <p class="hint-text">支持原生表情 ID 与默认、收到、点赞、爱心、狗头等别名。</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-group-repeat-enabled">
                                     启用群聊复读直发
                                 </label>
-                                <p class="hint-text">群聊连续两条同文触发后直接发送同一句话，不经过 LLM；触发消息仍会进入记忆库。</p>
+                                <p class="hint-text">连续两条同文时直接复读，不经过模型。</p>
                             </div>
                             <div class="form-group">
                                 <label>复读冷却（分钟）</label>
                                 <input type="number" id="config-chat-group-repeat-cooldown-minutes" placeholder="3" min="1" max="60">
-                                <p class="hint-text">触发后，同一群内同一句话会在冷却期内被临时拉黑，避免重复复读。</p>
+                                <p class="hint-text">冷却期内同一句话不再重复触发。</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-chat-send-reasoning-to-qq">
                                     调试：发送思维链到 QQ
                                 </label>
-                                <p class="hint-text">默认关闭。开启后 QQ 会收到【思维链】和【正文】合并消息，仅建议临时调试使用；靶场和 MCP 不受此开关影响。</p>
+                                <p class="hint-text">开启后回复会带上思维链，仅调试用。</p>
                             </div>
                         </div>
                     </div>
@@ -12084,7 +12084,7 @@
                                     <input type="checkbox" id="config-chat-empty-retry-enabled" checked>
                                     启用空回复自动重试
                                 </label>
-                                <p class="hint-text">当模型返回空字符串、纯空白或只有省略号时，自动重试主回复请求</p>
+                                <p class="hint-text">空回复时自动重试</p>
                             </div>
                             <div class="form-group">
                                 <label>最大重试次数</label>
@@ -12104,7 +12104,7 @@
                                     <input type="checkbox" id="config-chat-chain-leak-retry-enabled" checked>
                                     启用爆思维链自动重试
                                 </label>
-                                <p class="hint-text">检测到英文模型工作日志或分析标题泄露到回复时，发送前自动丢弃并重试；英文任务、prompt、代码块不会触发。</p>
+                                <p class="hint-text">回复中混入英文工作日志时丢弃并重试。</p>
                             </div>
                             <div class="form-group">
                                 <label>最大重试次数</label>
@@ -12124,7 +12124,7 @@
                                     <input type="checkbox" id="config-chat-thinking-notify-enabled" checked>
                                     启用思考超时提示
                                 </label>
-                                <p class="hint-text">AI 响应超过指定秒数时，先发一条提示消息</p>
+                                <p class="hint-text">超过指定秒数时先发提示消息</p>
                             </div>
                             <div class="form-group">
                                 <label>提示延迟（秒）</label>
@@ -12146,14 +12146,14 @@
                             <label class="checkbox-label">
                                 <input type="checkbox" id="config-context-enabled" checked> 启用上下文感知增强
                             </label>
-                            <p class="hint-text">总开关，关闭后以下四项全部失效</p>
+                            <p class="hint-text">总开关</p>
                         </div>
                         <div class="config-checkbox-grid" style="margin-top:8px">
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-context-session-facts" checked> 会话事实
                                 </label>
-                                <p class="hint-text">注入对话中已确认的事实，如"用户叫小明，正在聊修仙话题"</p>
+                                <p class="hint-text">注入对话中已确认的事实</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
@@ -12181,7 +12181,6 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>指令与工具</h3>
-                        <p class="config-card-intro">管理员指令、AI 工具与搜索配置。按 ChatLuna 类似的 chat / browse / agent 思路：普通群聊不搜，实时资料才搜索，明确代办才调用行动工具。</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">管理员指令</div>
@@ -12202,7 +12201,7 @@
                                     <input type="checkbox" id="config-chat-command-admin-poke-enabled" checked>
                                     启用戳一戳指令
                                 </label>
-                                <p class="hint-text">输入 <code>/戳一戳 @A @B</code> 或 <code>/戳一戳@A@B</code>，bot 会对多个目标连续戳一戳；仅管理员可用，成功后不发送完成消息。</p>
+                                <p class="hint-text">用法：<code>/戳一戳 @A @B</code> 或 <code>/戳一戳@A@B</code>，仅管理员可用，成功后不发送完成消息。</p>
                             </div>
                             <div class="form-group">
                                 <label>戳一戳指令文本</label>
@@ -12211,7 +12210,7 @@
                             <div class="form-group">
                                 <label>戳一戳次数</label>
                                 <input type="number" id="config-chat-command-admin-poke-repeat" placeholder="5" min="1" max="10">
-                                <p class="hint-text">默认 5 下；过高会造成打扰</p>
+                                <p class="hint-text">默认 5 下</p>
                             </div>
                             <div class="form-group">
                                 <label class="checkbox-label">
@@ -12243,7 +12242,7 @@
                             <div class="form-group">
                                 <label>退出点歌指令文本</label>
                                 <input type="text" id="config-chat-music-exit-command" placeholder="/music-exit">
-                                <p class="hint-text">发送后清空该用户的候选歌单。不能含空格，留空回退 <code>/music-exit</code>。</p>
+                                <p class="hint-text">发送后清空该用户的候选歌单；不能含空格。</p>
                             </div>
                             <div class="form-group">
                                 <label>桥接服务地址</label>
@@ -12275,7 +12274,7 @@
                                     <div class="form-group">
                                         <label>语音切段时长（秒）</label>
                                         <input type="number" id="config-chat-music-voice-segment" placeholder="120" min="0" max="600">
-                                        <p class="hint-text">仅对「语音发送」生效。超过此长度会切段顺序连发。填 0 表示不切段。</p>
+                                        <p class="hint-text">仅语音发送生效；填 0 表示不切段。</p>
                                     </div>
                                     <div class="form-group">
                                         <label>音频体积上限（MB）</label>
@@ -12289,7 +12288,7 @@
                                     <div class="form-group">
                                         <label>下载超时（毫秒）</label>
                                         <input type="number" id="config-chat-music-download-timeout" placeholder="300000" min="5000" max="600000">
-                                        <p class="hint-text">下载与转码超时；太小会频繁超时失败</p>
+                                        <p class="hint-text">下载与转码超时</p>
                                     </div>
                                     <div class="form-group">
                                         <label>候选有效期（毫秒）</label>
@@ -12308,19 +12307,7 @@
                                     <input type="checkbox" id="config-ai-tool-send-mention-enabled">
                                     启用 AI 主动 @ 工具
                                 </label>
-                                <p class="hint-text">只在明确需要代办/转告/提醒某人时使用；服务端禁止 @all。</p>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-ai-tool-text-fallback-enabled">
-                                    启用文本工具兜底
-                                </label>
-                                <p class="hint-text">模型不支持原生工具调用时使用 JSON 协议兜底</p>
-                            </div>
-                            <div class="form-group">
-                                <label>文本工具最大轮次</label>
-                                <input type="number" id="config-ai-tool-text-fallback-max-rounds" placeholder="3" min="1" max="8">
-                                <p class="hint-text">模型不支持原生工具调用时使用 JSON 协议兜底；达到轮次后必须输出最终正文</p>
+                                <p class="hint-text">在需要代办或转告时由模型调用，禁止 @all。</p>
                             </div>
                         </div>
                     </div>
@@ -12363,7 +12350,7 @@
                             <div class="form-group full">
                                 <label>摘要专用模型</label>
                                 <select id="config-memory-summary-model" onchange="markConfigDirty('摘要模型已修改')"></select>
-                                <p class="hint-text">留空则使用聊天模型，填则用指定模型做摘要（省钱）</p>
+                                <p class="hint-text">留空使用聊天模型</p>
                             </div>
                         </div>
                     </div>
@@ -12387,7 +12374,7 @@
                                     <input type="checkbox" id="config-memory-participant-profile-retry" checked>
                                     LLM失败自动重试
                                 </label>
-                                <p class="hint-text">调用失败重试 2 次，仍失败则下次触发时再试</p>
+                                <p class="hint-text">失败重试 2 次</p>
                             </div>
                             <div class="form-group" style="grid-column: 1 / -1;">
                                 <label>人物档案黑名单 participantId（逗号分隔）</label>
@@ -12429,13 +12416,13 @@
                                     <option value="profile_plus_messages">锚点附近全量上下文 + 已有画像</option>
                                     <option value="messages_only">锚点附近全量上下文 无画像</option>
                                 </select>
-                                <p class="hint-text">分析按说话人拆开：目标人物 / Bot / 第三者；档案只依据目标人物本人的发言更新，Bot 与第三者仅作背景。bot_only = 只取与 Bot 有交互的对话上下文；全量上下文 = 锚点附近的群/私聊；有画像 = 增量合并；无画像 = 仅按新增消息总结。</p>
+                                <p class="hint-text">档案只依据目标人物本人的发言更新。</p>
                             </div>
                             <div class="form-group full">
                                 <label>档案专用模型</label>
                                 <select id="config-memory-participant-profile-model" onchange="applyParticipantProfileModelSelection()"></select>
                                 <input type="hidden" id="config-memory-participant-profile-provider-id">
-                                <p class="hint-text">&#x4ECE;&#x201C;&#x6A21;&#x578B;&#x4F9B;&#x5E94;&#x5546;&#x201D;&#x91CC;&#x5DF2;&#x542F;&#x7528;&#x7684;&#x6A21;&#x578B;&#x4E2D;&#x9009;&#x62E9;&#xFF0C;Base URL &#x548C;&#x5BC6;&#x94A5;&#x81EA;&#x52A8;&#x7EE7;&#x627F;&#x5BF9;&#x5E94;&#x4F9B;&#x5E94;&#x5546;&#x3002;</p>
+                                <p class="hint-text">在“模型供应”已启用的模型中选择，Base URL 与密钥自动继承。</p>
                             </div>
                         </div>
                         </div>
@@ -12486,7 +12473,7 @@
                                                 <option value="ollama">Ollama</option>
                                                 <option value="custom">Custom</option>
                                             </select>
-                                            <p class="hint-text" id="config-ai-provider-hint">将自动带出默认 Base URL 与模型，可在模型供应商里覆盖</p>
+                                            <p class="hint-text" id="config-ai-provider-hint">自动带出默认 Base URL 与模型</p>
                                         </div>
                                         <div class="form-group">
                                             <label>Base URL</label>
@@ -12555,7 +12542,7 @@
                                                 <h3 style="margin:0;">预设文件</h3>
                                                 <button class="secondary" onclick="closePresetImportManager()" style="padding:4px 10px;font-size:1.1rem;line-height:1;">×</button>
                                             </div>
-                                            <p class="hint-text" style="margin-bottom:10px;">点击条目切换预设，勾选框可批量选中用于导出/删除</p>
+                                            <p class="hint-text" style="margin-bottom:10px;"></p>
                                             <div id="preset-import-list" class="preset-import-list" style="max-height:50vh;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius);"></div>
                                             <div style="display:flex;align-items:center;gap:8px;margin-top:12px;justify-content:flex-end;">
                                                 <span class="meta-inline" id="preset-import-batch-count">已选 0 项</span>
@@ -12637,7 +12624,7 @@
                                         </div>
                                     </div>
                                     <div id="runtime-preview-panel" class="runtime-preview-grid">
-                                        <div class="full empty-state">点击“预览运行时 Prompt”查看后端实际构建结果</div>
+                                        <div class="full empty-state">尚未生成预览</div>
                                     </div>
                                 </div>
                             </div>
@@ -12906,11 +12893,11 @@
                 <div class="card">
                     <div class="config-card-header">
                         <h3>数据备份与恢复</h3>
-                        <p class="config-card-intro">选择需要导出或恢复的数据类别。角色卡升级只需导入角色卡，不勾选记忆库即可保留数据。</p>
+                        <p class="config-card-intro">选择要导出或恢复的数据类别。</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">备份与恢复</div>
-                        <p class="hint-text" style="margin-bottom:12px;">备份导出为 .tar.gz 文件。恢复时自动识别内容并支持选择类别。</p>
+                        <p class="hint-text" style="margin-bottom:12px;">导出为 .tar.gz；恢复时自动识别内容。</p>
                         <div class="config-button-row">
                             <button class="success" onclick="showBackupModal()">📥 导出备份</button>
                             <button class="secondary" onclick="document.getElementById('config-restore-file').click()">📤 恢复备份</button>
@@ -13031,7 +13018,7 @@
                                 <h3 class="range-panel-h3">📝 伪造聊天记录</h3>
                                 <span id="range-fake-history-count" style="color:var(--text-muted);font-size:0.8rem;"></span>
                             </div>
-                            <p class="hint-text" style="margin-bottom:8px;">粘贴对话历史模拟继承记忆。格式：<code>[用户] xxx</code> / <code>[角色] xxx</code> 交替。</p>
+                            <p class="hint-text" style="margin-bottom:8px;">格式：<code>[用户] xxx</code> / <code>[角色] xxx</code> 交替。</p>
                             <textarea id="range-fake-history-input" rows="5" style="width:100%;font-family:monospace;font-size:0.8rem;resize:vertical;" placeholder="[用户] 你好啊&#10;[角色] 哟，这位道友有何贵干？"></textarea>
                             <div class="inline-actions">
                                 <button class="secondary range-btn-xs" onclick="applyRangeFakeHistory()">✅ 应用</button>
@@ -13131,7 +13118,7 @@
                         <div class="section-head range-section-head">
                             <div>
                                 <h3 class="range-panel-h3">节点详情</h3>
-                                <p class="hint-text" style="margin:4px 0 0;">点击中间任意测试块或步骤节点，在这里查看细节和 trace。</p>
+                                <p class="hint-text" style="margin:4px 0 0;">点击测试块或步骤节点查看细节。</p>
                             </div>
                             <span id="range-trace-summary" class="meta-inline">尚未运行</span>
                         </div>
@@ -17173,11 +17160,6 @@
                 displayContent: content
             };
         }
-        function updateTextToolFallbackFields() {
-            const enabled = document.getElementById('config-ai-tool-text-fallback-enabled')?.checked === true;
-            setConfigInputDisabledState('config-ai-tool-text-fallback-max-rounds', !enabled);
-        }
-
         function getPresetPromptTokenCount(item = {}) {
             const content = String(item.content || '').trim();
             if (!content) {
@@ -20289,7 +20271,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             }
             ensureModelCapabilities(normalizedModels.map((model) => model.id));
             if (normalizedModels.length === 0) {
-                container.innerHTML = '<div class="empty-state">&#x8FD8;&#x6CA1;&#x6709;&#x6A21;&#x578B;&#x3002;&#x8F93;&#x5165;&#x6A21;&#x578B;&#x540D;&#x70B9;&#x6DFB;&#x52A0;&#xFF0C;&#x6216;&#x5148;&#x62C9;&#x53D6;&#x6A21;&#x578B;&#x5217;&#x8868;&#x3002;</div>';
+                container.innerHTML = '<div class="empty-state">还没有模型，输入模型名添加或先拉取模型列表。</div>';
                 return;
             }
 
@@ -21366,10 +21348,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-search-weather-days').value = searchConfig.spice?.weatherDays ?? 3;
                 document.getElementById('config-mcp-client-enabled').checked = currentConfig.mcp?.client?.enabled === true;
                 document.getElementById('config-mcp-max-result-chars').value = currentConfig.mcp?.client?.maxResultChars ?? 4000;
-                document.getElementById('config-ai-tool-text-fallback-enabled').checked = currentConfig.ai?.tools?.textToolFallback?.enabled === true;
-                document.getElementById('config-ai-tool-text-fallback-max-rounds').value = currentConfig.ai?.tools?.textToolFallback?.maxRounds ?? 3;
                 document.getElementById('config-ai-tool-send-mention-enabled').checked = currentConfig.ai?.tools?.sendMention?.enabled === true;
-                updateTextToolFallbackFields();
                 updateSearchFieldsState();
                 updateMcpFormFields();
                 updateEmptyRetryFields();
@@ -21716,10 +21695,6 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                                 }
                             };
                         })(),
-                        textToolFallback: {
-                            enabled: document.getElementById('config-ai-tool-text-fallback-enabled').checked,
-                            maxRounds: parseInt(document.getElementById('config-ai-tool-text-fallback-max-rounds').value) || 3
-                        },
                         sendMention: {
                             enabled: document.getElementById('config-ai-tool-send-mention-enabled').checked
                         }
@@ -22025,7 +22000,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 <div class="modal" style="max-width:440px;">
                     <h3>恢复备份</h3>
                     <p style="margin-bottom:8px;">文件：<b>${escapeHtml(file.name)}</b></p>
-                    <p class="hint-text" style="margin-bottom:8px;">检测到以下类别，选择要恢复的内容：</p>
+                    <p class="hint-text" style="margin-bottom:8px;">选择要恢复的内容：</p>
                     <div style="display:flex;flex-wrap:wrap;gap:6px 16px;margin-bottom:12px;">${checkboxHtml}</div>
                     ${hasMemory ? '<p style="color:var(--danger);margin-bottom:8px;font-size:0.85rem;">⚠️ 记忆库包含聊天记录，恢复将覆盖当前数据！</p>' : ''}
                     <p class="hint-text">恢复前会自动备份当前状态。</p>
@@ -22764,14 +22739,6 @@ ${data.generatedMessage}` : (data.message || '主动 @ 消息已发');
             const ttsProvider = document.getElementById('tts-provider');
             if (ttsProvider) {
                 ttsProvider.addEventListener('change', updateTTSProviderFields);
-            }
-
-            const textToolFallbackToggle = document.getElementById('config-ai-tool-text-fallback-enabled');
-            if (textToolFallbackToggle) {
-                textToolFallbackToggle.addEventListener('change', () => {
-                    updateTextToolFallbackFields();
-                    markConfigDirty('文本工具兜底配置已修改');
-                });
             }
 
             const emptyRetryToggle = document.getElementById('config-chat-empty-retry-enabled');

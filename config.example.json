@@ -89,10 +89,6 @@
           "weatherDays": 3
         }
       },
-      "textToolFallback": {
-        "enabled": false,
-        "maxRounds": 3
-      },
       "sendMention": {
         "enabled": false
       }

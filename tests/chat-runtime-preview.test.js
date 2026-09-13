@@ -456,10 +456,6 @@ test('buildAIToolContext exposes mode-gated search and text tool instructions', 
                         timeoutMs: 10000,
                         maxSnippetLength: 800
                     },
-                    textToolFallback: {
-                        enabled: true,
-                        maxRounds: 3
-                    }
                 }
             }
         }
@@ -471,10 +467,6 @@ test('buildAIToolContext exposes mode-gated search and text tool instructions', 
     assert.match(hint, /get_weather 只在用户明确询问天气/);
     assert.match(hint, /不要泄露工具 JSON、参数、工具名/);
 
-    assert.equal(toolContext.textToolFallback.enabled, true);
-    assert.match(toolContext.textToolFallback.instruction, /chat=普通群聊闲聊，不调用工具/);
-    assert.match(toolContext.textToolFallback.instruction, /browse=最新\/外部事实\/资料核验，调用 web_search/);
-    assert.match(toolContext.textToolFallback.instruction, /final 只写给用户看的正文/);
 });
 
 test('AI client applies per-call participant profile overrides to payload and headers', async () => {
@@ -681,30 +673,14 @@ test('AI client chatWithTools keeps backup provider for tool follow-up', async (
     }
 });
 
-test('AI client chatWithTools uses text fallback on degraded function error', async () => {
+test('AI client chatWithTools surfaces API error when tools request fails (no text fallback)', async () => {
     const originalFetch = globalThis.fetch;
     const requests = [];
     globalThis.fetch = async (url, options) => {
-        const request = {
-            url: String(url),
-            headers: options.headers,
-            body: JSON.parse(options.body)
-        };
-        requests.push(request);
-
-        if (Array.isArray(request.body.tools)) {
-            return jsonResponse({
-                error: { message: 'degraded function cannot be invoked in this model' }
-            }, { status: 400 });
-        }
-
+        requests.push({ url: String(url), headers: options.headers, body: JSON.parse(options.body) });
         return jsonResponse({
-            choices: [{
-                message: {
-                    content: '{"action":"final","content":"fallback final"}'
-                }
-            }]
-        });
+            error: { message: 'degraded function cannot be invoked in this model' }
+        }, { status: 400 });
     };
 
     try {
@@ -716,33 +692,21 @@ test('AI client chatWithTools uses text fallback on degraded function error', as
             temperature: 0.7
         });
 
-        const result = await client.chatWithTools(
-            [{ role: 'user', content: 'search with fallback' }],
-            {
-                tools: [{
-                    type: 'function',
-                    function: {
-                        name: 'web_search',
-                        description: 'search web',
-                        parameters: { type: 'object' }
-                    }
-                }],
-                handlers: {},
-                textToolFallback: {
-                    enabled: true,
-                    maxRounds: 2,
-                    instruction: 'Return JSON with action final or tool_calls.'
+        await assert.rejects(
+            () => client.chatWithTools(
+                [{ role: 'user', content: 'search something' }],
+                {
+                    tools: [{
+                        type: 'function',
+                        function: { name: 'web_search', description: 'search web', parameters: { type: 'object' } }
+                    }],
+                    handlers: {}
                 }
-            }
+            ),
+            /AI API 错误: 400/
         );
-
-        assert.equal(result.content, 'fallback final');
-        assert.equal(requests.length, 2);
+        assert.equal(requests.length, 1);
         assert.equal(Array.isArray(requests[0].body.tools), true);
-        assert.equal(Array.isArray(requests[1].body.tools), false);
-        assert.equal(requests[1].body.messages[0].content, 'Return JSON with action final or tool_calls.');
-        assert.equal(requests[1].body.model, 'global-model');
-        assert.equal(requests[1].headers.Authorization, 'Bearer global-key');
     } finally {
         globalThis.fetch = originalFetch;
     }
