@@ -394,33 +394,106 @@ export function buildAIToolDefinitions(config = {}, options = {}) {
     return tools;
 }
 
-function buildToolHints(config = {}) {
-    const webSearchConfig = normalizeWebSearchConfig(config.ai?.tools?.webSearch || {});
-    const hints = [];
+/** 通用总则：与具体功能无关，所有工具共用 */
+export function buildToolHintRules() {
+    return [
+        '【工具使用总则】',
+        '- 本次请求下发的工具定义是你唯一可调用的组件清单；不要调用未下发的工具名，也不要声称调用过。',
+        '- 用户明确要求执行某个动作或使用某个能力时，必须真的调用对应工具，不能用文字假装完成。',
+        '- 调用工具不受角色人设限制：语气可以保持人设，但不能以“我不会 / 角色做不到”为由拒绝调用。',
+        '- 工具失败、超时或无结果时如实说明，不要编造结果，也不要假装成功。',
+        '- 不要泄露工具名、JSON、参数，也不要说“我准备调用工具”这类过程话术。',
+        '- 工具结果只作为依据，最终回复用自然语言总结。',
+        '- 同一目标不要重复完全相同的调用；连续空转不超过 3 轮。'
+    ].join('\n');
+}
 
-    if (webSearchConfig.enabled) {
-        const available = ['web_search'];
-        if (webSearchConfig.fetch.enabled) {
-            available.push('web_fetch');
-        }
-        if (webSearchConfig.spice.enabled) {
-            available.push('get_weather', 'convert_currency');
-        }
-        const fallback = webSearchConfig.fallbackProviders.length > 0
-            ? webSearchConfig.fallbackProviders.join(', ')
-            : '无';
-        hints.push([
-            `你当前可用联网工具: ${available.join(' / ')}（provider=${webSearchConfig.provider}，回退=${fallback}）。`,
-            '判断规则: chat=普通群聊/角色扮演/情绪接话/水群/表情/戳一戳，不调用工具；browse=最新信息/新闻/外部事实/资料核验/用户明确让你查，调用 web_search；agent=代办动作，按可用工具执行。',
-            'web_search 适合天气、新闻、实时动态、价格、政策、版本、链接/项目/库等需要网页事实核验的问题；需要页面正文细节时再用 web_fetch 打开候选链接。',
-            'get_weather 只在用户明确询问天气且能给出地点时使用；convert_currency 只在需要汇率换算时使用。',
-            `工具限制: 默认最多 ${webSearchConfig.maxResults} 条结果，单次请求超时 ${webSearchConfig.timeoutMs}ms，单条摘要最长 ${webSearchConfig.maxSnippetLength} 字。`,
-            '搜索结果只作为依据，最终回复用自然语言总结；不要泄露工具 JSON、参数、工具名，也不要说“我准备搜索”。',
-            '如果搜索失败或无结果，明确告诉用户这次检索失败/没查到，不要编造实时结果。'
-        ].join('\n'));
+/** 联网检索段：仅在启用联网工具时生成，随配置变化 */
+export function buildWebToolHint(config = {}) {
+    const webSearchConfig = normalizeWebSearchConfig(config.ai?.tools?.webSearch || {});
+    if (!webSearchConfig.enabled) {
+        return '';
     }
 
-    return hints;
+    const available = ['web_search'];
+    if (webSearchConfig.fetch.enabled) {
+        available.push('web_fetch');
+    }
+    if (webSearchConfig.spice.enabled) {
+        available.push('get_weather', 'convert_currency');
+    }
+
+    const lines = [
+        '【功能：联网检索】',
+        `可用组件：${available.join('、')}。`
+    ];
+    if (webSearchConfig.fetch.enabled || webSearchConfig.spice.enabled) {
+        lines.push(`必须调用、不得凭记忆或猜测作答的情形：用户明确要求 搜/查/查证/给链接/给来源/给出处/最新情况/是不是真的；涉及新闻、价格、政策、版本、赛事、天气、汇率、人物动态等实时或可能变化的信息；需要外部事实核验（链接、项目、库、资料、图片来源）。`);
+    }
+    lines.push(
+        `- web_search：参数 query（必填）、topic=web|news（新闻用 news）、timeRange=day|week|month|year、site=限定站点、limit=条数（默认 ${webSearchConfig.maxResults}）。`,
+        `- 图片出处：先读图中文字或可检索特征，再用 web_search 检索；图中没有可检索信息时直接说“我无法反查图片出处”，不要编 URL，也不要编造“全网都找不到”。`
+    );
+    if (webSearchConfig.fetch.enabled) {
+        lines.push('- web_fetch：参数 url、maxChars；只在需要页面正文细节（确认出处、核对规格）时使用，不要对每条结果都抓取。');
+    }
+    if (webSearchConfig.spice.enabled) {
+        lines.push('- get_weather：仅在用户明确问天气且能给出地点时使用；参数 location、days（默认 ' + (webSearchConfig.spice?.weatherDays ?? 3) + '）。');
+        lines.push('- convert_currency：仅在需要汇率或金额换算时使用；参数 from、to、amount。');
+    }
+    lines.push(
+        '- 检索无结果或失败时，简短说明这次没查到，不要编造链接或依据。',
+        `- 限制：默认最多 ${webSearchConfig.maxResults} 条结果，单次搜索超时 ${webSearchConfig.timeoutMs}ms，单条摘要最长 ${webSearchConfig.maxSnippetLength} 字。`
+    );
+    return lines.join('\n');
+}
+
+/** 主动 @ 段：仅在启用主动 @ 工具时生成 */
+export function buildMentionToolHint(config = {}) {
+    const sendMentionConfig = config.ai?.tools?.sendMention || {};
+    if (sendMentionConfig.enabled !== true) {
+        return '';
+    }
+    return [
+        '【功能：主动 @ 群成员】',
+        '可用组件：send_group_mention。',
+        '- 使用时机：用户要求你转告、提醒、通知、叫某人，或明确让你 @ 某人；自己发起闲聊式 @ 不在范围内。',
+        '- 参数：prompt（必填，写清要传达的要求或意图，最终正文由你按角色风格生成）、targetUserId（要 @ 的 QQ 号，上下文明确可省略）、groupId（当前群可省略）。',
+        '- 硬限制：禁止 @all；仅群聊可用；同一轮不要重复 @ 同一个人。',
+        '- 发送失败或权限不足时如实说明，不要假装已经通知到。'
+    ].join('\n');
+}
+
+/** 外部 MCP 段：清单由已连接服务器的工具定义自动生成 */
+export function buildMcpToolHint(definitions = []) {
+    if (!Array.isArray(definitions) || definitions.length === 0) {
+        return '';
+    }
+    const byServer = new Map();
+    for (const item of definitions) {
+        const serverName = String(item?.serverName || 'mcp');
+        if (!byServer.has(serverName)) {
+            byServer.set(serverName, []);
+        }
+        byServer.get(serverName).push(String(item?.toolName || item?.name || ''));
+    }
+    const lines = [
+        '【功能：外部 MCP 工具】',
+        `已连接服务器（共 ${definitions.length} 个工具，名称以 mcp__ 开头）：`
+    ];
+    for (const [serverName, toolNames] of byServer.entries()) {
+        lines.push(`- ${serverName}（${toolNames.length}）：${toolNames.filter(Boolean).join('、')}`);
+    }
+    lines.push(
+        '- 使用时机：用户明确需要这些能力（文件、数据库、浏览器、外部服务等）时调用；不确定时先说明你的能力范围。',
+        '- 只能调用上面列出的工具名；调用失败、超时或被拒绝时如实说明，不要编造结果或假装成功。',
+        '- 参数按工具定义传，不要臆造参数名。'
+    );
+    return lines.join('\n');
+}
+
+function buildToolHints(config = {}) {
+    return [buildWebToolHint(config), buildMentionToolHint(config)].filter(Boolean);
 }
 
 // ==================== 工具上下文 ====================
@@ -677,10 +750,11 @@ export function buildAIToolContext({
         };
     }
     if (mcpDefinitions.length > 0) {
-        toolHints.push([
-            `你还可以调用外部 MCP 服务器提供的工具（共 ${mcpDefinitions.length} 个，名称以 mcp__ 开头）。`,
-            '仅在用户明确需要对应能力时调用；调用失败时如实说明，不要编造结果。'
-        ].join('\n'));
+        toolHints.push(buildMcpToolHint(mcpDefinitions));
+    }
+    // 总则放在最前，只在确实有可调用工具时下发
+    if (toolHints.length > 0) {
+        toolHints.unshift(buildToolHintRules());
     }
 
 

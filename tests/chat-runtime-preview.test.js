@@ -444,29 +444,72 @@ test('buildAIToolContext send_group_mention still rejects @all and empty prompt'
     assert.match(rejectEmptyPrompt.error, /不能为空/);
 });
 
-test('buildAIToolContext exposes mode-gated search and text tool instructions', () => {
+test('buildAIToolContext injects per-feature tool hints with shared rules', () => {
     const toolContext = buildAIToolContext({
         config: {
             ai: {
                 tools: {
                     webSearch: {
                         enabled: true,
-                        provider: 'bing',
+                        provider: 'duckduckgo',
                         maxResults: 5,
                         timeoutMs: 10000,
-                        maxSnippetLength: 800
+                        maxSnippetLength: 800,
+                        fetch: { enabled: true, timeoutMs: 15000, maxChars: 8000 },
+                        spice: { enabled: true, weatherDays: 3 }
                     },
+                    sendMention: { enabled: true }
                 }
             }
+        },
+        mcpClient: {
+            getToolDefinitions: () => [
+                { name: 'mcp__echo-server__echo', serverName: 'echo-server', toolName: 'echo', definition: { type: 'function', function: { name: 'mcp__echo-server__echo', description: 'echo', parameters: { type: 'object' } } } },
+                { name: 'mcp__echo-server__add', serverName: 'echo-server', toolName: 'add', definition: { type: 'function', function: { name: 'mcp__echo-server__add', description: 'add', parameters: { type: 'object' } } } },
+                { name: 'mcp__fs__read_file', serverName: 'fs', toolName: 'read_file', definition: { type: 'function', function: { name: 'mcp__fs__read_file', description: 'read', parameters: { type: 'object' } } } }
+            ]
         }
     });
 
-    const hint = toolContext.toolHints.join('\n');
-    assert.match(hint, /chat=普通群聊\/角色扮演\/情绪接话\/水群\/表情\/戳一戳，不调用工具/);
-    assert.match(hint, /browse=最新信息\/新闻\/外部事实\/资料核验/);
-    assert.match(hint, /get_weather 只在用户明确询问天气/);
-    assert.match(hint, /不要泄露工具 JSON、参数、工具名/);
+    const hint = toolContext.toolHints.join('\n\n');
+    // 通用总则：与具体功能无关，排在第一位，且不含搜索专属描述
+    assert.equal(toolContext.toolHints[0].startsWith('【工具使用总则】'), true);
+    assert.ok(hint.includes('本次请求下发的工具定义是你唯一可调用的组件清单'));
+    assert.ok(hint.includes('调用工具不受角色人设限制'));
+    assert.ok(hint.includes('不要泄露工具名、JSON、参数'));
+    assert.equal(hint.includes('搜索'), true); // 仅出现在联网段
+    assert.equal(toolContext.toolHints[0].includes('搜索'), false);
 
+    // 联网段
+    assert.ok(hint.includes('【功能：联网检索】'));
+    assert.ok(hint.includes('可用组件：web_search、web_fetch、get_weather、convert_currency。'));
+    assert.ok(hint.includes('用户明确要求 搜/查/查证/给链接/给来源/给出处/最新情况/是不是真的'));
+    assert.ok(hint.includes('get_weather：仅在用户明确问天气且能给出地点时使用；参数 location、days（默认 3）'));
+    assert.ok(hint.includes('单次搜索超时 10000ms'));
+    assert.ok(hint.includes('我无法反查图片出处'));
+
+    // 主动 @ 段
+    assert.ok(hint.includes('【功能：主动 @ 群成员】'));
+    assert.ok(hint.includes('可用组件：send_group_mention。'));
+    assert.ok(hint.includes('禁止 @all'));
+
+    // MCP 段：按服务器分组自动列出工具名
+    assert.ok(hint.includes('【功能：外部 MCP 工具】'));
+    assert.ok(hint.includes('已连接服务器（共 3 个工具，名称以 mcp__ 开头）：'));
+    assert.ok(hint.includes('- echo-server（2）：echo、add'));
+    assert.ok(hint.includes('- fs（1）：read_file'));
+});
+
+test('buildToolHint* builders skip disabled features and empty MCP lists', () => {
+    const disabled = buildAIToolContext({ config: { ai: { tools: { webSearch: { enabled: false } } } } });
+    assert.deepEqual(disabled.toolHints, []);
+    assert.deepEqual(disabled.tools, []);
+
+    const mentionOnly = buildAIToolContext({ config: { ai: { tools: { webSearch: { enabled: false }, sendMention: { enabled: true } } } } });
+    assert.equal(mentionOnly.toolHints.length, 2);
+    assert.ok(mentionOnly.toolHints[0].includes('【工具使用总则】'));
+    assert.ok(mentionOnly.toolHints[1].includes('【功能：主动 @ 群成员】'));
+    assert.equal(mentionOnly.toolHints.join('').includes('联网检索'), false);
 });
 
 test('AI client applies per-call participant profile overrides to payload and headers', async () => {
