@@ -2042,6 +2042,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     const src = path.join(dataDir, sub);
                     const dst = path.join(tmpDataDir, sub);
                     if (fsSync.existsSync(src)) copyDirSync(src, dst, new Set());
+                    // 角色覆盖文件与角色卡同属「角色」分类，避免恢复后角色设定丢失
+                    if (cat === 'characters') {
+                        const overrideSrc = path.join(dataDir, 'character_overrides');
+                        const overrideDst = path.join(tmpDataDir, 'character_overrides');
+                        if (fsSync.existsSync(overrideSrc)) copyDirSync(overrideSrc, overrideDst, new Set());
+                    }
                 } else {
                     // data 根文件（corpus, regex imports, presets 在 config 里已包含）
                 }
@@ -2269,6 +2275,13 @@ export function setupRoutes(app, config, saveConfig, managers) {
                             }
                         }
                         mergeDirSync(src, dst, new Set(), changes);
+                        if (cat === 'characters') {
+                            const overrideSrc = path.join(backupDataDir, 'character_overrides');
+                            const overrideDst = path.join(currentDataDir, 'character_overrides');
+                            if (fsSync.existsSync(overrideSrc)) {
+                                mergeDirSync(overrideSrc, overrideDst, new Set(), changes);
+                            }
+                        }
                         if (cat === 'memory') {
                             changes.replaced.push('data/chats (记忆库已恢复)');
                         }

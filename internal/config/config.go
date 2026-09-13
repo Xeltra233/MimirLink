@@ -97,6 +97,15 @@ func (d *Document) Delete(path string) error {
 	return nil
 }
 
+// Replace 用新的 JSON 文本替换文档内容（调用方保证内容合法）。
+func (d *Document) Replace(raw []byte) error {
+	if !json.Valid(raw) {
+		return fmt.Errorf("配置内容不是合法 JSON")
+	}
+	d.data = raw
+	return nil
+}
+
 // Keys 返回顶层键（保持文件中的顺序）。
 func (d *Document) Keys() []string {
 	result := d.Get("@keys")
