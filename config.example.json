@@ -24,7 +24,8 @@
       "enabled": false,
       "maxResultChars": 4000,
       "servers": []
-    }
+    },
+    "token": ""
   },
   "onebot": {
     "url": "ws://127.0.0.1:3001",

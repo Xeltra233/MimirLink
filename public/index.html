@@ -12650,34 +12650,29 @@
                 </div>
                 <div class="config-subpanel" data-config-panel="search">
                 <div class="card">
-                    <div class="config-card-header">
-                        <h3>搜索与联网工具</h3>
-                        <p class="config-card-intro">Bot 按需自行调用，不预先接管回答。DuckDuckGo 为 ddgs / duck-duck-scrape 移植版，正文读取为 Mozilla Readability 移植版。</p>
-                    </div>
                     <div class="config-subsection">
                         <div class="config-subsection-title">开关与 Provider</div>
                         <div class="config-subgrid">
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-search-enabled" onchange="updateSearchFieldsState()">
-                                    启用联网工具（web_search）
+                                    启用联网工具
                                 </label>
-                                <p class="hint-text">水群、表情、普通角色对话不会因为开启就触发；是否搜索由模型决定。</p>
+                                <p class="hint-text">开启后由模型决定是否调用。</p>
                             </div>
                             <div class="form-group">
                                 <label>主 Provider</label>
                                 <select id="config-search-provider" onchange="updateSearchFieldsState()">
-                                    <option value="duckduckgo">DuckDuckGo（免 Key，移植版）</option>
-                                    <option value="searxng">SearXNG（自建/实例，需开启 JSON）</option>
-                                    <option value="tavily">Tavily（需 API Key）</option>
-                                    <option value="brave">Brave Search（需 API Key）</option>
-                                    <option value="serpapi">SerpAPI（需 API Key）</option>
+                                    <option value="duckduckgo">DuckDuckGo</option>
+                                    <option value="searxng">SearXNG</option>
+                                    <option value="tavily">Tavily</option>
+                                    <option value="brave">Brave Search</option>
+                                    <option value="serpapi">SerpAPI</option>
                                 </select>
                             </div>
                             <div class="form-group">
-                                <label>回退顺序（逗号分隔 provider）</label>
+                                <label>回退顺序</label>
                                 <input type="text" id="config-search-fallback-providers" placeholder="例如: searxng,duckduckgo">
-                                <p class="hint-text">主 Provider 失败或无结果时按顺序尝试。</p>
                             </div>
                             <div class="form-group" data-search-field="searxng">
                                 <label>SearXNG 地址</label>
@@ -12760,9 +12755,8 @@
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-search-fetch-enabled">
-                                    启用网页正文读取（web_fetch）
+                                    启用网页正文读取
                                 </label>
-                                <p class="hint-text">模型可打开搜索结果读正文，仅支持公网 http/https。</p>
                             </div>
                             <div class="form-group">
                                 <label>正文读取超时 (毫秒)</label>
@@ -12775,9 +12769,8 @@
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-search-spice-enabled">
-                                    启用天气/汇率即时工具
+                                    启用天气/汇率工具
                                 </label>
-                                <p class="hint-text">get_weather / convert_currency，由模型按需调用。</p>
                             </div>
                             <div class="form-group">
                                 <label>天气预报天数</label>
@@ -12797,18 +12790,14 @@
                 </div>
                 <div class="config-subpanel" data-config-panel="mcp">
                 <div class="card">
-                    <div class="config-card-header">
-                        <h3>MCP 客户端</h3>
-                        <p class="config-card-intro">连接外部 MCP 服务器，让 bot 按需调用其工具。支持 stdio（本地命令）、http、sse 三种传输；stdio 会在本机执行命令，请只添加可信来源。</p>
-                    </div>
                     <div class="config-subsection">
+                        <div class="config-subsection-title">MCP 客户端</div>
                         <div class="config-subgrid">
                             <div class="form-group">
                                 <label class="checkbox-label">
                                     <input type="checkbox" id="config-mcp-client-enabled">
                                     启用 MCP 客户端工具
                                 </label>
-                                <p class="hint-text">开启后已连接服务器的工具会并入 bot 工具表（默认关闭）。</p>
                             </div>
                             <div class="form-group">
                                 <label>工具结果最大字符数</label>
@@ -12842,6 +12831,7 @@
                             <div class="form-group" data-mcp-field="stdio">
                                 <label>命令</label>
                                 <input type="text" id="mcp-form-command" placeholder="例如: npx">
+                                <p class="hint-text">命令会在本机执行，仅添加可信来源。</p>
                             </div>
                             <div class="form-group" data-mcp-field="stdio">
                                 <label>参数（每行一个）</label>
@@ -12885,30 +12875,33 @@
                             <button onclick="importMcpServers()">导入</button>
                             <button class="secondary" onclick="copyMcpConfigJson()">复制当前配置 JSON</button>
                         </div>
-                        <div id="mcp-import-result" class="meta-box" style="margin-top:8px;white-space:normal">支持 Claude Desktop / .mcp.json 的 mcpServers 格式，也支持数组或单个服务器对象。</div>
+                        <div id="mcp-import-result" class="meta-box" style="margin-top:8px;white-space:normal">尚未导入</div>
                     </div>
                 </div>
                 <div class="card">
-                    <div class="config-card-header">
-                        <h3>MCP 服务端（靶场对外接口）</h3>
-                        <p class="config-card-intro">供外部工具通过 MCP 调用靶场能力，修改后需重启生效</p>
-                    </div>
                     <div class="config-subsection">
+                        <div class="config-subsection-title">MCP 服务端</div>
                         <div class="config-subgrid">
                             <div class="form-group">
                                 <label class="checkbox-label">
-                                    <input type="checkbox" id="config-mcp-enabled" checked> 启用 MCP 服务端
+                                    <input type="checkbox" id="config-mcp-enabled" checked>
+                                    启用 MCP 服务端
                                 </label>
                             </div>
                             <div class="form-group">
                                 <label>端点路径</label>
                                 <input type="text" id="config-mcp-path" placeholder="/mcp" value="/mcp">
                             </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label>访问令牌</label>
+                                <input type="password" id="config-mcp-token" placeholder="留空则仅允许面板登录访问" autocomplete="new-password">
+                            </div>
                         </div>
                         <div class="meta-box" style="margin-top:12px;white-space:normal">
                             <strong>挂载配置</strong> (.claude/settings.json):<br>
-                            <code>{"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}</code>
+                            <code>{"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp","headers":{"Authorization":"Bearer &lt;访问令牌&gt;"}}}}</code>
                         </div>
+                        <p class="hint-text" style="margin-top:8px">修改后需重启生效。</p>
                     </div>
                 </div>
                 </div>
@@ -20942,7 +20935,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             if (!container) return;
             const servers = Array.isArray(client?.servers) ? client.servers : [];
             if (servers.length === 0) {
-                container.innerHTML = '<div class="empty-state">还没有 MCP 服务器，用下方表单或 JSON 导入添加。</div>';
+                container.innerHTML = '<div class="empty-state">还没有 MCP 服务器</div>';
                 return;
             }
             const stateLabels = { connected: '已连接', connecting: '连接中', error: '错误', disabled: '已停用' };
@@ -21437,6 +21430,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-preset-name').value = currentConfig.preset?.name || '';
                 document.getElementById('config-mcp-enabled').checked = currentConfig.mcp?.enabled !== false;
                 document.getElementById('config-mcp-path').value = currentConfig.mcp?.path || '/mcp';
+                document.getElementById('config-mcp-token').value = currentConfig.mcp?.hasToken ? '******' : '';
                 document.getElementById('config-server-log-retention-days').value = currentConfig.server?.logRetentionDays ?? 14;
                 document.getElementById('config-server-log-cleanup-interval-minutes').value = Math.max(1, Math.round((currentConfig.server?.logCleanupIntervalMs ?? 3600000) / 60000));
                 presetDraft = normalizePresetDraft(getActiveRuntimePresetSource().preset || currentConfig.preset || {});
@@ -21873,7 +21867,8 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                 preset: buildPresetSavePayload(),
                 mcp: {
                     enabled: document.getElementById('config-mcp-enabled').checked,
-                    path: document.getElementById('config-mcp-path').value.trim() || '/mcp'
+                    path: document.getElementById('config-mcp-path').value.trim() || '/mcp',
+                    token: document.getElementById('config-mcp-token').value.trim()
                 },
                 context: {
                     enabled: document.getElementById('config-context-enabled').checked,

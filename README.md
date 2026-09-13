@@ -180,15 +180,20 @@ Node.js >= 22.5.0（`node:sqlite` 内置模块）。
 ### MCP 接口
 `POST /mcp`（默认路径，可在配置页修改）—— Claude Code 等外部工具远程调用，JSON-RPC 2.0 协议。
 
-Config 中启用：
+Config 中启用（`token` 留空时只有已登录的面板会话能访问）：
 ```json
-{"mcp": {"enabled": true, "path": "/mcp"}}
+{"mcp": {"enabled": true, "path": "/mcp", "token": "换成你自己的随机令牌"}}
 ```
 
-Claude Code 挂载（`.claude/settings.json`）：
+Claude Code 挂载（`.claude/settings.json`，配置了令牌时需带 Authorization）：
 ```json
-{"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}
+{"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp","headers":{"Authorization":"Bearer 换成你自己的随机令牌"}}}}
 ```
+
+### 安全加固
+- 面板登录开启后，静态页面与 API 全部要求会话；`/` 与 `/index.html` 未登录会跳转登录页
+- 登录接口使用恒时比较并在登录后轮换会话 ID；连续失败由限流拦截（默认 10 次/分钟/IP）
+- 云端部署建议：`auth.cookieSecure: true`、`auth.sessionSecret` 使用 32 字节以上随机值、反向代理开启 HTTPS
 
 ### MCP 客户端（连接外部 MCP 服务器）
 - MimirLink 也可以作为 MCP 客户端，连接外部 MCP 服务器并把它们的工具并入 bot 工具表（模型按需调用）

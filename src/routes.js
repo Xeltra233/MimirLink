@@ -17,6 +17,7 @@ import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
 import { buildAIToolContext, sendGroupMentionFromPrompt } from './tools.js';
 import { runSearch } from './search/index.js';
 import { normalizeMcpClientConfig, normalizeMcpServerConfig, mergeMcpSecrets, maskMcpServerForClient } from './mcp-client.js';
+import { safeEqualStrings } from './auth-gate.js';
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 import { syncPresetFiles } from './preset-sync.js';
 import { DEFAULT_IMAGE_CAPTION_PROMPT } from './image-input.js';
@@ -1482,20 +1483,35 @@ export function setupRoutes(app, config, saveConfig, managers) {
         
         const { username, password, rememberMe } = req.body;
         
-        if (username === config.auth.username && password === config.auth.password) {
-            req.session.authenticated = true;
-            req.session.username = username;
+        // 恒时比较，避免用响应时间探出用户名/密码
+        const usernameMatched = safeEqualStrings(username, config.auth.username);
+        const passwordMatched = safeEqualStrings(password, config.auth.password);
+        if (usernameMatched && passwordMatched) {
             const longDays = config.auth.sessionDays ?? 30;
             const shortHours = config.auth.shortSessionHours ?? 12;
-            req.session.cookie.maxAge = rememberMe
-                ? longDays * 24 * 60 * 60 * 1000
-                : shortHours * 60 * 60 * 1000;
-            logger.info(`用户 ${username} 登录成功`);
-            res.json({ success: true, message: '登录成功', expiresInMs: req.session.cookie.maxAge });
-        } else {
-            logger.warn(`登录失败: 用户名或密码错误`);
-            res.status(401).json({ success: false, error: '用户名或密码错误' });
+            const applySession = () => {
+                req.session.authenticated = true;
+                req.session.username = username;
+                req.session.cookie.maxAge = rememberMe
+                    ? longDays * 24 * 60 * 60 * 1000
+                    : shortHours * 60 * 60 * 1000;
+                logger.info(`用户 ${username} 登录成功`);
+                res.json({ success: true, message: '登录成功', expiresInMs: req.session.cookie.maxAge });
+            };
+            // 登录后轮换会话 ID，防会话固定
+            if (typeof req.session.regenerate === 'function') {
+                return req.session.regenerate((error) => {
+                    if (error) {
+                        logger.error(`登录会话创建失败: ${error.message}`);
+                        return res.status(500).json({ success: false, error: '会话创建失败' });
+                    }
+                    applySession();
+                });
+            }
+            return applySession();
         }
+        logger.warn(`登录失败: 用户名或密码错误`);
+        return res.status(401).json({ success: false, error: '用户名或密码错误' });
     });
 
     // 登出
@@ -1614,6 +1630,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
             onebot: safeOneBotConfig,
             mcp: {
                 ...(config.mcp || {}),
+                token: config.mcp?.token ? '******' : '',
+                hasToken: Boolean(config.mcp?.token),
                 client: safeMcpClientConfig
             },
             chat: {
@@ -1694,6 +1712,12 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     newConfig.mcp.client = config.mcp?.client;
                 } else if (config.mcp?.client) {
                     newConfig.mcp.client.servers = config.mcp.client.servers;
+                }
+                // 令牌留空表示不修改，掩码表示保留原值
+                if (typeof newConfig.mcp.token !== 'string' || newConfig.mcp.token === '******') {
+                    newConfig.mcp.token = config.mcp?.token || '';
+                } else {
+                    newConfig.mcp.token = newConfig.mcp.token.trim();
                 }
             }
             // 前端回填的是掩码占位符，保存时还原成已存的点歌 API Key

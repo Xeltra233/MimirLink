@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { resolve, dirname, isAbsolute, relative, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { extractTaggedContent, extractVisibleContent, stripInternalTags } from './variable-bridge.js';
+import { extractMcpToken, isMcpTokenAuthorized } from './auth-gate.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -1621,6 +1622,17 @@ ${wbSummary || '(未提供)'}
     }
 
     return async function mcpHandler(req, res) {
+        // 令牌校验：配置了 mcp.token 时，非面板会话必须携带正确令牌
+        const requiredMcpToken = String(config.mcp?.token || '').trim();
+        if (requiredMcpToken) {
+            const tokenAuthorized = isMcpTokenAuthorized(req, config);
+            const sessionAuthorized = req.session?.authenticated === true;
+            if (!tokenAuthorized && !sessionAuthorized) {
+                logger.warn('[MCP] 未授权访问被拒绝', { path: req.path, hasToken: Boolean(extractMcpToken(req)) });
+                return res.status(401).json(jsonRpcError(null, -32001, 'Unauthorized'));
+            }
+        }
+
         // GET：建立 SSE 流
         if (req.method === 'GET') {
             const sessionId = req.query['Mcp-Session-Id'] || req.query['sessionId'] || req.headers['mcp-session-id'];

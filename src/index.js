@@ -43,6 +43,7 @@ import { ImageInputError, normalizeImageCaptionConfig, getOneBotMessageSegments,
 import { SessionManager } from './session.js';
 import { RegexProcessor } from './regex.js';
 import { setupRoutes } from './routes.js';
+import { createPanelAuthGate } from './auth-gate.js';
 import { syncPresetFiles } from './preset-sync.js';
 import { Logger } from './logger.js';
 import { TTSManager, VOICE_TYPES } from './tts.js';
@@ -1760,22 +1761,8 @@ if (config.auth?.enabled) {
     }));
 }
 
-// 静态文件鉴权：未登录只能访问 login.html，其余 302 到登录页
-app.use((req, res, next) => {
-    const isAuthEnabled = config.auth?.enabled === true;
-    const isAuthenticated = req.session?.authenticated === true;
-    const isLoginPage = req.path === '/login.html' || req.path === '/';
-    const isAuthApi = req.path.startsWith('/api/auth/');
-
-    if (!isAuthEnabled || isAuthenticated || isLoginPage || isAuthApi) {
-        return next();
-    }
-    // API 请求返回 401，页面请求重定向到登录页
-    if (req.path.startsWith('/api/')) {
-        return res.status(401).json({ error: '未登录' });
-    }
-    res.redirect('/login.html');
-});
+// 静态文件鉴权：未登录只能访问 login.html / 认证接口 / 带令牌的 MCP 端点
+app.use(createPanelAuthGate(config));
 
 app.use(express.static(join(ROOT_DIR, 'public'), {
     etag: false,
