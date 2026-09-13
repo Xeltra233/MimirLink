@@ -298,3 +298,46 @@ func TestForwardRenderingIncludesTranscriptAndImages(t *testing.T) {
 		t.Fatalf("转发内容缺少成员与顺序: %s", last)
 	}
 }
+
+// 召回段与角色段需进入系统提示（对齐 Node prompt.js 的 database_recall / character_description）。
+func TestPromptIncludesRecallAndCharacterSegments(t *testing.T) {
+	model := &fakeModel{replies: []string{"好"}}
+	runtime, _, memory := newRuntime(t, nil, model)
+
+	// 预置记忆：固定知识 + 日常记忆
+	namespace := store.NamespaceOptions{
+		ScopeType:     "user_persistent",
+		ScopeKey:      "user:2001",
+		CharacterName: "",
+	}
+	if _, err := memory.AddMemoryEntry(namespace, store.MemoryEntry{
+		ID: "k1", EntryType: "knowledge_fixed", Title: "门派规则", Content: "徐缺是炸天帮掌门",
+	}); err != nil {
+		t.Fatalf("写入固定知识失败: %v", err)
+	}
+	if _, err := memory.AddMemoryEntry(namespace, store.MemoryEntry{
+		ID: "m1", EntryType: "conversation", Title: "旧对话", Content: "用户: 徐缺你还记得吗",
+	}); err != nil {
+		t.Fatalf("写入记忆失败: %v", err)
+	}
+
+	runtime.HandleEvent(buildGroupEvent("徐缺你还记得吗", true, "99001", "2001"))
+	if len(model.requests) == 0 {
+		t.Fatalf("未触发模型调用")
+	}
+	joined := ""
+	for _, message := range model.requests[0] {
+		if text, ok := message.Content.(string); ok {
+			joined += text + "\n"
+		}
+	}
+	if !strings.Contains(joined, "【数据库召回】") {
+		t.Fatalf("系统提示缺少数据库召回段:\n%s", joined)
+	}
+	if !strings.Contains(joined, "【固定知识】") || !strings.Contains(joined, "徐缺是炸天帮掌门") {
+		t.Fatalf("召回段缺少固定知识内容:\n%s", joined)
+	}
+	if !strings.Contains(joined, "[fixed_knowledge]") {
+		t.Fatalf("召回段缺少召回原因标记:\n%s", joined)
+	}
+}

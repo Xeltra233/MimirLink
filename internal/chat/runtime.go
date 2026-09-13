@@ -13,10 +13,12 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"mimirlink/internal/ai"
+	"mimirlink/internal/characters"
 	"mimirlink/internal/config"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tools"
@@ -44,6 +46,7 @@ type Options struct {
 	Tools       *tools.Registry
 	Logger      *log.Logger
 	HistorySize int
+	RootDir     string
 }
 
 // Runtime 处理单条 OneBot 事件。
@@ -55,6 +58,7 @@ type Runtime struct {
 	tools       *tools.Registry
 	logger      *log.Logger
 	historySize int
+	rootDir     string
 }
 
 // New 创建运行时。
@@ -75,6 +79,7 @@ func New(options Options) *Runtime {
 		tools:       options.Tools,
 		logger:      logger,
 		historySize: historySize,
+		rootDir:     options.RootDir,
 	}
 }
 
@@ -192,6 +197,14 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string) ([]ai.
 			role = strings.ToLower(prompt.role)
 		}
 		messages = append(messages, ai.Message{Role: role, Content: prompt.content})
+	}
+	// 角色卡描述/性格/场景/世界观
+	for _, segment := range r.characterSegments() {
+		messages = append(messages, ai.Message{Role: "system", Content: segment})
+	}
+	// 数据库召回（固定知识 / 动态知识 / 其他召回）
+	if recalled := r.recallSection(sessionKey, currentContent); recalled != "" {
+		messages = append(messages, ai.Message{Role: "system", Content: recalled})
 	}
 
 	history, err := r.memory.RecentMessagesThread(sessionKey, r.historySize)
@@ -390,6 +403,152 @@ func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message) (str
 			})
 		}
 	}
+}
+
+// ---------------- 记忆召回与角色段 ----------------
+
+// recallOptions 读取配置里的召回规模（缺省与 Node 一致）。
+func (r *Runtime) recallOptions() store.RecallOptions {
+	options := store.DefaultRecallOptions
+	if value := r.document.Int("memory.recall.limit", 0); value > 0 {
+		options.Limit = int(value)
+	}
+	if value := r.document.Int("memory.recall.searchLimit", 0); value > 0 {
+		options.SearchLimit = int(value)
+	}
+	if value := r.document.Int("memory.recall.recentLimit", 0); value > 0 {
+		options.RecentLimit = int(value)
+	}
+	if value := r.document.Int("memory.recall.summaryLimit", 0); value > 0 {
+		options.SummaryLimit = int(value)
+	}
+	return options
+}
+
+// recallSection 渲染数据库召回文本段（与 Node prompt.js 的 database_recall 段一致）。
+func (r *Runtime) recallSection(sessionKey string, query string) string {
+	if r.memory == nil {
+		return ""
+	}
+	namespace := r.namespaceOptions(sessionKey)
+	entries, err := r.memory.RecallMemory(namespace, query, r.recallOptions())
+	if err != nil {
+		r.logger.Printf("[记忆] 召回失败: %v", err)
+		return ""
+	}
+	if len(entries) == 0 {
+		return ""
+	}
+	fixed := []store.MemoryEntry{}
+	dynamic := []store.MemoryEntry{}
+	others := []store.MemoryEntry{}
+	for _, entry := range entries {
+		switch entry.SourceKind {
+		case "knowledge_fixed":
+			fixed = append(fixed, entry)
+		case "knowledge_dynamic":
+			dynamic = append(dynamic, entry)
+		default:
+			others = append(others, entry)
+		}
+	}
+	render := func(items []store.MemoryEntry, title string) string {
+		if len(items) == 0 {
+			return ""
+		}
+		lines := []string{title}
+		for _, entry := range items {
+			prefix := ""
+			if entry.Title != "" {
+				prefix = entry.Title + ": "
+			}
+			reason := ""
+			if entry.RecallReason != "" {
+				reason = " [" + entry.RecallReason + "]"
+			}
+			lines = append(lines, prefix+entry.Content+reason)
+		}
+		return strings.Join(lines, "\n")
+	}
+	sections := []string{}
+	for _, item := range []string{
+		render(fixed, "【固定知识】"),
+		render(dynamic, "【动态知识】"),
+		render(others, "【其他召回】"),
+	} {
+		if item != "" {
+			sections = append(sections, item)
+		}
+	}
+	if len(sections) == 0 {
+		return ""
+	}
+	r.logger.Printf("[记忆] 召回 %d 条（固定 %d / 动态 %d / 其他 %d）", len(entries), len(fixed), len(dynamic), len(others))
+	return strings.Join(append([]string{"【数据库召回】"}, sections...), "\n\n")
+}
+
+// namespaceOptions 按 sessionMode 计算记忆命名空间（对齐 Node ensureMemoryNamespace 的用法）。
+func (r *Runtime) namespaceOptions(sessionKey string) store.NamespaceOptions {
+	character := r.characterName()
+	mode := r.document.String("chat.sessionMode")
+	switch mode {
+	case "global_shared":
+		return store.NamespaceOptions{ScopeType: "global_shared", ScopeKey: "global_shared_memory", CharacterName: character}
+	case "group_shared":
+		return store.NamespaceOptions{ScopeType: "group_shared", ScopeKey: sessionKey, CharacterName: character}
+	case "group_user":
+		return store.NamespaceOptions{ScopeType: "group_user", ScopeKey: sessionKey, CharacterName: character}
+	default:
+		return store.NamespaceOptions{ScopeType: "user_persistent", ScopeKey: sessionKey, CharacterName: character}
+	}
+}
+
+// characterName 返回当前角色名（bindings.global.character 优先，回退 chat.defaultCharacter）。
+func (r *Runtime) characterName() string {
+	name := r.document.String("bindings.global.character")
+	if name == "" {
+		name = r.document.String("chat.defaultCharacter")
+	}
+	return name
+}
+
+// characterSegments 读取角色卡描述/性格/场景并渲染为系统段。
+func (r *Runtime) characterSegments() []string {
+	name := r.characterName()
+	if name == "" {
+		return nil
+	}
+	data, err := characters.Read(r.dataDir(), name)
+	if err != nil || data == nil {
+		return nil
+	}
+	segments := []string{}
+	if description := strings.TrimSpace(stringValue(data["description"])); description != "" {
+		segments = append(segments, "【角色描述】\n"+description)
+	}
+	displayName := strings.TrimSpace(stringValue(data["name"]))
+	if displayName == "" {
+		displayName = name
+	}
+	if personality := strings.TrimSpace(stringValue(data["personality"])); personality != "" {
+		segments = append(segments, "【"+displayName+"的性格】\n"+personality)
+	}
+	if scenario := strings.TrimSpace(stringValue(data["scenario"])); scenario != "" {
+		segments = append(segments, "【场景】\n"+scenario)
+	}
+	return segments
+}
+
+// dataDir 解析数据目录（chat.dataDir 优先，默认 <root>/data）。
+func (r *Runtime) dataDir() string {
+	configured := r.document.String("chat.dataDir")
+	if configured == "" {
+		return filepath.Join(r.rootDir, "data")
+	}
+	if filepath.IsAbs(configured) {
+		return configured
+	}
+	return filepath.Join(r.rootDir, configured)
 }
 
 // ---------------- 渲染与回复 ----------------

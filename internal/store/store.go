@@ -36,6 +36,12 @@ type DB struct {
 }
 
 func buildDSN(path string, readOnly bool) string {
+	// 相对路径必须先转绝对路径：否则 file:///相对路径 会被当成盘符根目录下的绝对路径
+	if !filepath.IsAbs(path) {
+		if absolute, err := filepath.Abs(path); err == nil {
+			path = absolute
+		}
+	}
 	// Windows 盘符路径需要 file:///C:/... 形式，否则 SQLite 会把盘符当成 URI authority
 	slashPath := filepath.ToSlash(path)
 	if !strings.HasPrefix(slashPath, "/") {

@@ -52,6 +52,11 @@ func main() {
 		searchQuery = flag.String("search", "", "执行一次搜索并打印结果（验证用）")
 		searchLimit = flag.Int("search-limit", 5, "搜索条数")
 		searchFetch = flag.String("search-fetch", "", "抓取指定网址正文（验证用）")
+		recallDB    = flag.String("recall", "", "对指定记忆库执行记忆召回（验证用）")
+		recallQuery = flag.String("recall-query", "", "召回查询文本")
+		recallScope = flag.String("recall-scope", "global_shared", "召回命名空间 scopeType")
+		recallKey   = flag.String("recall-key", "global_shared_memory", "召回命名空间 scopeKey")
+		recallChar  = flag.String("recall-character", "", "召回命名空间角色名")
 		port        = flag.Int("port", 0, "覆盖监听端口（默认取 config.server.port）")
 		showVer     = flag.Bool("version", false, "输出版本")
 	)
@@ -65,6 +70,11 @@ func main() {
 	absoluteRoot, err := filepath.Abs(*rootDir)
 	if err != nil {
 		fail("解析根目录失败: %v", err)
+	}
+
+	if *recallDB != "" {
+		runRecallProbe(*recallDB, *recallQuery, *recallScope, *recallKey, *recallChar)
+		return
 	}
 
 	if *searchQuery != "" || *searchFetch != "" {
@@ -163,6 +173,7 @@ func main() {
 		fmt.Println("  -bot                     启动 QQ Bot（连接 OneBot 并回复消息）")
 		fmt.Println("  -search <关键词>          执行一次搜索并打印结果（可加 -search-limit）")
 		fmt.Println("  -search-fetch <网址>      抓取网页正文（验证用）")
+		fmt.Println("  -recall <记忆库>          对记忆库执行召回并输出 JSON（可加 -recall-query/-recall-character）")
 		fmt.Println("  -version                 输出版本")
 		return
 	}
@@ -226,6 +237,32 @@ func servePanel(rootDir string, portOverride int) error {
 	}
 	fmt.Println("面板已停止")
 	return nil
+}
+
+func runRecallProbe(dbPath string, query string, scopeType string, scopeKey string, character string) {
+	if !filepath.IsAbs(dbPath) {
+		if absolute, err := filepath.Abs(dbPath); err == nil {
+			dbPath = absolute
+		}
+	}
+	database, err := store.OpenReadOnly(dbPath)
+	if err != nil {
+		fail("打开记忆库失败: %v", err)
+	}
+	defer database.Close()
+	entries, err := database.RecallMemory(store.NamespaceOptions{
+		ScopeType:     scopeType,
+		ScopeKey:      scopeKey,
+		CharacterName: character,
+	}, query, store.DefaultRecallOptions)
+	if err != nil {
+		fail("召回失败: %v", err)
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	if err := encoder.Encode(entries); err != nil {
+		fail("输出失败: %v", err)
+	}
 }
 
 func runSearchProbe(rootDir string, query string, limit int, fetchURL string) {
