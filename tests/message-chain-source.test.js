@@ -66,7 +66,7 @@ test('real chat path keeps reasoning available but does not send it to QQ by def
 
 test('real chat path sends voice records instead of full text when TTS is enabled', () => {
     assert.ok(replyDispatcherSource.includes('if (part.type === \'text\')'));
-    assert.ok(replyDispatcherSource.includes('if (ttsEnabled)'));
+    assert.ok(replyDispatcherSource.includes('if (ttsEnabled && !hasVoice)'));
     assert.ok(replyDispatcherSource.includes('await sendTtsContent(content, { explicitVoice: false });'));
     assert.ok(replyDispatcherSource.includes('await bot.sendGroupRecord(event.group_id, audioPath, prefixSegments);'));
     assert.ok(replyDispatcherSource.includes('await bot.sendPrivateRecord(event.user_id, audioPath, prefixSegments);'));

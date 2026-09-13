@@ -54,6 +54,7 @@ function buildSegmentReadableText(segment = {}, botSelfId = '') {
         const targetId = cleanText(segment.targetId || segment.target_id);
         return `戳一戳${userId || targetId ? `:${userId || 'unknown'}->${targetId || 'unknown'}` : ''}`;
     }
+    if (type === 'forward') return '合并转发聊天记录';
     return `消息段:${type}`;
 }
 

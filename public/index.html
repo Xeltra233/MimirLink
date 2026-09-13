@@ -11746,6 +11746,7 @@
                 <button type="button" class="config-subtab" data-config-panel="memory" onclick="setConfigSubPanel('memory')">记忆</button>
                 <button type="button" class="config-subtab" data-config-panel="model" onclick="setConfigSubPanel('model')">模型供应</button>
                 <button type="button" class="config-subtab" data-config-panel="preset" onclick="setConfigSubPanel('preset')">预设</button>
+                <button type="button" class="config-subtab" data-config-panel="search" onclick="setConfigSubPanel('search')">搜索</button>
                 <button type="button" class="config-subtab" data-config-panel="mcp" onclick="setConfigSubPanel('mcp')">MCP</button>
                 <button type="button" class="config-subtab" data-config-panel="data" onclick="setConfigSubPanel('data')">数据</button>
             </div>
@@ -11759,7 +11760,8 @@
                         <div class="dashboard-quick-links">
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('model')"><strong>模型供应</strong><span>多供应商、API Key、Base URL、模型拉取和探测</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('preset')"><strong>预设 / 请求参数</strong><span>预设提示词温度Tokens、超时和运行时预览</span></button>
-                            <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('tools')"><strong>AI 搜索与工具</strong><span>联网搜索 provider、Google/Bing/Tavily/Brave/SerpAPI 和主动 @</span></button>
+                            <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('search')"><strong>搜索与联网工具</strong><span>DuckDuckGo 移植版、SearXNG、Tavily/Brave/SerpAPI、正文读取和即时工具</span></button>
+                            <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('mcp')"><strong>MCP 客户端</strong><span>连接外部 MCP 服务器，管理服务器与工具</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('memory')"><strong>记忆与人物档案</strong><span>数据库、摘要、人物档案分析和注入</span></button>
                             <button type="button" class="dashboard-quick-link" onclick="setConfigSubPanel('chat')"><strong>聊天与权限</strong><span>触发方式、访问控制、节流和回复行为</span></button>
                         </div>
@@ -12306,13 +12308,6 @@
                         <div class="config-subgrid">
                             <div class="form-group">
                                 <label class="checkbox-label">
-                                    <input type="checkbox" id="config-ai-tool-web-search-enabled">
-                                    启用搜索引擎工具
-                                </label>
-                                <p class="hint-text">仅当问题依赖最新/外部事实时搜索；水群、表情、戳一戳、普通角色对话不会因为开关开启就自动搜索。</p>
-                            </div>
-                            <div class="form-group">
-                                <label class="checkbox-label">
                                     <input type="checkbox" id="config-ai-tool-send-mention-enabled">
                                     启用 AI 主动 @ 工具
                                 </label>
@@ -12330,68 +12325,6 @@
                                 <input type="number" id="config-ai-tool-text-fallback-max-rounds" placeholder="3" min="1" max="8">
                                 <p class="hint-text">模型不支持原生工具调用时使用 JSON 协议兜底；达到轮次后必须输出最终正文</p>
                             </div>
-                            <div class="form-group">
-                                <label>搜索方式</label>
-                                <select id="config-ai-tool-web-search-provider" onchange="updateWebSearchProviderFields(); markConfigDirty('搜索方式已修改')">
-                                    <option value="duckduckgo">DuckDuckGo（免 Key）</option>
-                                    <option value="google">Google（浏览器免 Key，可能触发验证）</option>
-                                    <option value="bing">Bing（免 Key）</option>
-                                    <option value="tavily">Tavily（需 Key）</option>
-                                    <option value="brave">Brave（免 Key）</option>
-                                    <option value="serpapi">SerpAPI（Google 结果 API，需 Key）</option>
-                                </select>
-                                <p class="hint-text">除 Tavily/SerpAPI 需 Key 外，其余免 Key</p>
-                            </div>
-                            <details style="margin-top:8px">
-                                <summary>搜索详细配置</summary>
-                                <div style="margin-top:8px">
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-ai-tool-web-search-fallback-enabled">
-                                    搜索失败时回退到 Bing
-                                </label>
-                            </div>
-                            <div class="form-group" id="config-ai-tool-web-search-apikey-row" style="display:none;">
-                                <label>API Key</label>
-                                <input type="password" id="config-ai-tool-web-search-apikey" placeholder="Tavily / SerpAPI 需填 Key" autocomplete="new-password">
-                            </div>
-                            <div class="form-group" id="config-ai-tool-web-search-google-engine-row" style="display:none;">
-                                <input type="hidden" id="config-ai-tool-web-search-google-engine-id">
-                            </div>
-                            <div class="form-group" id="config-ai-tool-web-search-bing-endpoint-row" style="display:none;">
-                                <label>Bing Endpoint</label>
-                                <input type="text" id="config-ai-tool-web-search-bing-endpoint" placeholder="https://api.bing.microsoft.com/v7.0/search">
-                            </div>
-                            <div class="form-group" style="grid-column: 1 / -1;">
-                                <label>测试搜索</label>
-                                <div class="preset-manager-select-row">
-                                    <input type="text" id="config-ai-tool-web-search-test-query" placeholder="例如: 今天 AI 行业最新消息">
-                                    <button type="button" class="secondary" onclick="testWebSearchProvider()">测试</button>
-                                </div>
-                                <div id="config-ai-tool-web-search-test-result" class="meta-box" style="margin-top: 8px;">尚未测试</div>
-                            </div>
-                            <div class="form-group">
-                                <label>搜索结果条数</label>
-                                <input type="number" id="config-ai-tool-web-search-max-results" placeholder="5" min="1" max="8">
-                            </div>
-                            <div class="form-group">
-                                <label>搜索超时 (毫秒)</label>
-                                <input type="number" id="config-ai-tool-web-search-timeout" placeholder="8000" min="1000">
-                            </div>
-                            <div class="form-group">
-                                <label>单条摘要最大长度</label>
-                                <input type="number" id="config-ai-tool-web-search-max-snippet-length" placeholder="500" min="100">
-                            </div>
-                            <div class="form-group" style="grid-column: 1 / -1;">
-                                <label>允许域名（逗号分隔）</label>
-                                <textarea id="config-ai-tool-web-search-allowed-domains" placeholder="例如: wikipedia.org"></textarea>
-                            </div>
-                            <div class="form-group" style="grid-column: 1 / -1;">
-                                <label>屏蔽域名（逗号分隔）</label>
-                                <textarea id="config-ai-tool-web-search-blocked-domains" placeholder="例如: example.com"></textarea>
-                            </div>
-                                </div>
-                            </details>
                         </div>
                     </div>
                 </div>
@@ -12715,23 +12648,261 @@
                     </div>
                 </div>
                 </div>
+                <div class="config-subpanel" data-config-panel="search">
+                <div class="card">
+                    <div class="config-card-header">
+                        <h3>搜索与联网工具</h3>
+                        <p class="config-card-intro">Bot 按需自行调用，不预先接管回答。DuckDuckGo 为 ddgs / duck-duck-scrape 移植版，正文读取为 Mozilla Readability 移植版。</p>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">开关与 Provider</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-search-enabled" onchange="updateSearchFieldsState()">
+                                    启用联网工具（web_search）
+                                </label>
+                                <p class="hint-text">水群、表情、普通角色对话不会因为开启就触发；是否搜索由模型决定。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>主 Provider</label>
+                                <select id="config-search-provider" onchange="updateSearchFieldsState()">
+                                    <option value="duckduckgo">DuckDuckGo（免 Key，移植版）</option>
+                                    <option value="searxng">SearXNG（自建/实例，需开启 JSON）</option>
+                                    <option value="tavily">Tavily（需 API Key）</option>
+                                    <option value="brave">Brave Search（需 API Key）</option>
+                                    <option value="serpapi">SerpAPI（需 API Key）</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>回退顺序（逗号分隔 provider）</label>
+                                <input type="text" id="config-search-fallback-providers" placeholder="例如: searxng,duckduckgo">
+                                <p class="hint-text">主 Provider 失败或无结果时按顺序尝试。</p>
+                            </div>
+                            <div class="form-group" data-search-field="searxng">
+                                <label>SearXNG 地址</label>
+                                <input type="text" id="config-search-searxng-base-url" placeholder="http://127.0.0.1:8888">
+                            </div>
+                            <div class="form-group" data-search-field="searxng">
+                                <label>SearXNG 指定引擎（可选）</label>
+                                <input type="text" id="config-search-searxng-engines" placeholder="google,bing,baidu">
+                            </div>
+                        </div>
+                        <div class="config-subgrid">
+                            <div class="form-group" data-search-field="tavily">
+                                <label>Tavily API Key</label>
+                                <input type="password" id="config-search-apikey-tavily" placeholder="留空表示不修改" autocomplete="new-password">
+                            </div>
+                            <div class="form-group" data-search-field="brave">
+                                <label>Brave API Key</label>
+                                <input type="password" id="config-search-apikey-brave" placeholder="留空表示不修改" autocomplete="new-password">
+                            </div>
+                            <div class="form-group" data-search-field="serpapi">
+                                <label>SerpAPI API Key</label>
+                                <input type="password" id="config-search-apikey-serpapi" placeholder="留空表示不修改" autocomplete="new-password">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">行为参数</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label>区域</label>
+                                <input type="text" id="config-search-region" placeholder="cn-zh">
+                            </div>
+                            <div class="form-group">
+                                <label>语言</label>
+                                <input type="text" id="config-search-locale" placeholder="zh-cn">
+                            </div>
+                            <div class="form-group">
+                                <label>安全搜索</label>
+                                <select id="config-search-safe-search">
+                                    <option value="moderate">适中</option>
+                                    <option value="strict">严格</option>
+                                    <option value="off">关闭</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>默认时间范围</label>
+                                <select id="config-search-time-range">
+                                    <option value="all">不限</option>
+                                    <option value="day">一天内</option>
+                                    <option value="week">一周内</option>
+                                    <option value="month">一月内</option>
+                                    <option value="year">一年内</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>结果条数</label>
+                                <input type="number" id="config-search-max-results" placeholder="5" min="1" max="10">
+                            </div>
+                            <div class="form-group">
+                                <label>搜索超时 (毫秒)</label>
+                                <input type="number" id="config-search-timeout" placeholder="10000" min="1000" max="30000">
+                            </div>
+                            <div class="form-group">
+                                <label>单条摘要最大长度</label>
+                                <input type="number" id="config-search-max-snippet-length" placeholder="800" min="100" max="4000">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label>允许域名（逗号分隔，留空不限）</label>
+                                <textarea id="config-search-allowed-domains" placeholder="例如: wikipedia.org"></textarea>
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label>屏蔽域名（逗号分隔）</label>
+                                <textarea id="config-search-blocked-domains" placeholder="例如: example.com"></textarea>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">正文读取 / 即时工具</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-search-fetch-enabled">
+                                    启用网页正文读取（web_fetch）
+                                </label>
+                                <p class="hint-text">模型可打开搜索结果读正文，仅支持公网 http/https。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>正文读取超时 (毫秒)</label>
+                                <input type="number" id="config-search-fetch-timeout" placeholder="15000" min="3000" max="60000">
+                            </div>
+                            <div class="form-group">
+                                <label>正文最大字符数</label>
+                                <input type="number" id="config-search-fetch-max-chars" placeholder="8000" min="500" max="50000">
+                            </div>
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-search-spice-enabled">
+                                    启用天气/汇率即时工具
+                                </label>
+                                <p class="hint-text">get_weather / convert_currency，由模型按需调用。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>天气预报天数</label>
+                                <input type="number" id="config-search-weather-days" placeholder="3" min="1" max="7">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">测试搜索</div>
+                        <div class="preset-manager-select-row">
+                            <input type="text" id="config-search-test-query" placeholder="例如: 今天 AI 行业最新消息">
+                            <button type="button" class="secondary" onclick="testWebSearchProvider()">测试</button>
+                        </div>
+                        <div id="config-search-test-result" class="meta-box" style="margin-top: 8px;white-space:normal">尚未测试</div>
+                    </div>
+                </div>
+                </div>
                 <div class="config-subpanel" data-config-panel="mcp">
                 <div class="card">
                     <div class="config-card-header">
-                        <h3>MCP 接口</h3>
-                        <p class="config-card-intro">供外部工具通过 MCP 调用靶场能力</p>
+                        <h3>MCP 客户端</h3>
+                        <p class="config-card-intro">连接外部 MCP 服务器，让 bot 按需调用其工具。支持 stdio（本地命令）、http、sse 三种传输；stdio 会在本机执行命令，请只添加可信来源。</p>
                     </div>
                     <div class="config-subsection">
                         <div class="config-subgrid">
                             <div class="form-group">
                                 <label class="checkbox-label">
-                                    <input type="checkbox" id="config-mcp-enabled" checked> 启用 MCP
+                                    <input type="checkbox" id="config-mcp-client-enabled">
+                                    启用 MCP 客户端工具
+                                </label>
+                                <p class="hint-text">开启后已连接服务器的工具会并入 bot 工具表（默认关闭）。</p>
+                            </div>
+                            <div class="form-group">
+                                <label>工具结果最大字符数</label>
+                                <input type="number" id="config-mcp-max-result-chars" placeholder="4000" min="500" max="50000">
+                            </div>
+                        </div>
+                        <div class="config-button-row" style="margin-top:12px">
+                            <button onclick="saveMcpClientSettings()">保存开关</button>
+                            <button class="secondary" onclick="refreshMcpStatus()">刷新状态</button>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">服务器列表</div>
+                        <div id="mcp-server-list" class="meta-box" style="white-space:normal">尚未加载</div>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">手动添加 / 编辑</div>
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label>名称</label>
+                                <input type="text" id="mcp-form-name" placeholder="例如: filesystem">
+                            </div>
+                            <div class="form-group">
+                                <label>传输方式</label>
+                                <select id="mcp-form-transport" onchange="updateMcpFormFields()">
+                                    <option value="stdio">stdio（本地命令）</option>
+                                    <option value="http">http（Streamable HTTP）</option>
+                                    <option value="sse">sse（旧版 HTTP+SSE）</option>
+                                </select>
+                            </div>
+                            <div class="form-group" data-mcp-field="stdio">
+                                <label>命令</label>
+                                <input type="text" id="mcp-form-command" placeholder="例如: npx">
+                            </div>
+                            <div class="form-group" data-mcp-field="stdio">
+                                <label>参数（每行一个）</label>
+                                <textarea id="mcp-form-args" placeholder="-y&#10;@modelcontextprotocol/server-filesystem&#10;/tmp"></textarea>
+                            </div>
+                            <div class="form-group" data-mcp-field="stdio">
+                                <label>工作目录（可选）</label>
+                                <input type="text" id="mcp-form-cwd" placeholder="留空使用项目目录">
+                            </div>
+                            <div class="form-group" data-mcp-field="remote" style="grid-column: 1 / -1;">
+                                <label>URL</label>
+                                <input type="text" id="mcp-form-url" placeholder="http://127.0.0.1:9000/mcp">
+                            </div>
+                            <div class="form-group" style="grid-column: 1 / -1;">
+                                <label>环境变量 / 请求头（每行 KEY=VALUE）</label>
+                                <textarea id="mcp-form-env" placeholder="TOKEN=xxx"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>调用超时 (毫秒)</label>
+                                <input type="number" id="mcp-form-timeout" placeholder="60000" min="1000" max="600000">
+                            </div>
+                            <div class="form-group">
+                                <label>只允许的工具（逗号分隔，留空=全部）</label>
+                                <input type="text" id="mcp-form-include" placeholder="tool_a,tool_b">
+                            </div>
+                            <div class="form-group">
+                                <label>排除的工具（逗号分隔）</label>
+                                <input type="text" id="mcp-form-exclude" placeholder="tool_x">
+                            </div>
+                        </div>
+                        <input type="hidden" id="mcp-form-id" value="">
+                        <div class="config-button-row" style="margin-top:12px">
+                            <button onclick="submitMcpServer()">保存服务器</button>
+                            <button class="secondary" onclick="resetMcpForm()">清空表单</button>
+                        </div>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subsection-title">JSON 导入</div>
+                        <textarea id="mcp-import-json" style="width:100%;min-height:120px" placeholder='{"mcpServers":{"example":{"command":"npx","args":["-y","some-mcp-server"]}}}'></textarea>
+                        <div class="config-button-row" style="margin-top:12px">
+                            <button onclick="importMcpServers()">导入</button>
+                            <button class="secondary" onclick="copyMcpConfigJson()">复制当前配置 JSON</button>
+                        </div>
+                        <div id="mcp-import-result" class="meta-box" style="margin-top:8px;white-space:normal">支持 Claude Desktop / .mcp.json 的 mcpServers 格式，也支持数组或单个服务器对象。</div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="config-card-header">
+                        <h3>MCP 服务端（靶场对外接口）</h3>
+                        <p class="config-card-intro">供外部工具通过 MCP 调用靶场能力，修改后需重启生效</p>
+                    </div>
+                    <div class="config-subsection">
+                        <div class="config-subgrid">
+                            <div class="form-group">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="config-mcp-enabled" checked> 启用 MCP 服务端
                                 </label>
                             </div>
                             <div class="form-group">
                                 <label>端点路径</label>
                                 <input type="text" id="config-mcp-path" placeholder="/mcp" value="/mcp">
-                                <p class="hint-text">修改后需重启生效</p>
                             </div>
                         </div>
                         <div class="meta-box" style="margin-top:12px;white-space:normal">
@@ -13856,6 +14027,12 @@
                 setConfigSaveStatus('idle', '备份恢复不受配置保存影响');
             } else if (configDirty) {
                 setConfigSaveStatus('dirty', '当前配置有未保存改动');
+            }
+            if (panelId === 'search') {
+                updateSearchFieldsState();
+            }
+            if (panelId === 'mcp') {
+                refreshMcpStatus();
             }
         }
 
@@ -20632,48 +20809,68 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             return { res, data };
         }
 
-        function updateWebSearchProviderFields() {
-            const provider = document.getElementById('config-ai-tool-web-search-provider')?.value || 'duckduckgo';
-            const apiKeyRow = document.getElementById('config-ai-tool-web-search-apikey-row');
-            const googleRow = document.getElementById('config-ai-tool-web-search-google-engine-row');
-            const bingRow = document.getElementById('config-ai-tool-web-search-bing-endpoint-row');
-            const needsApiKey = ['tavily', 'serpapi'].includes(provider);
-            if (apiKeyRow) {
-                apiKeyRow.style.display = needsApiKey ? '' : 'none';
-            }
-            if (googleRow) {
-                googleRow.style.display = 'none';
-            }
-            if (bingRow) {
-                bingRow.style.display = 'none';
-            }
+        function updateSearchFieldsState() {
+            const provider = document.getElementById('config-search-provider')?.value || 'duckduckgo';
+            document.querySelectorAll('[data-search-field]').forEach((el) => {
+                el.style.display = el.dataset.searchField === provider ? '' : 'none';
+            });
         }
 
-        function getWebSearchDraftFromInputs() {
-            const provider = document.getElementById('config-ai-tool-web-search-provider')?.value || 'duckduckgo';
-            const needsApiKey = ['tavily', 'serpapi'].includes(provider);
+        function parseKeyValueLines(value) {
+            const result = {};
+            String(value || '').split('\n').map((line) => line.trim()).filter(Boolean).forEach((line) => {
+                const index = line.indexOf('=');
+                if (index <= 0) return;
+                const key = line.slice(0, index).trim();
+                const item = line.slice(index + 1);
+                if (key) result[key] = item;
+            });
+            return result;
+        }
+
+        function getSearchDraftFromInputs() {
+            const provider = document.getElementById('config-search-provider')?.value || 'duckduckgo';
+            const existingKeys = currentConfig.ai?.tools?.webSearch?.apiKeys || {};
+            const apiKeyFor = (id, providerId) => {
+                const value = document.getElementById(id)?.value.trim() || '';
+                if (value && value !== '******') return value;
+                return existingKeys[providerId] ? '******' : '';
+            };
             return {
-                enabled: document.getElementById('config-ai-tool-web-search-enabled')?.checked === true,
+                enabled: document.getElementById('config-search-enabled')?.checked === true,
                 provider,
-                apiKey: (() => {
-                    if (!needsApiKey) return '';
-                    const value = document.getElementById('config-ai-tool-web-search-apikey')?.value.trim() || '';
-                    return value && value !== '******' ? value : (currentConfig.ai?.tools?.webSearch?.apiKey || '');
-                })(),
-                googleEngineId: document.getElementById('config-ai-tool-web-search-google-engine-id')?.value.trim() || '',
-                bingEndpoint: document.getElementById('config-ai-tool-web-search-bing-endpoint')?.value.trim() || '',
-                fallbackEnabled: document.getElementById('config-ai-tool-web-search-fallback-enabled')?.checked === true,
-                maxResults: parseInt(document.getElementById('config-ai-tool-web-search-max-results')?.value, 10) || 5,
-                timeoutMs: parseInt(document.getElementById('config-ai-tool-web-search-timeout')?.value, 10) || 10000,
-                maxSnippetLength: parseInt(document.getElementById('config-ai-tool-web-search-max-snippet-length')?.value, 10) || 800,
-                allowedDomains: document.getElementById('config-ai-tool-web-search-allowed-domains')?.value.split(',').map((item) => item.trim()).filter(Boolean) || [],
-                blockedDomains: document.getElementById('config-ai-tool-web-search-blocked-domains')?.value.split(',').map((item) => item.trim()).filter(Boolean) || []
+                fallbackProviders: (document.getElementById('config-search-fallback-providers')?.value || '').split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean),
+                apiKeys: {
+                    tavily: apiKeyFor('config-search-apikey-tavily', 'tavily'),
+                    brave: apiKeyFor('config-search-apikey-brave', 'brave'),
+                    serpapi: apiKeyFor('config-search-apikey-serpapi', 'serpapi')
+                },
+                searxngBaseUrl: document.getElementById('config-search-searxng-base-url')?.value.trim() || '',
+                searxngEngines: document.getElementById('config-search-searxng-engines')?.value.trim() || '',
+                region: document.getElementById('config-search-region')?.value.trim() || 'cn-zh',
+                locale: document.getElementById('config-search-locale')?.value.trim() || 'zh-cn',
+                safeSearch: document.getElementById('config-search-safe-search')?.value || 'moderate',
+                timeRange: document.getElementById('config-search-time-range')?.value || 'all',
+                maxResults: parseInt(document.getElementById('config-search-max-results')?.value, 10) || 5,
+                timeoutMs: parseInt(document.getElementById('config-search-timeout')?.value, 10) || 10000,
+                maxSnippetLength: parseInt(document.getElementById('config-search-max-snippet-length')?.value, 10) || 800,
+                allowedDomains: document.getElementById('config-search-allowed-domains')?.value.split(',').map((item) => item.trim()).filter(Boolean) || [],
+                blockedDomains: document.getElementById('config-search-blocked-domains')?.value.split(',').map((item) => item.trim()).filter(Boolean) || [],
+                fetch: {
+                    enabled: document.getElementById('config-search-fetch-enabled')?.checked !== false,
+                    timeoutMs: parseInt(document.getElementById('config-search-fetch-timeout')?.value, 10) || 15000,
+                    maxChars: parseInt(document.getElementById('config-search-fetch-max-chars')?.value, 10) || 8000
+                },
+                spice: {
+                    enabled: document.getElementById('config-search-spice-enabled')?.checked !== false,
+                    weatherDays: parseInt(document.getElementById('config-search-weather-days')?.value, 10) || 3
+                }
             };
         }
 
         async function testWebSearchProvider() {
-            const resultBox = document.getElementById('config-ai-tool-web-search-test-result');
-            const query = document.getElementById('config-ai-tool-web-search-test-query')?.value.trim() || '';
+            const resultBox = document.getElementById('config-search-test-result');
+            const query = document.getElementById('config-search-test-query')?.value.trim() || '';
             if (!query) {
                 showToast('请输入测试搜索关键词', true);
                 return;
@@ -20685,19 +20882,25 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 const { res, data } = await fetchJsonSafe('/api/tools/web-search/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query, draft: getWebSearchDraftFromInputs() })
+                    body: JSON.stringify({ query, draft: getSearchDraftFromInputs() })
                 });
                 if (!res.ok || !data.success) {
-                    throw new Error(data.error || '测试失败');
+                    const attempts = Array.isArray(data.attempts) && data.attempts.length
+                        ? `（${data.attempts.map((item) => `${item.provider}: ${item.error || '无结果'}`).join('；')}）`
+                        : '';
+                    throw new Error(`${data.error || '测试失败'}${attempts}`);
                 }
                 const lines = [
                     `Provider: ${data.provider || '-'}`,
                     `Source: ${data.source || '-'}`,
                     `耗时: ${data.durationMs || 0}ms`,
                     `结果: ${data.resultCount || 0} 条`,
+                    Array.isArray(data.attempts) && data.attempts.length > 1
+                        ? `回退链: ${data.attempts.map((item) => `${item.provider}(${item.error || '无结果'})`).join(' → ')}`
+                        : '',
                     '',
                     ...(data.results || []).map((item, index) => `${index + 1}. ${item.title}\n${item.url}\n${item.snippet || ''}`)
-                ];
+                ].filter((line) => line !== '');
                 if (resultBox) {
                     resultBox.textContent = lines.join('\n').trim();
                 }
@@ -20707,6 +20910,268 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                     resultBox.textContent = `测试失败: ${error.message}`;
                 }
                 showToast(`搜索测试失败: ${error.message}`, true);
+            }
+        }
+
+        // ==================== MCP 客户端管理 ====================
+        let mcpClientStatus = null;
+
+        function mcpCallKey(serverId, tool) {
+            return `mcp-${String(serverId)}-${String(tool)}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        }
+
+        async function refreshMcpStatus() {
+            const container = document.getElementById('mcp-server-list');
+            if (!container) return;
+            try {
+                const { res, data } = await fetchJsonSafe('/api/mcp/status');
+                if (!res.ok || !data.success) throw new Error(data.error || '获取 MCP 状态失败');
+                mcpClientStatus = data.client;
+                const enabledEl = document.getElementById('config-mcp-client-enabled');
+                const maxCharsEl = document.getElementById('config-mcp-max-result-chars');
+                if (enabledEl) enabledEl.checked = data.client?.enabled === true;
+                if (maxCharsEl && document.activeElement !== maxCharsEl) maxCharsEl.value = data.client?.maxResultChars ?? 4000;
+                renderMcpServers(data.client);
+            } catch (error) {
+                container.textContent = `状态获取失败: ${error.message}`;
+            }
+        }
+
+        function renderMcpServers(client) {
+            const container = document.getElementById('mcp-server-list');
+            if (!container) return;
+            const servers = Array.isArray(client?.servers) ? client.servers : [];
+            if (servers.length === 0) {
+                container.innerHTML = '<div class="empty-state">还没有 MCP 服务器，用下方表单或 JSON 导入添加。</div>';
+                return;
+            }
+            const stateLabels = { connected: '已连接', connecting: '连接中', error: '错误', disabled: '已停用' };
+            container.innerHTML = servers.map((server) => {
+                const stateLabel = stateLabels[server.state] || server.state || '未知';
+                const tools = Array.isArray(server.tools) ? server.tools : [];
+                const toolsHtml = tools.map((tool) => {
+                    const key = mcpCallKey(server.id, tool.name);
+                    return `<div style="margin-top:8px">
+                        <div><strong>${escapeHtml(tool.name)}</strong>${tool.required && tool.required.length ? ` <span class="hint-text">必填: ${escapeHtml(tool.required.join(', '))}</span>` : ''}</div>
+                        <div class="hint-text">${escapeHtml(tool.description || '')}</div>
+                        <div class="preset-manager-select-row" style="margin-top:4px">
+                            <input type="text" id="${key}-args" placeholder='{"key":"value"}'>
+                            <button type="button" class="secondary" onclick="callMcpTool('${escapeInlineJsString(server.id)}', '${escapeInlineJsString(tool.name)}')">试运行</button>
+                        </div>
+                        <div class="meta-box" id="${key}-result" style="margin-top:4px;white-space:normal;display:none"></div>
+                    </div>`;
+                }).join('');
+                return `<div class="meta-box" style="margin-bottom:10px;white-space:normal">
+                    <div><strong>${escapeHtml(server.name)}</strong>
+                        <span class="hint-text">[${escapeHtml(stateLabel)}]</span>
+                        <span class="hint-text">${escapeHtml(server.transport || '')} · ${server.toolCount || 0} 个工具</span>
+                    </div>
+                    ${server.lastError ? `<div class="hint-text">错误: ${escapeHtml(server.lastError)}</div>` : ''}
+                    <div class="config-button-row" style="margin-top:8px">
+                        <button type="button" class="secondary" onclick="reconnectMcpServer('${escapeInlineJsString(server.id)}')">重连</button>
+                        <button type="button" class="secondary" onclick="editMcpServer('${escapeInlineJsString(server.id)}')">编辑</button>
+                        <button type="button" class="secondary" onclick="deleteMcpServer('${escapeInlineJsString(server.id)}')">删除</button>
+                    </div>
+                    <details style="margin-top:8px"><summary>查看工具（${tools.length}）</summary>${toolsHtml || '<div class="hint-text">暂无工具</div>'}</details>
+                </div>`;
+            }).join('');
+        }
+
+        function updateMcpFormFields() {
+            const transport = document.getElementById('mcp-form-transport')?.value || 'stdio';
+            document.querySelectorAll('[data-mcp-field]').forEach((el) => {
+                const target = el.dataset.mcpField;
+                const visible = (target === 'stdio' && transport === 'stdio') || (target === 'remote' && transport !== 'stdio');
+                el.style.display = visible ? '' : 'none';
+            });
+        }
+
+        function resetMcpForm() {
+            document.getElementById('mcp-form-id').value = '';
+            document.getElementById('mcp-form-name').value = '';
+            document.getElementById('mcp-form-command').value = '';
+            document.getElementById('mcp-form-args').value = '';
+            document.getElementById('mcp-form-cwd').value = '';
+            document.getElementById('mcp-form-url').value = '';
+            document.getElementById('mcp-form-env').value = '';
+            document.getElementById('mcp-form-timeout').value = '';
+            document.getElementById('mcp-form-include').value = '';
+            document.getElementById('mcp-form-exclude').value = '';
+            updateMcpFormFields();
+        }
+
+        function editMcpServer(id) {
+            const server = mcpClientStatus?.servers?.find((item) => item.id === id);
+            if (!server) { showToast('服务器不存在', true); return; }
+            const config = server.config || {};
+            document.getElementById('mcp-form-id').value = server.id;
+            document.getElementById('mcp-form-name').value = server.name || '';
+            document.getElementById('mcp-form-transport').value = server.transport || 'stdio';
+            document.getElementById('mcp-form-command').value = config.command || '';
+            document.getElementById('mcp-form-args').value = (config.args || []).join('\n');
+            document.getElementById('mcp-form-cwd').value = config.cwd || '';
+            document.getElementById('mcp-form-url').value = config.url || '';
+            const secretSource = server.transport === 'stdio' ? (config.env || {}) : (config.headers || {});
+            document.getElementById('mcp-form-env').value = Object.entries(secretSource).map(([key, value]) => `${key}=${value}`).join('\n');
+            document.getElementById('mcp-form-timeout').value = config.timeoutMs ?? 60000;
+            document.getElementById('mcp-form-include').value = (config.toolFilter?.include || []).join(',');
+            document.getElementById('mcp-form-exclude').value = (config.toolFilter?.exclude || []).join(',');
+            updateMcpFormFields();
+            showToast(`已载入 ${server.name}，修改后点“保存服务器”`);
+        }
+
+        async function submitMcpServer() {
+            const id = document.getElementById('mcp-form-id').value.trim();
+            const name = document.getElementById('mcp-form-name').value.trim();
+            const transport = document.getElementById('mcp-form-transport').value;
+            if (!name) { showToast('请填写服务器名称', true); return; }
+            const secrets = parseKeyValueLines(document.getElementById('mcp-form-env').value);
+            const payload = {
+                id: id || undefined,
+                name,
+                transport,
+                enabled: true,
+                timeoutMs: parseInt(document.getElementById('mcp-form-timeout').value, 10) || 60000,
+                toolFilter: {
+                    include: document.getElementById('mcp-form-include').value.split(',').map((item) => item.trim()).filter(Boolean),
+                    exclude: document.getElementById('mcp-form-exclude').value.split(',').map((item) => item.trim()).filter(Boolean)
+                }
+            };
+            if (transport === 'stdio') {
+                payload.command = document.getElementById('mcp-form-command').value.trim();
+                payload.args = document.getElementById('mcp-form-args').value.split('\n').map((item) => item.trim()).filter(Boolean);
+                payload.cwd = document.getElementById('mcp-form-cwd').value.trim();
+                payload.env = secrets;
+            } else {
+                payload.url = document.getElementById('mcp-form-url').value.trim();
+                payload.headers = secrets;
+            }
+            try {
+                const { res, data } = await fetchJsonSafe('/api/mcp/servers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok || !data.success) throw new Error(data.error || '保存失败');
+                showToast(data.server?.state === 'connected' ? `已连接：${name}` : `已保存：${name}`);
+                resetMcpForm();
+                await refreshMcpStatus();
+            } catch (error) {
+                showToast(`保存失败: ${error.message}`, true);
+            }
+        }
+
+        async function deleteMcpServer(id) {
+            const server = mcpClientStatus?.servers?.find((item) => item.id === id);
+            const label = server?.name || id;
+            if (!window.confirm(`确定删除 MCP 服务器「${label}」？`)) return;
+            try {
+                const { res, data } = await fetchJsonSafe(`/api/mcp/servers/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                if (!res.ok || !data.success) throw new Error(data.error || '删除失败');
+                showToast(`已删除：${label}`);
+                await refreshMcpStatus();
+            } catch (error) {
+                showToast(`删除失败: ${error.message}`, true);
+            }
+        }
+
+        async function reconnectMcpServer(id) {
+            const server = mcpClientStatus?.servers?.find((item) => item.id === id);
+            try {
+                const { res, data } = await fetchJsonSafe(`/api/mcp/servers/${encodeURIComponent(id)}/reconnect`, { method: 'POST' });
+                if (!res.ok || !data.success) throw new Error(data.error || '重连失败');
+                showToast(`重连完成：${server?.name || id}`);
+                mcpClientStatus = data.client || mcpClientStatus;
+                renderMcpServers(mcpClientStatus);
+            } catch (error) {
+                showToast(`重连失败: ${error.message}`, true);
+            }
+        }
+
+        async function callMcpTool(serverId, tool) {
+            const key = mcpCallKey(serverId, tool);
+            const input = document.getElementById(`${key}-args`);
+            const resultBox = document.getElementById(`${key}-result`);
+            let args = {};
+            const raw = input?.value.trim();
+            if (raw) {
+                try { args = JSON.parse(raw); } catch { showToast('参数不是合法 JSON', true); return; }
+            }
+            if (resultBox) { resultBox.style.display = ''; resultBox.textContent = '调用中...'; }
+            try {
+                const { res, data } = await fetchJsonSafe('/api/mcp/call', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serverId, tool, arguments: args })
+                });
+                const text = data.success ? (data.text || '（空结果）') : `失败: ${data.error || '调用失败'}`;
+                if (resultBox) resultBox.textContent = text;
+                showToast(data.success ? '调用完成' : '调用失败', !data.success);
+            } catch (error) {
+                if (resultBox) resultBox.textContent = `失败: ${error.message}`;
+                showToast(`调用失败: ${error.message}`, true);
+            }
+        }
+
+        async function saveMcpClientSettings() {
+            try {
+                const enabled = document.getElementById('config-mcp-client-enabled').checked;
+                const maxResultChars = parseInt(document.getElementById('config-mcp-max-result-chars').value, 10) || 4000;
+                const { res, data } = await fetchJsonSafe('/api/mcp/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled, maxResultChars })
+                });
+                if (!res.ok || !data.success) throw new Error(data.error || '保存失败');
+                mcpClientStatus = data.client;
+                renderMcpServers(data.client);
+                showToast(enabled ? 'MCP 客户端已启用' : 'MCP 客户端已停用');
+            } catch (error) {
+                showToast(`保存失败: ${error.message}`, true);
+            }
+        }
+
+        async function importMcpServers() {
+            const resultBox = document.getElementById('mcp-import-result');
+            const json = document.getElementById('mcp-import-json').value.trim();
+            if (!json) { showToast('请粘贴 JSON 配置', true); return; }
+            if (resultBox) resultBox.textContent = '导入中...';
+            try {
+                const { res, data } = await fetchJsonSafe('/api/mcp/import', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ json })
+                });
+                if (!res.ok || !data.success) throw new Error(data.error || '导入失败');
+                const lines = [
+                    `新增: ${(data.added || []).join(', ') || '无'}` ,
+                    `更新: ${(data.updated || []).join(', ') || '无'}`,
+                    (data.errors && data.errors.length) ? `失败: ${data.errors.map((item) => `${item.name}(${item.error})`).join('; ')}` : ''
+                ].filter(Boolean);
+                if (resultBox) resultBox.textContent = lines.join('\n');
+                mcpClientStatus = data.client;
+                renderMcpServers(data.client);
+                showToast('导入完成');
+            } catch (error) {
+                if (resultBox) resultBox.textContent = `导入失败: ${error.message}`;
+                showToast(`导入失败: ${error.message}`, true);
+            }
+        }
+
+        async function copyMcpConfigJson() {
+            try {
+                if (!mcpClientStatus) await refreshMcpStatus();
+                const servers = {};
+                (mcpClientStatus?.servers || []).forEach((server) => {
+                    const config = server.config || {};
+                    servers[server.name] = server.transport === 'stdio'
+                        ? { command: config.command, args: config.args, env: config.env, cwd: config.cwd }
+                        : { type: server.transport, url: config.url, headers: config.headers };
+                });
+                await navigator.clipboard.writeText(JSON.stringify({ mcpServers: servers }, null, 2));
+                showToast('已复制当前配置 JSON（密钥为掩码，表示保留原值）');
+            } catch (error) {
+                showToast(`复制失败: ${error.message}`, true);
             }
         }
 
@@ -20883,23 +21348,40 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-music-download-timeout').value = currentConfig.chat?.music?.downloadTimeoutMs ?? 300000;
                 document.getElementById('config-chat-music-session-ttl').value = currentConfig.chat?.music?.sessionTtlMs ?? 1800000;
                 updateMusicFields();
-                document.getElementById('config-ai-tool-web-search-enabled').checked = currentConfig.ai?.tools?.webSearch?.enabled === true;
+                const searchConfig = currentConfig.ai?.tools?.webSearch || {};
+                document.getElementById('config-search-enabled').checked = searchConfig.enabled === true;
+                document.getElementById('config-search-provider').value = ['duckduckgo', 'searxng', 'tavily', 'brave', 'serpapi'].includes(searchConfig.provider) ? searchConfig.provider : 'duckduckgo';
+                document.getElementById('config-search-fallback-providers').value = (searchConfig.fallbackProviders || []).join(',');
+                document.getElementById('config-search-searxng-base-url').value = searchConfig.searxngBaseUrl || '';
+                document.getElementById('config-search-searxng-engines').value = searchConfig.searxngEngines || '';
+                document.getElementById('config-search-apikey-tavily').value = '';
+                document.getElementById('config-search-apikey-tavily').placeholder = searchConfig.apiKeys?.tavily ? '已配置，留空表示不修改' : 'Tavily 需要 API Key';
+                document.getElementById('config-search-apikey-brave').value = '';
+                document.getElementById('config-search-apikey-brave').placeholder = searchConfig.apiKeys?.brave ? '已配置，留空表示不修改' : 'Brave 需要 API Key';
+                document.getElementById('config-search-apikey-serpapi').value = '';
+                document.getElementById('config-search-apikey-serpapi').placeholder = searchConfig.apiKeys?.serpapi ? '已配置，留空表示不修改' : 'SerpAPI 需要 API Key';
+                document.getElementById('config-search-region').value = searchConfig.region || 'cn-zh';
+                document.getElementById('config-search-locale').value = searchConfig.locale || 'zh-cn';
+                document.getElementById('config-search-safe-search').value = searchConfig.safeSearch || 'moderate';
+                document.getElementById('config-search-time-range').value = searchConfig.timeRange || 'all';
+                document.getElementById('config-search-max-results').value = searchConfig.maxResults ?? 5;
+                document.getElementById('config-search-timeout').value = searchConfig.timeoutMs ?? 10000;
+                document.getElementById('config-search-max-snippet-length').value = searchConfig.maxSnippetLength ?? 800;
+                document.getElementById('config-search-allowed-domains').value = (searchConfig.allowedDomains || []).join(',');
+                document.getElementById('config-search-blocked-domains').value = (searchConfig.blockedDomains || []).join(',');
+                document.getElementById('config-search-fetch-enabled').checked = searchConfig.fetch?.enabled !== false;
+                document.getElementById('config-search-fetch-timeout').value = searchConfig.fetch?.timeoutMs ?? 15000;
+                document.getElementById('config-search-fetch-max-chars').value = searchConfig.fetch?.maxChars ?? 8000;
+                document.getElementById('config-search-spice-enabled').checked = searchConfig.spice?.enabled !== false;
+                document.getElementById('config-search-weather-days').value = searchConfig.spice?.weatherDays ?? 3;
+                document.getElementById('config-mcp-client-enabled').checked = currentConfig.mcp?.client?.enabled === true;
+                document.getElementById('config-mcp-max-result-chars').value = currentConfig.mcp?.client?.maxResultChars ?? 4000;
                 document.getElementById('config-ai-tool-text-fallback-enabled').checked = currentConfig.ai?.tools?.textToolFallback?.enabled === true;
                 document.getElementById('config-ai-tool-text-fallback-max-rounds').value = currentConfig.ai?.tools?.textToolFallback?.maxRounds ?? 3;
-                document.getElementById('config-ai-tool-web-search-provider').value = currentConfig.ai?.tools?.webSearch?.provider || 'duckduckgo';
-                document.getElementById('config-ai-tool-web-search-apikey').value = '';
-                document.getElementById('config-ai-tool-web-search-fallback-enabled').checked = currentConfig.ai?.tools?.webSearch?.fallbackEnabled === true;
-                document.getElementById('config-ai-tool-web-search-apikey').placeholder = currentConfig.ai?.tools?.webSearch?.hasApiKey ? '已配置搜索 API Key，留空表示不修改' : 'Tavily / SerpAPI 需填 Key，其它搜索引擎不用填';
-                document.getElementById('config-ai-tool-web-search-google-engine-id').value = currentConfig.ai?.tools?.webSearch?.googleEngineId || currentConfig.ai?.tools?.webSearch?.engineId || currentConfig.ai?.tools?.webSearch?.cx || '';
-                document.getElementById('config-ai-tool-web-search-bing-endpoint').value = currentConfig.ai?.tools?.webSearch?.bingEndpoint || '';
                 document.getElementById('config-ai-tool-send-mention-enabled').checked = currentConfig.ai?.tools?.sendMention?.enabled === true;
-                document.getElementById('config-ai-tool-web-search-max-results').value = currentConfig.ai?.tools?.webSearch?.maxResults ?? 5;
-                document.getElementById('config-ai-tool-web-search-timeout').value = currentConfig.ai?.tools?.webSearch?.timeoutMs ?? 10000;
-                document.getElementById('config-ai-tool-web-search-max-snippet-length').value = currentConfig.ai?.tools?.webSearch?.maxSnippetLength ?? 800;
-                document.getElementById('config-ai-tool-web-search-allowed-domains').value = (currentConfig.ai?.tools?.webSearch?.allowedDomains || []).join(',');
-                document.getElementById('config-ai-tool-web-search-blocked-domains').value = (currentConfig.ai?.tools?.webSearch?.blockedDomains || []).join(',');
                 updateTextToolFallbackFields();
-                updateWebSearchProviderFields();
+                updateSearchFieldsState();
+                updateMcpFormFields();
                 updateEmptyRetryFields();
                 updateChainLeakRetryFields();
                 updateThinkingNotifyFields();
@@ -21203,24 +21685,46 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                     activeProviderId: activeAIProviderId,
                     providers: providerEntriesForSave,
                     tools: {
-                        webSearch: {
-                            enabled: document.getElementById('config-ai-tool-web-search-enabled').checked,
-                            provider: document.getElementById('config-ai-tool-web-search-provider').value || 'duckduckgo',
-                            apiKey: (() => {
-                                const provider = document.getElementById('config-ai-tool-web-search-provider').value || 'duckduckgo';
-                                if (!['tavily', 'serpapi'].includes(provider)) return '';
-                                const value = document.getElementById('config-ai-tool-web-search-apikey').value.trim();
-                                return value && value !== '******' ? value : (currentConfig.ai?.tools?.webSearch?.hasApiKey ? '******' : '');
-                            })(),
-                            googleEngineId: document.getElementById('config-ai-tool-web-search-google-engine-id').value.trim(),
-                            bingEndpoint: document.getElementById('config-ai-tool-web-search-bing-endpoint').value.trim(),
-                            fallbackEnabled: document.getElementById('config-ai-tool-web-search-fallback-enabled').checked,
-                            maxResults: parseInt(document.getElementById('config-ai-tool-web-search-max-results').value) || 5,
-                            timeoutMs: parseInt(document.getElementById('config-ai-tool-web-search-timeout').value) || 10000,
-                            maxSnippetLength: parseInt(document.getElementById('config-ai-tool-web-search-max-snippet-length').value) || 800,
-                            allowedDomains: document.getElementById('config-ai-tool-web-search-allowed-domains').value.split(',').map(v => v.trim()).filter(Boolean),
-                            blockedDomains: document.getElementById('config-ai-tool-web-search-blocked-domains').value.split(',').map(v => v.trim()).filter(Boolean)
-                        },
+                        webSearch: (() => {
+                            const provider = document.getElementById('config-search-provider').value || 'duckduckgo';
+                            const existingKeys = currentConfig.ai?.tools?.webSearch?.apiKeys || {};
+                            const apiKeyFor = (id, providerId) => {
+                                const value = document.getElementById(id)?.value.trim() || '';
+                                if (value && value !== '******') return value;
+                                return existingKeys[providerId] ? '******' : '';
+                            };
+                            const splitDomains = (id) => document.getElementById(id).value.split(',').map((item) => item.trim()).filter(Boolean);
+                            return {
+                                enabled: document.getElementById('config-search-enabled').checked,
+                                provider,
+                                fallbackProviders: (document.getElementById('config-search-fallback-providers').value || '').split(/[,，\s]+/).map((item) => item.trim()).filter(Boolean),
+                                apiKeys: {
+                                    tavily: apiKeyFor('config-search-apikey-tavily', 'tavily'),
+                                    brave: apiKeyFor('config-search-apikey-brave', 'brave'),
+                                    serpapi: apiKeyFor('config-search-apikey-serpapi', 'serpapi')
+                                },
+                                searxngBaseUrl: document.getElementById('config-search-searxng-base-url').value.trim(),
+                                searxngEngines: document.getElementById('config-search-searxng-engines').value.trim(),
+                                region: document.getElementById('config-search-region').value.trim() || 'cn-zh',
+                                locale: document.getElementById('config-search-locale').value.trim() || 'zh-cn',
+                                safeSearch: document.getElementById('config-search-safe-search').value || 'moderate',
+                                timeRange: document.getElementById('config-search-time-range').value || 'all',
+                                maxResults: parseInt(document.getElementById('config-search-max-results').value, 10) || 5,
+                                timeoutMs: parseInt(document.getElementById('config-search-timeout').value, 10) || 10000,
+                                maxSnippetLength: parseInt(document.getElementById('config-search-max-snippet-length').value, 10) || 800,
+                                allowedDomains: splitDomains('config-search-allowed-domains'),
+                                blockedDomains: splitDomains('config-search-blocked-domains'),
+                                fetch: {
+                                    enabled: document.getElementById('config-search-fetch-enabled').checked,
+                                    timeoutMs: parseInt(document.getElementById('config-search-fetch-timeout').value, 10) || 15000,
+                                    maxChars: parseInt(document.getElementById('config-search-fetch-max-chars').value, 10) || 8000
+                                },
+                                spice: {
+                                    enabled: document.getElementById('config-search-spice-enabled').checked,
+                                    weatherDays: parseInt(document.getElementById('config-search-weather-days').value, 10) || 3
+                                }
+                            };
+                        })(),
                         textToolFallback: {
                             enabled: document.getElementById('config-ai-tool-text-fallback-enabled').checked,
                             maxRounds: parseInt(document.getElementById('config-ai-tool-text-fallback-max-rounds').value) || 3

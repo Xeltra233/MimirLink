@@ -14,7 +14,9 @@ import { PromptBuilder } from './prompt.js';
 import { inspectMemoryDatabase } from './session.js';
 import { buildChatRuntimePreview } from './runtime/chat-preview.js';
 import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
-import { buildAIToolContext, buildRealtimeGroundingMessage, sendGroupMentionFromPrompt, runConfiguredWebSearch } from './tools.js';
+import { buildAIToolContext, sendGroupMentionFromPrompt } from './tools.js';
+import { runSearch } from './search/index.js';
+import { normalizeMcpClientConfig, normalizeMcpServerConfig, mergeMcpSecrets, maskMcpServerForClient } from './mcp-client.js';
 import { scanVariableUsage, applyScannedVariableInitializers } from './variable-bridge.js';
 import { syncPresetFiles } from './preset-sync.js';
 import { DEFAULT_IMAGE_CAPTION_PROMPT } from './image-input.js';
@@ -1576,8 +1578,16 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 };
             })
             : [];
-        const { apiKey: webSearchApiKey, ...safeWebSearchConfig } = config.ai?.tools?.webSearch || {};
-        safeWebSearchConfig.hasApiKey = Boolean(webSearchApiKey);
+        const safeWebSearchConfig = { ...(config.ai?.tools?.webSearch || {}) };
+        const legacyWebSearchApiKey = safeWebSearchConfig.apiKey;
+        delete safeWebSearchConfig.apiKey;
+        const webSearchApiKeys = safeWebSearchConfig.apiKeys || {};
+        safeWebSearchConfig.apiKeys = {
+            tavily: webSearchApiKeys.tavily ? '******' : '',
+            brave: webSearchApiKeys.brave ? '******' : '',
+            serpapi: webSearchApiKeys.serpapi ? '******' : ''
+        };
+        safeWebSearchConfig.hasApiKey = Object.values(webSearchApiKeys).some(Boolean) || Boolean(legacyWebSearchApiKey);
         const { password, sessionSecret, ...safeAuthConfig } = config.auth || {};
         safeAuthConfig.passwordSet = Boolean(password);
         safeAuthConfig.sessionSecretSet = Boolean(sessionSecret);
@@ -1594,10 +1604,18 @@ export function setupRoutes(app, config, saveConfig, managers) {
             ...safeParticipantProfileConfig
         } = config.memory?.participantProfile || {};
         safeParticipantProfileConfig.hasApiKey = false;
+        const safeMcpClientConfig = {
+            ...(config.mcp?.client || {}),
+            servers: (config.mcp?.client?.servers || []).map((server) => maskMcpServerForClient(server))
+        };
         const safeConfig = {
             ...config,
             auth: safeAuthConfig,
             onebot: safeOneBotConfig,
+            mcp: {
+                ...(config.mcp || {}),
+                client: safeMcpClientConfig
+            },
             chat: {
                 ...(config.chat || {}),
                 music: safeMusicConfig,
@@ -1656,8 +1674,27 @@ export function setupRoutes(app, config, saveConfig, managers) {
 			if (newConfig?.ai?.apiKey === '******') {
 				delete newConfig.ai.apiKey;
 			}
-            if (newConfig?.ai?.tools?.webSearch?.apiKey === '******') {
-                newConfig.ai.tools.webSearch.apiKey = config.ai?.tools?.webSearch?.apiKey || '';
+            if (newConfig?.ai?.tools?.webSearch) {
+                const existingApiKeys = config.ai?.tools?.webSearch?.apiKeys || {};
+                const incomingApiKeys = newConfig.ai.tools.webSearch.apiKeys;
+                if (incomingApiKeys && typeof incomingApiKeys === 'object') {
+                    for (const providerId of ['tavily', 'brave', 'serpapi']) {
+                        if (incomingApiKeys[providerId] === '******') {
+                            incomingApiKeys[providerId] = existingApiKeys[providerId] || '';
+                        }
+                    }
+                }
+                if (newConfig.ai.tools.webSearch.apiKey === '******') {
+                    delete newConfig.ai.tools.webSearch.apiKey;
+                }
+            }
+            // MCP 客户端服务器的增删改由 /api/mcp/* 端点独占管理，主配置保存不覆盖 servers
+            if (newConfig?.mcp) {
+                if (!newConfig.mcp.client) {
+                    newConfig.mcp.client = config.mcp?.client;
+                } else if (config.mcp?.client) {
+                    newConfig.mcp.client.servers = config.mcp.client.servers;
+                }
             }
             // 前端回填的是掩码占位符，保存时还原成已存的点歌 API Key
             if (newConfig?.chat?.music?.apiKey === '******') {
@@ -3910,20 +3947,250 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     app.post('/api/tools/web-search/test', requireAuth, async (req, res) => {
         try {
-            const { query, draft, limit } = req.body || {};
+            const { query, draft, limit, topic } = req.body || {};
             const webSearchDraft = draft && typeof draft === 'object' && !Array.isArray(draft)
                 ? draft
                 : (config.ai?.tools?.webSearch || {});
-            const result = await runConfiguredWebSearch({
+            const result = await runSearch({
                 config: { ai: { tools: { webSearch: webSearchDraft } } },
                 query,
                 limit,
+                topic,
                 logger
             });
             res.json({ success: true, ...result });
         } catch (error) {
             logger.error('测试 web_search 失败', error);
-            res.status(400).json({ success: false, error: error.message });
+            res.status(400).json({ success: false, error: error.message, attempts: error.attempts || [] });
+        }
+    });
+
+    // ==================== MCP 客户端管理 ====================
+
+    const getMcpClientStatus = () => {
+        if (managers.mcpClient?.getStatus) {
+            return managers.mcpClient.getStatus();
+        }
+        return normalizeMcpClientConfig(config.mcp?.client);
+    };
+
+    const persistMcpClientConfig = async () => {
+        config.mcp = config.mcp || {};
+        config.mcp.client = normalizeMcpClientConfig(config.mcp.client);
+        saveConfig(config);
+        if (managers.mcpClient?.reload) {
+            return await managers.mcpClient.reload();
+        }
+        return getMcpClientStatus();
+    };
+
+    app.get('/api/mcp/status', requireAuth, (req, res) => {
+        res.json({
+            success: true,
+            server: {
+                enabled: config.mcp?.enabled !== false,
+                path: config.mcp?.path || '/mcp'
+            },
+            client: getMcpClientStatus()
+        });
+    });
+
+    app.post('/api/mcp/settings', requireAuth, async (req, res) => {
+        try {
+            const { enabled, maxResultChars } = req.body || {};
+            const current = normalizeMcpClientConfig(config.mcp?.client);
+            const normalizedMaxChars = Number(maxResultChars);
+            config.mcp = config.mcp || {};
+            config.mcp.client = {
+                ...current,
+                enabled: typeof enabled === 'boolean' ? enabled : current.enabled,
+                maxResultChars: Number.isFinite(normalizedMaxChars) && normalizedMaxChars > 0
+                    ? Math.min(50000, Math.max(500, Math.floor(normalizedMaxChars)))
+                    : current.maxResultChars
+            };
+            const status = await persistMcpClientConfig();
+            res.json({ success: true, client: status });
+        } catch (error) {
+            logger.error('保存 MCP 客户端设置失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/mcp/servers', requireAuth, async (req, res) => {
+        try {
+            const payload = req.body && typeof req.body === 'object' ? req.body : {};
+            const servers = Array.isArray(config.mcp?.client?.servers) ? [...config.mcp.client.servers] : [];
+            const existingIndex = servers.findIndex((server) => server.id === payload.id);
+            const existing = existingIndex >= 0 ? servers[existingIndex] : null;
+            const normalized = normalizeMcpServerConfig({
+                ...payload,
+                id: existing?.id || payload.id
+            });
+            if (!normalized) {
+                return res.status(400).json({ success: false, error: '服务器名称不能为空' });
+            }
+            if (servers.some((server) => server.name === normalized.name && server.id !== normalized.id)) {
+                return res.status(400).json({ success: false, error: `服务器名称已存在: ${normalized.name}` });
+            }
+            if (normalized.transport === 'stdio' && !normalized.command) {
+                return res.status(400).json({ success: false, error: 'stdio 传输必须提供 command' });
+            }
+            if (normalized.transport !== 'stdio' && !/^https?:\/\/\S+$/i.test(normalized.url)) {
+                return res.status(400).json({ success: false, error: 'http/sse 传输必须提供合法的 http(s) URL' });
+            }
+            normalized.env = mergeMcpSecrets(payload.env || {}, existing?.env || {});
+            normalized.headers = mergeMcpSecrets(payload.headers || {}, existing?.headers || {});
+
+            if (existingIndex >= 0) {
+                servers[existingIndex] = normalized;
+            } else {
+                servers.push(normalized);
+            }
+            config.mcp = config.mcp || {};
+            config.mcp.client = { ...normalizeMcpClientConfig(config.mcp.client), servers };
+            const status = await persistMcpClientConfig();
+            const serverStatus = Array.isArray(status?.servers)
+                ? status.servers.find((item) => item.id === normalized.id)
+                : null;
+            res.json({ success: true, server: serverStatus || maskMcpServerForClient(normalized), client: status });
+        } catch (error) {
+            logger.error('保存 MCP 服务器失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.delete('/api/mcp/servers/:id', requireAuth, async (req, res) => {
+        try {
+            const existingServers = Array.isArray(config.mcp?.client?.servers) ? config.mcp.client.servers : [];
+            const servers = existingServers.filter((server) => server.id !== req.params.id);
+            if (servers.length === existingServers.length) {
+                return res.status(404).json({ success: false, error: '服务器不存在' });
+            }
+            config.mcp = config.mcp || {};
+            config.mcp.client = { ...normalizeMcpClientConfig(config.mcp.client), servers };
+            const status = await persistMcpClientConfig();
+            res.json({ success: true, client: status });
+        } catch (error) {
+            logger.error('删除 MCP 服务器失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/mcp/servers/:id/reconnect', requireAuth, async (req, res) => {
+        try {
+            if (!managers.mcpClient?.reconnect) {
+                return res.status(503).json({ success: false, error: 'MCP 客户端未初始化' });
+            }
+            const result = await managers.mcpClient.reconnect(req.params.id);
+            res.json({ success: result.ok === true, ...result, client: getMcpClientStatus() });
+        } catch (error) {
+            logger.error('重连 MCP 服务器失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/mcp/import', requireAuth, async (req, res) => {
+        try {
+            const raw = String(req.body?.json || '').trim();
+            if (!raw) {
+                return res.status(400).json({ success: false, error: 'JSON 内容不能为空' });
+            }
+            let parsed;
+            try {
+                parsed = JSON.parse(raw);
+            } catch (error) {
+                return res.status(400).json({ success: false, error: `JSON 解析失败: ${error.message}` });
+            }
+
+            let entries = [];
+            if (Array.isArray(parsed)) {
+                entries = parsed;
+            } else if (parsed && typeof parsed === 'object') {
+                if (parsed.mcpServers && typeof parsed.mcpServers === 'object') {
+                    entries = Object.entries(parsed.mcpServers).map(([name, serverConfig]) => ({
+                        name,
+                        ...(serverConfig && typeof serverConfig === 'object' ? serverConfig : {})
+                    }));
+                } else if (Array.isArray(parsed.servers)) {
+                    entries = parsed.servers;
+                } else {
+                    entries = [parsed];
+                }
+            }
+            entries = entries.filter((entry) => entry && typeof entry === 'object' && Object.keys(entry).length > 0);
+            if (entries.length === 0) {
+                return res.status(400).json({ success: false, error: '未解析到任何服务器配置' });
+            }
+
+            const servers = Array.isArray(config.mcp?.client?.servers) ? [...config.mcp.client.servers] : [];
+            const added = [];
+            const updated = [];
+            const errors = [];
+
+            for (const entry of entries) {
+                const source = entry && typeof entry === 'object' ? { ...entry } : {};
+                // 兼容 Claude Desktop / .mcp.json 格式：type 字段与 stdio 推导
+                if (!source.transport && source.type) {
+                    source.transport = source.type;
+                }
+                if (!source.transport && source.command) {
+                    source.transport = 'stdio';
+                }
+                if (!source.transport && source.url) {
+                    source.transport = 'http';
+                }
+                const normalized = normalizeMcpServerConfig(source);
+                if (!normalized) {
+                    errors.push({ name: source.name || '<未命名>', error: '缺少 name' });
+                    continue;
+                }
+                if (normalized.transport === 'stdio' && !normalized.command) {
+                    errors.push({ name: normalized.name, error: '缺少 command' });
+                    continue;
+                }
+                if (normalized.transport !== 'stdio' && !/^https?:\/\//i.test(normalized.url)) {
+                    errors.push({ name: normalized.name, error: '缺少合法 URL' });
+                    continue;
+                }
+                const index = servers.findIndex((server) => server.name === normalized.name);
+                if (index >= 0) {
+                    normalized.id = servers[index].id;
+                    servers[index] = normalized;
+                    updated.push(normalized.name);
+                } else {
+                    servers.push(normalized);
+                    added.push(normalized.name);
+                }
+            }
+
+            config.mcp = config.mcp || {};
+            config.mcp.client = { ...normalizeMcpClientConfig(config.mcp.client), servers };
+            const status = await persistMcpClientConfig();
+            res.json({ success: true, added, updated, errors, client: status });
+        } catch (error) {
+            logger.error('导入 MCP 服务器失败', error);
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    app.post('/api/mcp/call', requireAuth, async (req, res) => {
+        try {
+            const { serverId, tool, arguments: args } = req.body || {};
+            if (!serverId || !tool) {
+                return res.status(400).json({ success: false, error: 'serverId 与 tool 不能为空' });
+            }
+            if (!managers.mcpClient?.callTool) {
+                return res.status(503).json({ success: false, error: 'MCP 客户端未初始化' });
+            }
+            const result = await managers.mcpClient.callTool({
+                serverId,
+                tool,
+                arguments: args && typeof args === 'object' ? args : {}
+            });
+            res.status(result.ok ? 200 : 400).json({ success: result.ok === true, ...result });
+        } catch (error) {
+            logger.error('调用 MCP 工具失败', error);
+            res.status(500).json({ success: false, error: error.message });
         }
     });
 
@@ -4063,7 +4330,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 logger,
                 defaultGroupId: groupId,
                 defaultTargetUserId: targetUserId,
-                defaultTargetName: targetName
+                defaultTargetName: targetName,
+                mcpClient: managers.mcpClient
             });
             const messages = [
                 ...(Array.isArray(toolContext.toolHints) && toolContext.toolHints.length > 0
@@ -4071,17 +4339,6 @@ export function setupRoutes(app, config, saveConfig, managers) {
                     : []),
                 { role: 'user', content: normalizedMessage }
             ];
-            if (toolContext.isRealtimeQuery?.(normalizedMessage)) {
-                const grounding = await buildRealtimeGroundingMessage({
-                    config,
-                    query: normalizedMessage,
-                    logger
-                });
-                messages.unshift({
-                    role: 'system',
-                    content: grounding?.message || toolContext.buildRealtimeSearchPrompt?.(normalizedMessage) || `这条问题需要先联网检索再回答：${normalizedMessage}`
-                });
-            }
             const responseResult = await callWithTimeout(() => aiClient.chatWithTools(messages, toolContext, buildProviderAIOverrides()), timeoutMs);
             const response = aiClient.getVisibleResponseContent(responseResult);
             logger.info(`[API ${req.requestId || 'no-id'}] AI 测试完成`, {
@@ -4096,8 +4353,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 success: true,
                 response,
                 reasoningContent: typeof responseResult?.reasoningContent === 'string' ? responseResult.reasoningContent : null,
-                toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean),
-                mode: toolContext.isRealtimeQuery?.(normalizedMessage) ? 'ai_with_realtime_grounding' : 'ai_with_tools'
+                toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean)
             });
         } catch (error) {
             logger.error('测试 AI 调用失败', error);

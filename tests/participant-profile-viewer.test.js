@@ -605,12 +605,12 @@ test('AI test route uses tool context and forwards default mention target info',
         assert.equal(successRes.status, 200);
         assert.equal(successData.success, true);
         assert.equal(successData.response, '工具调用回复');
-        assert.deepEqual(successData.toolsEnabled, ['web_search', 'send_group_mention']);
+        assert.deepEqual(successData.toolsEnabled, ['web_search', 'web_fetch', 'get_weather', 'convert_currency', 'send_group_mention']);
         assert.equal(chatWithToolsCalls.length, 1);
         assert.equal(chatWithToolsCalls[0].messages.at(-1).role, 'user');
         assert.equal(chatWithToolsCalls[0].messages.at(-1).content, '????????');
         assert.equal(chatWithToolsCalls[0].messages[0].role, 'system');
-        assert.deepEqual(chatWithToolsCalls[0].toolContext.tools.map((tool) => tool.function.name), ['web_search', 'send_group_mention']);
+        assert.deepEqual(chatWithToolsCalls[0].toolContext.tools.map((tool) => tool.function.name), ['web_search', 'web_fetch', 'get_weather', 'convert_currency', 'send_group_mention']);
         const mentionResult = await chatWithToolsCalls[0].toolContext.handlers.send_group_mention({ prompt: '提醒他看一下搜索结果' });
         assert.equal(mentionResult.ok, true);
         assert.equal(mentionResult.groupId, '123456');

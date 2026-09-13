@@ -31,7 +31,10 @@ import { dirname, join } from 'path';
 import fs from 'fs';
 
 import { OneBotClient, buildMentionMessage } from './onebot.js';
-import { buildAIToolContext, buildRealtimeGroundingMessage, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt } from './tools.js';
+import { buildAIToolContext, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt } from './tools.js';
+import { McpClientManager, normalizeMcpClientConfig } from './mcp-client.js';
+import { normalizeWebSearchConfig } from './search/index.js';
+import { findForwardSegments, fetchForwardTranscripts } from './forward-message.js';
 import { CharacterManager } from './character.js';
 import { WorldBookManager } from './worldbook.js';
 import { PromptBuilder } from './prompt.js';
@@ -479,21 +482,8 @@ function ensureCommandAndToolConfig(config) {
 
     config.memory.participantProfile.manualCommand = config.chat.commands.participantProfileManual.command;
 
-    const webSearchProvider = String(webSearch.provider || '').toLowerCase();
     const textToolFallback = config.ai.tools.textToolFallback || {};
-
-    config.ai.tools.webSearch = {
-        enabled: typeof webSearch.enabled === 'boolean' ? webSearch.enabled : false,
-        provider: ['duckduckgo', 'google', 'bing', 'tavily', 'brave', 'serpapi'].includes(webSearchProvider) ? webSearchProvider : 'duckduckgo',
-        apiKey: typeof webSearch.apiKey === 'string' ? webSearch.apiKey : '',
-        googleEngineId: typeof webSearch.googleEngineId === 'string' ? webSearch.googleEngineId : (typeof webSearch.engineId === 'string' ? webSearch.engineId : ''),
-        bingEndpoint: typeof webSearch.bingEndpoint === 'string' ? webSearch.bingEndpoint : '',
-        maxResults: clampInteger(webSearch.maxResults, 1, 8, 5),
-        timeoutMs: clampInteger(webSearch.timeoutMs, 1000, 15000, 10000),
-        maxSnippetLength: clampInteger(webSearch.maxSnippetLength, 100, 4000, 800),
-        allowedDomains: normalizeStringList(webSearch.allowedDomains),
-        blockedDomains: normalizeStringList(webSearch.blockedDomains)
-    };
+    config.ai.tools.webSearch = normalizeWebSearchConfig(webSearch);
 
     config.ai.tools.textToolFallback = {
         enabled: typeof textToolFallback.enabled === 'boolean' ? textToolFallback.enabled : false,
@@ -505,8 +495,19 @@ function ensureCommandAndToolConfig(config) {
     };
 }
 
+function normalizeMcpConfig(mcp) {
+    const source = mcp && typeof mcp === 'object' && !Array.isArray(mcp) ? mcp : {};
+    return {
+        ...source,
+        enabled: source.enabled !== false,
+        path: typeof source.path === 'string' && source.path.trim() ? source.path.trim() : '/mcp',
+        client: normalizeMcpClientConfig(source.client)
+    };
+}
+
 function normalizeConfig(config) {
     normalizeServerConfig(config);
+    config.mcp = normalizeMcpConfig(config.mcp);
     config.chat = config.chat || {};
     config.bindings = config.bindings || {};
     config.bindings.global = config.bindings.global || {};
@@ -1026,6 +1027,11 @@ function summarizeOneBotSegment(segment, botSelfId = '') {
         return { type, promptText: `[${type.toUpperCase()}消息]` };
     }
 
+    if (type === 'forward') {
+        const id = getAny('id', 'message_id', 'res_id', 'messageId');
+        return { type, id: id ? String(id) : '', promptText: '[合并转发聊天记录]' };
+    }
+
     return { type, promptText: `[消息段:${type}]` };
 }
 
@@ -1095,12 +1101,26 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
         );
         const replySegments = getOneBotMessageSegments(replyMessage?.message);
         const replyImageSegments = replySegments.filter((segment) => segment?.type === 'image');
-        const replyText = sanitizeContent(
+        let replyText = sanitizeContent(
             extractDisplayTextFromSegments(replyMessage?.message)
             || replyMessage?.raw_message
             || replyMessage?.message
             || ''
         );
+        // 被引用的消息本身是合并转发时，拉取聊天记录并入引用内容（引用的场景）
+        const replyForwardSegments = findForwardSegments(replySegments);
+        if (replyForwardSegments.length > 0) {
+            const forwardResults = await fetchForwardTranscripts({
+                bot,
+                forwardIds: replyForwardSegments.map((item) => item.id),
+                renderSegment: (segment) => summarizeOneBotSegment(segment, bot.selfId),
+                logger: bot.logger
+            });
+            const transcripts = forwardResults.map((result) => (result.ok
+                ? result.transcript
+                : `[合并转发聊天记录|读取失败:${result.error}]`));
+            replyText = sanitizeContent([replyText.replace(/\[消息段:forward\]/g, '').trim(), ...transcripts].join('\n'));
+        }
 
         if (!senderName && !replyText) {
             return {
@@ -1152,6 +1172,29 @@ async function extractMessageInfo(config, event, bot) {
             isAtMe = true;
         } else if (segment.type === 'reply') {
             replyToMessageId = segment.data?.id || null;
+        }
+    }
+
+    // 直接发送合并转发时，拉取聊天记录正文供模型阅读
+    const forwardSegments = findForwardSegments(segments);
+    if (forwardSegments.length > 0) {
+        const forwardResults = await fetchForwardTranscripts({
+            bot,
+            forwardIds: forwardSegments.map((item) => item.id),
+            renderSegment: (segment) => summarizeOneBotSegment(segment, bot.selfId),
+            logger: bot.logger
+        });
+        for (let index = 0; index < forwardResults.length; index += 1) {
+            const result = forwardResults[index];
+            const target = messageSegments[forwardSegments[index].index];
+            if (result.ok) {
+                plainText += `\n${result.transcript}`;
+                if (target) {
+                    target.forward = { id: forwardSegments[index].id, count: result.count };
+                }
+            } else if (target) {
+                target.forward = { id: forwardSegments[index].id, error: result.error };
+            }
         }
     }
 
@@ -1629,6 +1672,7 @@ const worldBookManager = new WorldBookManager(DATA_DIR);
 const sessionManager = new SessionManager(DATA_DIR, config, logger);
 const regexProcessor = new RegexProcessor(config.regex, logger);
 const aiClient = new AIClient({ ...config.ai, chat: config.chat }, logger);
+const mcpClient = new McpClientManager({ config, logger });
 const promptBuilder = new PromptBuilder(characterManager, worldBookManager, config, logger);
 const ttsManager = new TTSManager(logger);
 const groupRepeatDetector = new GroupRepeatDetector();
@@ -3448,7 +3492,8 @@ async function processBatch(batch) {
                         currentSpeakerOverride: runtimeContext.currentSpeaker,
                         sendMessage: true
                     });
-                }
+                },
+                mcpClient
             });
             if (Array.isArray(toolContext.toolHints) && toolContext.toolHints.length > 0) {
                 messages.unshift({
@@ -3456,31 +3501,6 @@ async function processBatch(batch) {
                     content: `【工具使用说明】\n${toolContext.toolHints.join('\n\n')}`,
                     meta: { source: 'tool_hints' }
                 });
-            }
-            if (toolContext.isRealtimeQuery?.(processedInput)) {
-                const grounding = await buildRealtimeGroundingMessage({
-                    config,
-                    query: processedInput,
-                    logger
-                });
-                if (grounding?.message) {
-                    messages.unshift({
-                        role: 'system',
-                        content: grounding.message,
-                        meta: {
-                            source: 'realtime_grounding',
-                            provider: grounding.provider,
-                            resultCount: grounding.resultCount || 0,
-                            searchSource: grounding.source || ''
-                        }
-                    });
-                } else {
-                    messages.unshift({
-                        role: 'system',
-                        content: toolContext.buildRealtimeSearchPrompt?.(processedInput) || `这条问题需要先联网检索再回答：${processedInput}`,
-                        meta: { source: 'realtime_tool_hints' }
-                    });
-                }
             }
             const chatAIOverrides = buildChatAIOverrides(config);
             const chatAISelection = getChatAISelectionSnapshot(config);
@@ -3709,6 +3729,7 @@ const managers = {
     sessionManager,
     regexProcessor,
     aiClient,
+    mcpClient,
     promptBuilder,
     logger,
     bot,
@@ -4043,6 +4064,9 @@ if (config.mcp?.enabled !== false) {
 } else {
     logger.info('MCP 端点已禁用');
 }
+
+// --- MCP 客户端（连接外部 MCP 服务器，工具供模型调用） ---
+mcpClient.start();
 
 server.listen(config.server.port, config.server.host, () => {
     logger.info(`服务器已启动: http://${config.server.host}:${config.server.port}`);

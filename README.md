@@ -157,11 +157,25 @@ Node.js >= 22.5.0（`node:sqlite` 内置模块）。
 - 仪表盘、角色/世界书/预设/变量/知识管理
 - xterm.js 实时日志终端（ANSI 彩色、级别筛选、历史日志查看）
 - 靶场：消息测试、ELO 评分、Agent 优化
-- 配置：模型供应商、聊天参数、搜索、备份恢复、MCP；分类入口为 总览 / OneBot / 聊天 / 命令与工具 / 记忆 / 模型供应 / 预设 / MCP / 数据
+- 配置：模型供应商、聊天参数、搜索、备份恢复、MCP；分类入口为 总览 / OneBot / 聊天 / 命令与工具 / 记忆 / 模型供应 / 预设 / 搜索 / MCP / 数据
 - 配置页字段按“标签 + 控件 + 说明”的瓦片式双列排布，窄屏自动堆叠为单列
 - 毛玻璃 Tab 切换、卡片 hover 动效、响应式两栏布局
 - 角色/世界书/预设管理弹窗：多选、批量导出压缩包、批量删除
 - 预设编辑器：外部来源条目（世界书/角色卡/聊天历史）自动识别为只读，显示来源标签
+
+### 合并转发聊天记录
+- 群里的合并转发消息（`forward` 段）会通过 OneBot `get_forward_msg` 拉取聊天记录并转为可读文本交给模型
+- 引用场景：回复（引用）一条合并转发消息再 @bot，同样会读取被引用转发的正文
+- 兼容 go-cqhttp / NapCat / Lagrange 等不同返回结构，按条数与字符数截断
+
+### 联网搜索与正文读取
+- 搜索由模型自行决定调用（不做程序预搜索、不替模型直答）；无结果/失败时如实告知，不编造实时信息
+- Provider 可组合：`duckduckgo`（移植 ddgs / duck-duck-scrape，免 Key，含新闻）、`searxng`（自建/实例，需开启 JSON 输出）、`tavily` / `brave` / `serpapi`（需 API Key）；支持回退链（`fallbackProviders`）、区域/语言/安全搜索/时间范围、域名黑白名单
+- `web_search`：返回标题/链接/摘要（网页或新闻），支持 `limit` / `topic` / `timeRange` / `site` 参数
+- `web_fetch`：移植 Mozilla Readability 提取网页正文（仅公网 http/https，拒绝本机/内网地址），供模型对搜索结果做深入阅读
+- `get_weather` / `convert_currency`：即时的天气与汇率工具，结果交回模型组织回答
+- 设置入口：「配置 → 搜索」；可对关键词做真实搜索测试并查看回退链
+- 旧的 Google/Bing 手写抓取已移除；需要 Bing/多引擎结果时用 SearXNG 聚合
 
 ### MCP 接口
 `POST /mcp`（默认路径，可在配置页修改）—— Claude Code 等外部工具远程调用，JSON-RPC 2.0 协议。
@@ -175,6 +189,13 @@ Claude Code 挂载（`.claude/settings.json`）：
 ```json
 {"mcpServers":{"mimirlink-range":{"url":"http://localhost:8001/mcp"}}}
 ```
+
+### MCP 客户端（连接外部 MCP 服务器）
+- MimirLink 也可以作为 MCP 客户端，连接外部 MCP 服务器并把它们的工具并入 bot 工具表（模型按需调用）
+- 支持 `stdio`（本地命令）、`http`（Streamable HTTP）、`sse` 三种传输；**默认关闭**，需在「配置 → MCP」显式开启
+- 添加方式：手动表单（命令/参数/环境变量 或 URL/请求头）或 JSON 导入（兼容 Claude Desktop / `.mcp.json` 的 `mcpServers` 格式）
+- 支持查看服务器状态与工具列表、工具试运行、重连、工具过滤（include/exclude）、调用超时与结果截断；密钥字段在接口中掩码返回
+- 配置存于 `mcp.client.servers`；stdio 会在本机执行命令，请只添加可信来源
 
 **27 个工具：**
 
@@ -341,7 +362,10 @@ MimirLink/
 │   ├── character.js         # 角色卡管理
 │   ├── worldbook.js         # 世界书管理
 │   ├── onebot.js            # OneBot 客户端（消息/表情/戳一戳）
-│   ├── mcp.js               # MCP 端点（Streamable HTTP）
+│   ├── mcp.js               # MCP 服务端（靶场对外接口）
+│   ├── mcp-client.js        # MCP 客户端（连接外部服务器并注册工具）
+│   ├── forward-message.js   # 合并转发聊天记录读取
+│   ├── search/              # 搜索模块（DDG 移植 / SearXNG / API provider / Readability 正文提取）
 │   ├── security.js          # 反注入
 │   └── runtime/             # 运行时工具
 ├── public/index.html        # Web 面板 SPA

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { buildAIToolContext, buildRealtimeGroundingMessage } from '../src/tools.js';
+import { buildAIToolContext } from '../src/tools.js';
 import {
     extractMentionedUserIds,
     executeAdminPokeCommand,
@@ -156,6 +156,7 @@ const VARIED_SEARCH_SCENARIOS = Object.entries(SEARCH_QUERY_GROUPS).flatMap(([ca
 ));
 
 function mockSearchResponse(body, contentType = 'application/json') {
+    const text = typeof body === 'string' ? body : JSON.stringify(body);
     return {
         ok: true,
         status: 200,
@@ -164,76 +165,105 @@ function mockSearchResponse(body, contentType = 'application/json') {
             return body;
         },
         async text() {
-            return typeof body === 'string' ? body : JSON.stringify(body);
+            return text;
+        },
+        async arrayBuffer() {
+            return Buffer.from(text);
         }
     };
 }
 
-function buildDuckDuckGoPayload(query) {
-    return {
-        Heading: query,
-        AbstractURL: `https://evidence.example.test/search/${encodeURIComponent(query)}`,
-        AbstractText: `检索摘要：${query}。这是一条模拟的公开网页资料，用于验证搜索工具能返回标题、链接和摘要给 AI。`,
-        RelatedTopics: [{
-            FirstURL: `https://evidence.example.test/topic/${encodeURIComponent(query)}`,
-            Text: `${query} - 资料条目包含背景、关键事实和后续核验方向`
-        }]
-    };
+function buildDuckDuckGoHtmlPage(query, count = 3) {
+    const blocks = Array.from({ length: count }, (_, index) => `
+        <div class="result results_links results_links_deep web-result">
+          <div class="links_main links_deep result__body">
+            <h2 class="result__title">
+              <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=${encodeURIComponent(`https://evidence.example.test/search/${encodeURIComponent(query)}/${index + 1}`)}">${query} 资料 ${index + 1}</a>
+            </h2>
+            <a class="result__snippet" href="#">检索摘要：${query}（第 ${index + 1} 条）。这是模拟的公开网页资料，用于验证 web_search 返回标题、链接与摘要。</a>
+          </div>
+        </div>`).join('\n');
+    return `<!DOCTYPE html><html><body>${blocks}</body></html>`;
+}
+
+function buildDuckDuckGoLitePage(query, count = 3) {
+    const rows = Array.from({ length: count }, (_, index) => `
+        <tr><td>${index + 1}.</td><td><a rel="nofollow" href="https://evidence.example.test/lite/${encodeURIComponent(query)}/${index + 1}" class='result-link'>${query} lite 资料 ${index + 1}</a></td></tr>
+        <tr><td class='result-snippet'>lite 摘要：${query} 第 ${index + 1} 条。</td></tr>`).join('\n');
+    return `<html><body><table>${rows}</table></body></html>`;
 }
 
 function createMockFetch(callLog) {
-    return async (url) => {
+    return async (url, options = {}) => {
         const parsed = new URL(String(url));
         callLog.push(parsed.toString());
 
-        if (parsed.hostname === 'api.duckduckgo.com') {
-            return mockSearchResponse(buildDuckDuckGoPayload(parsed.searchParams.get('q') || ''));
+        if (parsed.hostname === 'html.duckduckgo.com') {
+            return mockSearchResponse(buildDuckDuckGoHtmlPage(parsed.searchParams.get('q') || ''), 'text/html');
         }
 
-        if (parsed.hostname === 'wttr.in') {
-            return mockSearchResponse({
-                current_condition: [{
-                    weatherDesc: [{ value: 'Light rain' }],
-                    temp_C: '22',
-                    FeelsLikeC: '23',
-                    humidity: '78',
-                    windspeedKmph: '12'
-                }],
-                nearest_area: [{
-                    areaName: [{ value: 'Beijing' }],
-                    region: [{ value: 'Beijing' }],
-                    country: [{ value: 'China' }]
-                }]
-            });
+        if (parsed.hostname === 'lite.duckduckgo.com') {
+            return mockSearchResponse(buildDuckDuckGoLitePage(parsed.searchParams.get('q') || ''), 'text/html');
         }
 
-        if (parsed.hostname === 'api.rss2json.com') {
+        if (parsed.hostname === 'duckduckgo.com' && parsed.pathname === '/') {
+            return mockSearchResponse('<html><body><input value="vqd=\'4-123456789012345678901234567890123456789\'" /></body></html>', 'text/html');
+        }
+
+        if (parsed.hostname === 'duckduckgo.com' && parsed.pathname === '/news.js') {
             return mockSearchResponse({
-                items: [
+                results: [
                     {
-                        title: 'Mock world headline A',
-                        link: 'https://news.example.test/world/a',
-                        description: '模拟新闻摘要 A，包含事件时间、地点和公开来源。'
+                        title: 'Mock 新闻 A',
+                        url: 'https://news.example.test/a',
+                        excerpt: '模拟新闻摘要 A，包含事件时间与公开来源。',
+                        date: 1789000000,
+                        relative_time: '1天前'
                     },
                     {
-                        title: 'Mock world headline B',
-                        link: 'https://news.example.test/world/b',
-                        description: '模拟新闻摘要 B，包含后续进展和背景信息。'
+                        title: 'Mock 新闻 B',
+                        url: 'https://news.example.test/b',
+                        excerpt: '模拟新闻摘要 B，包含后续进展。',
+                        date: 1789000100,
+                        relative_time: '2天前'
                     }
                 ]
             });
         }
 
-        if (parsed.hostname === 'open.er-api.com') {
-            return mockSearchResponse({
-                result: 'success',
-                rates: {
-                    CNY: 7.18,
-                    USD: 1,
-                    EUR: 0.91,
-                    JPY: 158.2
-                }
-            });
+        if (parsed.hostname === 'duckduckgo.com' && parsed.pathname.startsWith('/js/spice/forecast/')) {
+            const payload = {
+                currentWeather: {
+                    asOf: '2026-09-13T00:00:00Z',
+                    conditionCode: 'Clear',
+                    temperature: 22.5,
+                    temperatureApparent: 23.1,
+                    humidity: 0.5,
+                    windSpeed: 8.2,
+                    windGust: 12,
+                    uvIndex: 3,
+                    precipitationIntensity: 0,
+                    cloudCover: 0.1
+                },
+                forecastDaily: {
+                    days: [
+                        { forecastStart: '2026-09-13T00:00:00Z', conditionCode: 'Clear', temperatureMax: 28, temperatureMin: 18, daytimeForecast: { precipitationChance: 0.1 } },
+                        { forecastStart: '2026-09-14T00:00:00Z', conditionCode: 'Rain', temperatureMax: 25, temperatureMin: 17, daytimeForecast: { precipitationChance: 0.6 } }
+                    ]
+                },
+                location: { name: '北京' },
+                timezone: 'Asia/Shanghai'
+            };
+            return mockSearchResponse(`ddg_spice_forecast(\n${JSON.stringify(payload)}\n);`, 'text/javascript');
+        }
+
+        if (parsed.hostname === 'duckduckgo.com' && parsed.pathname.startsWith('/js/spice/currency/')) {
+            const payload = { from: 'USD', amount: 1, timestamp: '2026-09-13T00:00:00Z', to: [{ quotecurrency: 'CNY', mid: 7.18 }] };
+            return mockSearchResponse(`ddg_spice_currency(\n${JSON.stringify(payload)}\n);`, 'text/javascript');
+        }
+
+        if (parsed.hostname === 'example.test') {
+            return mockSearchResponse('<!DOCTYPE html><html><head><title>Mock 页面</title></head><body><article><h1>Mock 文章标题</h1><p>这是用于验证 web_fetch 的正文内容。MimirLink 测试页面，包含足够长的段落以便 Readability 提取正文。</p><p>第二段内容，继续提供正文文本，确保提取结果非空并且可读。</p></article></body></html>', 'text/html');
         }
 
         throw new Error(`unexpected network request in search test: ${parsed.toString()}`);
@@ -261,7 +291,6 @@ function assertSearchResultIsGroundingOnly(result, contextLabel) {
         assert.ok(item.snippet.trim(), contextLabel);
     }
 }
-
 test('admin poke command calls OneBot group_poke five times', async () => {
     const pokeCalls = [];
     const statuses = [];
@@ -475,9 +504,11 @@ test('web_search covers 100+ varied search rounds and only returns grounding dat
 
         for (let round = 0; round < VARIED_SEARCH_SCENARIOS.length; round += 1) {
             const scenario = VARIED_SEARCH_SCENARIOS[round];
+            const topic = scenario.category === 'public_hotspots' ? 'news' : 'web';
             const result = await toolContext.handlers.web_search({
                 query: scenario.query,
-                limit: 2
+                limit: 2,
+                topic
             });
             assertSearchResultIsGroundingOnly(result, `round ${round} ${scenario.category}: ${scenario.query}`);
             observedSources.add(result.source);
@@ -487,40 +518,33 @@ test('web_search covers 100+ varied search rounds and only returns grounding dat
         assert.equal(observedCategories.get('life_small_questions'), 15);
         assert.equal(observedCategories.get('public_hotspots'), 15);
         assert.equal(observedCategories.get('research_frontier'), 15);
-        assert.ok(observedSources.has('duckduckgo_json'));
-        assert.ok(observedSources.has('wttr_in'));
-        assert.ok(observedSources.has('local_beijing_time'));
-        assert.ok(observedSources.has('bbc_world_rss'));
-        assert.ok(observedSources.has('exchange_api'));
+        assert.ok(observedSources.has('duckduckgo_html'));
+        assert.ok(observedSources.has('duckduckgo_news'));
 
-        for (const realtimeQuery of [
-            '北京今天会下雨吗要不要带伞',
-            '现在北京时间是几点',
-            '今天美元兑人民币汇率',
-            '近期国际新闻有哪些'
-        ]) {
-            const grounding = await buildRealtimeGroundingMessage({
-                config: {
-                    ai: {
-                        tools: {
-                            webSearch: { enabled: true, provider: 'duckduckgo', maxResults: 2 }
-                        }
-                    }
-                },
-                query: realtimeQuery,
-                logger: silentLogger
-            });
-            assert.equal('reply' in grounding, false, realtimeQuery);
-            assert.equal('response' in grounding, false, realtimeQuery);
-            assert.match(grounding.message, /检索结果/, realtimeQuery);
-            assert.ok(Array.isArray(grounding.results), realtimeQuery);
-            assert.ok(grounding.resultCount > 0, realtimeQuery);
-        }
+        // 天气/汇率：只向模型返回数据，不得替模型输出最终回答
+        const weather = await toolContext.handlers.get_weather({ location: '北京', days: 2 });
+        assert.equal(weather.ok, true);
+        assert.equal(weather.source, 'duckduckgo_weather');
+        assert.match(weather.summary, /北京/);
+        assert.equal('reply' in weather, false);
+        assert.equal('response' in weather, false);
 
-        assert.ok(fetchCalls.some((url) => url.includes('api.duckduckgo.com')));
-        assert.ok(fetchCalls.some((url) => url.includes('wttr.in')));
-        assert.ok(fetchCalls.some((url) => url.includes('api.rss2json.com')));
-        assert.ok(fetchCalls.some((url) => url.includes('open.er-api.com')));
+        const currency = await toolContext.handlers.convert_currency({ from: 'USD', to: 'CNY', amount: 1 });
+        assert.equal(currency.ok, true);
+        assert.equal(currency.source, 'duckduckgo_currency');
+        assert.ok(currency.rate > 0);
+        assert.equal('reply' in currency, false);
+
+        // 页面正文读取：只返回正文数据
+        const page = await toolContext.handlers.web_fetch({ url: 'https://example.test/article', maxChars: 800 });
+        assert.equal(page.ok, true);
+        assert.match(page.text, /正文/);
+        assert.equal('reply' in page, false);
+
+        assert.ok(fetchCalls.some((url) => url.includes('html.duckduckgo.com')));
+        assert.ok(fetchCalls.some((url) => url.includes('/news.js')));
+        assert.ok(fetchCalls.some((url) => url.includes('/js/spice/forecast/')));
+        assert.ok(fetchCalls.some((url) => url.includes('/js/spice/currency/')));
     } finally {
         globalThis.fetch = originalFetch;
     }
@@ -536,6 +560,15 @@ test('runtime code no longer exposes realtime direct-answer bypass', () => {
         assert.doesNotMatch(source, /generateRealtimeAnswer/);
         assert.doesNotMatch(source, /buildDirectRealtimeResponse/);
         assert.doesNotMatch(source, /realtime_bypass/);
+        assert.doesNotMatch(source, /buildRealtimeGroundingMessage/);
+        assert.doesNotMatch(source, /matchRealtimeIntent/);
+    }
+
+    // 旧的程序直答数据源（wttr.in / rss2json / er-api）不再被运行时引用
+    for (const source of [indexSource, routesSource, toolsSource]) {
+        assert.doesNotMatch(source, /wttr\.in/);
+        assert.doesNotMatch(source, /rss2json/);
+        assert.doesNotMatch(source, /open\.er-api/);
     }
 });
 

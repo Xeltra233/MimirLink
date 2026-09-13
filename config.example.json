@@ -17,6 +17,15 @@
     "logCleanupIntervalMs": 3600000,
     "trustProxy": true
   },
+  "mcp": {
+    "enabled": true,
+    "path": "/mcp",
+    "client": {
+      "enabled": false,
+      "maxResultChars": 4000,
+      "servers": []
+    }
+  },
   "onebot": {
     "url": "ws://127.0.0.1:3001",
     "accessToken": "",
@@ -52,15 +61,32 @@
       "webSearch": {
         "enabled": false,
         "provider": "duckduckgo",
-        "apiKey": "",
-        "googleEngineId": "",
-        "bingEndpoint": "",
+        "fallbackProviders": [],
+        "apiKeys": {
+          "tavily": "",
+          "brave": "",
+          "serpapi": ""
+        },
+        "searxngBaseUrl": "",
+        "searxngEngines": "",
+        "region": "cn-zh",
+        "locale": "zh-cn",
+        "safeSearch": "moderate",
+        "timeRange": "all",
         "maxResults": 5,
         "timeoutMs": 10000,
         "maxSnippetLength": 800,
         "allowedDomains": [],
         "blockedDomains": [],
-        "fallbackEnabled": false
+        "fetch": {
+          "enabled": true,
+          "timeoutMs": 15000,
+          "maxChars": 8000
+        },
+        "spice": {
+          "enabled": true,
+          "weatherDays": 3
+        }
       },
       "textToolFallback": {
         "enabled": false,
