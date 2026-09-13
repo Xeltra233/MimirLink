@@ -12,12 +12,14 @@ import (
 
 	"mimirlink/internal/ai"
 	"mimirlink/internal/config"
+	"mimirlink/internal/mcp"
 	"mimirlink/internal/search"
 )
 
 // Registry 持有工具实现。
 type Registry struct {
 	search *search.Service
+	mcp    *mcp.Client
 	logger *log.Logger
 }
 
@@ -29,13 +31,37 @@ func New(service *search.Service, logger *log.Logger) *Registry {
 	return &Registry{search: service, logger: logger}
 }
 
+// AttachMCP 挂载 MCP 客户端（其工具会一并暴露给模型）。
+func (r *Registry) AttachMCP(client *mcp.Client) { r.mcp = client }
+
 // Definitions 返回当前可用工具定义。
 func (r *Registry) Definitions() []ai.ToolDefinition {
 	definitions := []ai.ToolDefinition{}
 	if r.search != nil && r.search.Enabled() {
 		definitions = append(definitions, buildSearchToolDefinition(), buildFetchToolDefinition())
 	}
+	if r.mcp != nil {
+		for _, item := range r.mcp.Definitions() {
+			definitions = append(definitions, convertMCPDefinition(item))
+		}
+	}
 	return definitions
+}
+
+// convertMCPDefinition 把 MCP 工具定义转成 ai.ToolDefinition。
+func convertMCPDefinition(item mcp.ToolDefinition) ai.ToolDefinition {
+	definition := ai.ToolDefinition{Type: "function"}
+	definition.Function.Name = item.Name
+	if function, ok := item.Definition["function"].(map[string]any); ok {
+		definition.Function.Description = fmt.Sprintf("%v", function["description"])
+		if parameters, ok := function["parameters"].(map[string]any); ok {
+			definition.Function.Parameters = parameters
+		}
+	}
+	if definition.Function.Parameters == nil {
+		definition.Function.Parameters = map[string]any{"type": "object", "properties": map[string]any{}}
+	}
+	return definition
 }
 
 // Names 返回工具名列表（用于日志）。
@@ -72,8 +98,27 @@ func (r *Registry) dispatch(ctx context.Context, name string, rawArguments strin
 	case "web_fetch":
 		return r.webFetch(ctx, arguments)
 	default:
+		if strings.HasPrefix(name, "mcp__") {
+			return r.callMCP(ctx, name, arguments)
+		}
 		return "", fmt.Errorf("未知工具: %s", name)
 	}
+}
+
+// callMCP 调用 MCP 工具（按暴露给模型的函数名反查归属）。
+func (r *Registry) callMCP(ctx context.Context, functionName string, arguments map[string]any) (string, error) {
+	if r.mcp == nil {
+		return "", fmt.Errorf("MCP 未启用")
+	}
+	definition, ok := r.mcp.Lookup(functionName)
+	if !ok {
+		return "", fmt.Errorf("未找到 MCP 工具: %s", functionName)
+	}
+	text, err := r.mcp.CallTool(ctx, definition.ServerID, definition.ToolName, arguments)
+	if err != nil {
+		return "", fmt.Errorf("[MCP:%s] %s", definition.ServerName, err.Error())
+	}
+	return text, nil
 }
 
 func (r *Registry) webSearch(ctx context.Context, arguments map[string]any) (string, error) {

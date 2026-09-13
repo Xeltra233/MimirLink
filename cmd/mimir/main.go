@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -27,6 +28,7 @@ import (
 	"mimirlink/internal/chat"
 	"mimirlink/internal/config"
 	"mimirlink/internal/datacheck"
+	"mimirlink/internal/mcp"
 	"mimirlink/internal/onebot"
 	"mimirlink/internal/panel"
 	"mimirlink/internal/search"
@@ -57,6 +59,9 @@ func main() {
 		recallScope = flag.String("recall-scope", "global_shared", "召回命名空间 scopeType")
 		recallKey   = flag.String("recall-key", "global_shared_memory", "召回命名空间 scopeKey")
 		recallChar  = flag.String("recall-character", "", "召回命名空间角色名")
+		mcpList     = flag.Bool("mcp-list", false, "连接配置里的 MCP 服务器并列出工具")
+		mcpCall     = flag.String("mcp-call", "", "调用指定 MCP 工具（函数名）")
+		mcpArgs     = flag.String("mcp-args", "{}", "MCP 工具参数（JSON）")
 		port        = flag.Int("port", 0, "覆盖监听端口（默认取 config.server.port）")
 		showVer     = flag.Bool("version", false, "输出版本")
 	)
@@ -70,6 +75,11 @@ func main() {
 	absoluteRoot, err := filepath.Abs(*rootDir)
 	if err != nil {
 		fail("解析根目录失败: %v", err)
+	}
+
+	if *mcpList || *mcpCall != "" {
+		runMCPProbe(absoluteRoot, *mcpCall, *mcpArgs)
+		return
 	}
 
 	if *recallDB != "" {
@@ -174,6 +184,8 @@ func main() {
 		fmt.Println("  -search <关键词>          执行一次搜索并打印结果（可加 -search-limit）")
 		fmt.Println("  -search-fetch <网址>      抓取网页正文（验证用）")
 		fmt.Println("  -recall <记忆库>          对记忆库执行召回并输出 JSON（可加 -recall-query/-recall-character）")
+		fmt.Println("  -mcp-list                连接配置里的 MCP 服务器并列出工具")
+		fmt.Println("  -mcp-call <工具名>        调用 MCP 工具（可加 -mcp-args）")
 		fmt.Println("  -version                 输出版本")
 		return
 	}
@@ -237,6 +249,67 @@ func servePanel(rootDir string, portOverride int) error {
 	}
 	fmt.Println("面板已停止")
 	return nil
+}
+
+func runMCPProbe(rootDir string, callName string, callArgs string) {
+	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	if err != nil {
+		fail("读取配置失败: %v", err)
+	}
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+	var raw map[string]any
+	if err := json.Unmarshal(document.Raw(), &raw); err != nil {
+		fail("解析配置失败: %v", err)
+	}
+	mcpSection, _ := raw["mcp"].(map[string]any)
+	clientConfig := mcp.LoadConfig(mcpSection)
+	fmt.Printf("启用: %v | 服务器: %d 个 | 结果上限: %d 字\n", clientConfig.Enabled, len(clientConfig.Servers), clientConfig.MaxResultChars)
+	if !clientConfig.Enabled {
+		fmt.Println("提示：mcp.client.enabled 为 false，未连接任何服务器")
+		return
+	}
+	client := mcp.New(clientConfig, logger)
+	client.ConnectAll(context.Background())
+	defer client.Close()
+	definitions := client.Definitions()
+	if callName != "" {
+		arguments := map[string]any{}
+		if err := json.Unmarshal([]byte(callArgs), &arguments); err != nil {
+			fail("参数不是合法 JSON: %v", err)
+		}
+		definition, ok := client.Lookup(callName)
+		if !ok {
+			fail("找不到工具: %s（可用 -mcp-list 查看）", callName)
+		}
+		startedAt := time.Now()
+		text, err := client.CallTool(context.Background(), definition.ServerID, definition.ToolName, arguments)
+		if err != nil {
+			fail("调用失败（%dms）: %v", time.Since(startedAt).Milliseconds(), err)
+		}
+		fmt.Printf("调用 %s（%s/%s）用时 %dms，返回 %d 字：\n%s\n",
+			callName, definition.ServerName, definition.ToolName,
+			time.Since(startedAt).Milliseconds(), len([]rune(text)), truncateText(text, 800))
+		return
+	}
+	fmt.Printf("\n可用工具: %d 个\n", len(definitions))
+	for _, item := range definitions {
+		description := ""
+		if function, ok := item.Definition["function"].(map[string]any); ok {
+			description = fmt.Sprintf("%v", function["description"])
+		}
+		paramNames := []string{}
+		if function, ok := item.Definition["function"].(map[string]any); ok {
+			if parameters, ok := function["parameters"].(map[string]any); ok {
+				if properties, ok := parameters["properties"].(map[string]any); ok {
+					for key := range properties {
+						paramNames = append(paramNames, key)
+					}
+					sort.Strings(paramNames)
+				}
+			}
+		}
+		fmt.Printf("  %-40s [%s] 参数(%s) %s\n", item.Name, item.ServerName, strings.Join(paramNames, ","), truncateText(description, 50))
+	}
 }
 
 func runRecallProbe(dbPath string, query string, scopeType string, scopeKey string, character string) {
@@ -345,6 +418,23 @@ func runBot(rootDir string) error {
 	searchConfig := tools.LoadSearchConfig(document)
 	searchService := search.New(searchConfig, logger)
 	toolRegistry := tools.New(searchService, logger)
+
+	// MCP 客户端（stdio / http）
+	var mcpRaw map[string]any
+	if err := json.Unmarshal(document.Raw(), &mcpRaw); err == nil {
+		if mcpSection, ok := mcpRaw["mcp"].(map[string]any); ok {
+			mcpConfig := mcp.LoadConfig(mcpSection)
+			if mcpConfig.Enabled && len(mcpConfig.Servers) > 0 {
+				mcpClient := mcp.New(mcpConfig, logger)
+				mcpClient.ConnectAll(context.Background())
+				toolRegistry.AttachMCP(mcpClient)
+				defer mcpClient.Close()
+				logger.Printf("MCP: 已启用（%d 个服务器配置）", len(mcpConfig.Servers))
+			} else {
+				logger.Println("MCP: 未启用（mcp.client.enabled=false 或没有服务器）")
+			}
+		}
+	}
 	if searchConfig.Enabled {
 		logger.Printf("联网搜索: 已启用（provider=%s，回退=%v，最多 %d 条）",
 			searchConfig.Provider, searchConfig.FallbackProviders, searchConfig.MaxResults)
@@ -402,4 +492,13 @@ func splitCategories(raw string) []string {
 func fail(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", args...)
 	os.Exit(1)
+}
+
+// truncateText 截断展示文本。
+func truncateText(text string, limit int) string {
+	runes := []rune(text)
+	if len(runes) <= limit {
+		return text
+	}
+	return string(runes[:limit]) + "…"
 }
