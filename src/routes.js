@@ -2191,16 +2191,30 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 req.on('error', reject);
             });
 
-            // === 恢复前自动备份 ===
+            // === 恢复前自动备份 ===（快照当前配置与数据，用于恢复失败/误恢复时回滚）
             const autoBackupDir = path.join(__dirname, '..', 'data', 'restore-backups');
             fsSync.mkdirSync(autoBackupDir, { recursive: true });
             const autoBackupFile = `pre-restore-${new Date().toISOString().replace(/[:.]/g, '-')}.tar.gz`;
             const { pack } = await import('tar-fs');
             const { createGzip } = await import('zlib');
             const dataDir = config.chat?.dataDir || path.join(__dirname, '..', 'data');
-            fsSync.writeFileSync(path.join(tmpDir, '_current_config.json'), JSON.stringify(config, null, 2), 'utf8');
-            const autoStream = pack(tmpDir).pipe(createGzip()).pipe(fsSync.createWriteStream(path.join(autoBackupDir, autoBackupFile)));
-
+            const preRestoreTmp = path.join(dataDir, '_pre_restore_tmp');
+            fsSync.rmSync(preRestoreTmp, { recursive: true, force: true });
+            fsSync.mkdirSync(preRestoreTmp, { recursive: true });
+            fsSync.writeFileSync(path.join(preRestoreTmp, 'config.json'), JSON.stringify(config, null, 2), 'utf8');
+            try { sessionManager.checkpoint?.(); } catch {}
+            copyDirSync(dataDir, path.join(preRestoreTmp, 'data'), new Set([
+                '_backup_tmp', '_inspect_tmp', '_restore_tmp', '_pre_restore_tmp', 'restore-backups'
+            ]));
+            await new Promise((resolve, reject) => {
+                const autoStream = pack(preRestoreTmp)
+                    .pipe(createGzip())
+                    .pipe(fsSync.createWriteStream(path.join(autoBackupDir, autoBackupFile)));
+                autoStream.on('finish', resolve);
+                autoStream.on('error', reject);
+            });
+            fsSync.rmSync(preRestoreTmp, { recursive: true, force: true });
+            logger.info(`[恢复] 恢复前快照已生成: ${autoBackupFile}`);
             // 读取备份中的 config.json
             if (categories.has('config')) {
                 const backupConfigPath = path.join(tmpDir, 'config.json');
@@ -2381,8 +2395,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
             }
 
-            // 清理
-            await new Promise(r => autoStream.on('finish', r));
+            // 清理（恢复前快照已在流程开始时同步等待写入完成）
             fsSync.rmSync(tmpDir, { recursive: true, force: true });
             characterManager.clearCache?.();
             if (categories.has('config')) applyRuntimeConfig();

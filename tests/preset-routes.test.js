@@ -2134,7 +2134,8 @@ test('memory-only restore writes chat database files and reports restored memory
             'wal-memory'
         );
         assert.equal(existsSync(join(tmpRoot, 'data', 'chats', 'characters', 'test.sqlite-shm')), false);
-        assert.equal(checkpointCount, 1);
+        // 快照前（保证 WAL 落盘）+ 恢复记忆库前各 checkpoint 一次
+        assert.equal(checkpointCount, 2);
         assert.equal(closeCount, 1);
         assert.equal(setConfigCount, 1);
     } finally {

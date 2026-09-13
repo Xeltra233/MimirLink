@@ -12311,8 +12311,7 @@
                         </div>
                         <div class="form-group">
                             <label>工具调用轮次上限</label>
-                            <input type="number" id="config-chat-max-tool-rounds" placeholder="0" min="0" max="50">
-                            <p class="hint-text">0 = 不限</p>
+                            <input type="number" id="config-chat-max-tool-rounds" placeholder="不限" min="1" max="50">
                         </div>
                     </div>
                     </div>
@@ -12775,7 +12774,7 @@
                             </div>
                             <div class="form-group">
                                 <label>指定 MCP 服务器</label>
-                                <input type="text" id="config-search-mcp-fallback-server" placeholder="留空自动选择">
+                                <input type="text" id="config-search-mcp-fallback-server" placeholder="自动">
                             </div>
                         </div>
                     </div>
@@ -21316,7 +21315,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-group-repeat-cooldown-minutes').value = Math.max(1, Math.round((currentConfig.chat?.groupRepeat?.cooldownMs ?? 180000) / 60000));
                 updateGroupRepeatFields();
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
-                document.getElementById('config-chat-max-tool-rounds').value = currentConfig.chat?.maxToolRounds || 0;
+                document.getElementById('config-chat-max-tool-rounds').value = currentConfig.chat?.maxToolRounds > 0 ? currentConfig.chat.maxToolRounds : '';
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
                 document.getElementById('config-chat-chain-leak-retry-enabled').checked = currentConfig.chat?.chainLeakRetry?.enabled !== false;
@@ -21794,7 +21793,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         maxRetries: parseInt(document.getElementById('config-chat-empty-retry-max').value) || 2,
                         delayMs: parseInt(document.getElementById('config-chat-empty-retry-delay').value) || 800
                     },
-                    maxToolRounds: Math.max(0, parseInt(document.getElementById('config-chat-max-tool-rounds').value, 10) || 0),
+                    maxToolRounds: Math.max(0, parseInt(document.getElementById('config-chat-max-tool-rounds').value, 10) || 0), // 留空 = 不限
                     chainLeakRetry: {
                         enabled: document.getElementById('config-chat-chain-leak-retry-enabled').checked,
                         maxRetries: readIntegerInput('config-chat-chain-leak-retry-max', 1),
