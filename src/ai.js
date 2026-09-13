@@ -1148,7 +1148,11 @@ export class AIClient {
         let conversation = Array.isArray(messages) ? messages.map((message) => ({ ...message })) : [];
         let effectiveOverrides = { ...overrides };
 
-        for (let round = 0; round < 4; round += 1) {
+        // 轮次上限：默认不限（对齐 AstrBot enforce_max_turns = -1），仅当配置为正整数时生效
+        const configuredRounds = Number(this.config?.chat?.maxToolRounds);
+        const maxToolRounds = Number.isFinite(configuredRounds) && configuredRounds > 0 ? Math.floor(configuredRounds) : 0;
+
+        for (let round = 0; maxToolRounds === 0 || round < maxToolRounds; round += 1) {
             const payload = this.buildToolsChatPayload(conversation, tools, effectiveOverrides);
             let requestPayload = payload;
             this.logPipelineStage('开始执行 chatWithTools', {
@@ -1244,6 +1248,22 @@ export class AIClient {
                     content: JSON.stringify(toolResult, null, 2)
                 });
             }
+        }
+
+        // 达到配置的上限：不报错，改为让模型基于已有信息收尾（移植 AstrBot MAX_STEPS_REACHED_PROMPT）
+        if (maxToolRounds > 0) {
+            this.logPipelineStage('chatWithTools 达到配置的工具轮次上限，转为收尾汇总', {
+                rounds: maxToolRounds,
+                toolCallCount: conversation.filter((message) => message.role === 'tool').length
+            });
+            return this.chat(
+                [...conversation, {
+                    role: 'system',
+                    content: '本轮已达到工具调用上限。不要再调用工具，请基于已经拿到的信息直接总结并回复用户。',
+                    meta: { source: 'tool_round_limit' }
+                }],
+                effectiveOverrides
+            );
         }
 
         throw new Error('工具调用轮次过多，已停止继续请求');

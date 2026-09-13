@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { runSearch, normalizeWebSearchConfig, listSearchProviders } from '../src/search/index.js';
+import { runSearch, normalizeWebSearchConfig, listSearchProviders, resetProviderHealth } from '../src/search/index.js';
 
 const silentLogger = { info() {}, warn() {}, error() {}, debug() {} };
+
+test.beforeEach(() => {
+    resetProviderHealth();
+});
 
 function jsonResponse(body, status = 200, contentType = 'application/json') {
     const text = typeof body === 'string' ? body : JSON.stringify(body);
@@ -101,6 +105,7 @@ test('SearXNG provider 映射结果并在未开启 JSON 时给出明确错误', 
         assert.equal(result.results[1].snippet, '摘要 二');
     });
 
+    resetProviderHealth();
     await withMockFetch((parsed) => {
         if (parsed.pathname === '/search') {
             return jsonResponse('<html>forbidden</html>', 403, 'text/html');
@@ -117,6 +122,7 @@ test('SearXNG provider 映射结果并在未开启 JSON 时给出明确错误', 
         );
     });
 
+    resetProviderHealth();
     await withMockFetch((parsed) => {
         if (parsed.pathname === '/search') {
             return jsonResponse('<html>no json</html>', 200, 'text/html');

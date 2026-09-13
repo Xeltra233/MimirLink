@@ -12302,14 +12302,19 @@
                     <div class="config-subsection">
                         <div class="config-subsection-title">AI 工具</div>
                         <div class="config-subgrid">
-                            <div class="form-group">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="config-ai-tool-send-mention-enabled">
-                                    启用 AI 主动 @ 工具
-                                </label>
-                                <p class="hint-text">在需要代办或转告时由模型调用，禁止 @all。</p>
-                            </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="config-ai-tool-send-mention-enabled">
+                                启用 AI 主动 @ 工具
+                            </label>
+                            <p class="hint-text">在需要代办或转告时由模型调用，禁止 @all。</p>
                         </div>
+                        <div class="form-group">
+                            <label>工具调用轮次上限</label>
+                            <input type="number" id="config-chat-max-tool-rounds" placeholder="0" min="0" max="50">
+                            <p class="hint-text">0 = 不限</p>
+                        </div>
+                    </div>
                     </div>
                 </div>
                 </div>
@@ -12759,6 +12764,18 @@
                             <div class="form-group">
                                 <label>天气预报天数</label>
                                 <input type="number" id="config-search-weather-days" placeholder="3" min="1" max="7">
+                            </div>
+                            <div class="form-group">
+                                <label>失败时用 MCP 搜索兜底</label>
+                                <select id="config-search-mcp-fallback">
+                                    <option value="auto">自动</option>
+                                    <option value="off">关闭</option>
+                                    <option value="server">指定服务器</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>指定 MCP 服务器</label>
+                                <input type="text" id="config-search-mcp-fallback-server" placeholder="留空自动选择">
                             </div>
                         </div>
                     </div>
@@ -20837,7 +20854,16 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                     enabled: document.getElementById('config-search-spice-enabled')?.checked !== false,
                     weatherDays: parseInt(document.getElementById('config-search-weather-days')?.value, 10) || 3
                 }
+                ,
+                mcpFallback: readMcpFallbackValue(),
+                mcpFallbackMaxChars: currentConfig?.ai?.tools?.webSearch?.mcpFallbackMaxChars ?? 4000
             };
+        }
+
+        function readMcpFallbackValue() {
+            const mode = document.getElementById('config-search-mcp-fallback')?.value || 'auto';
+            if (mode !== 'server') return mode;
+            return document.getElementById('config-search-mcp-fallback-server')?.value.trim() || 'auto';
         }
 
         async function testWebSearchProvider() {
@@ -21290,6 +21316,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-chat-group-repeat-cooldown-minutes').value = Math.max(1, Math.round((currentConfig.chat?.groupRepeat?.cooldownMs ?? 180000) / 60000));
                 updateGroupRepeatFields();
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
+                document.getElementById('config-chat-max-tool-rounds').value = currentConfig.chat?.maxToolRounds || 0;
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
                 document.getElementById('config-chat-chain-leak-retry-enabled').checked = currentConfig.chat?.chainLeakRetry?.enabled !== false;
@@ -21346,6 +21373,10 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 document.getElementById('config-search-fetch-max-chars').value = searchConfig.fetch?.maxChars ?? 8000;
                 document.getElementById('config-search-spice-enabled').checked = searchConfig.spice?.enabled !== false;
                 document.getElementById('config-search-weather-days').value = searchConfig.spice?.weatherDays ?? 3;
+                const fallbackValue = searchConfig.mcpFallback || 'auto';
+                const fallbackKnown = fallbackValue === 'auto' || fallbackValue === 'off';
+                document.getElementById('config-search-mcp-fallback').value = fallbackKnown ? fallbackValue : 'server';
+                document.getElementById('config-search-mcp-fallback-server').value = fallbackKnown ? '' : fallbackValue;
                 document.getElementById('config-mcp-client-enabled').checked = currentConfig.mcp?.client?.enabled === true;
                 document.getElementById('config-mcp-max-result-chars').value = currentConfig.mcp?.client?.maxResultChars ?? 4000;
                 document.getElementById('config-ai-tool-send-mention-enabled').checked = currentConfig.ai?.tools?.sendMention?.enabled === true;
@@ -21693,6 +21724,9 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                                     enabled: document.getElementById('config-search-spice-enabled').checked,
                                     weatherDays: parseInt(document.getElementById('config-search-weather-days').value, 10) || 3
                                 }
+                                ,
+                                mcpFallback: readMcpFallbackValue(),
+                                mcpFallbackMaxChars: currentConfig?.ai?.tools?.webSearch?.mcpFallbackMaxChars ?? 4000
                             };
                         })(),
                         sendMention: {
@@ -21760,6 +21794,7 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         maxRetries: parseInt(document.getElementById('config-chat-empty-retry-max').value) || 2,
                         delayMs: parseInt(document.getElementById('config-chat-empty-retry-delay').value) || 800
                     },
+                    maxToolRounds: Math.max(0, parseInt(document.getElementById('config-chat-max-tool-rounds').value, 10) || 0),
                     chainLeakRetry: {
                         enabled: document.getElementById('config-chat-chain-leak-retry-enabled').checked,
                         maxRetries: readIntegerInput('config-chat-chain-leak-retry-max', 1),

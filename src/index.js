@@ -559,6 +559,10 @@ function normalizeConfig(config) {
         delayMs: clampInteger(emptyReplyRetry.delayMs, 0, 10000, 800)
     };
 
+    // 工具调用轮次上限：0 = 不限（默认），仅显式配置正整数时生效
+    const maxToolRounds = Number(config.chat.maxToolRounds);
+    config.chat.maxToolRounds = Number.isFinite(maxToolRounds) && maxToolRounds > 0 ? Math.floor(maxToolRounds) : 0;
+
     const chainLeakRetry = config.chat.chainLeakRetry || {};
     config.chat.chainLeakRetry = {
         enabled: chainLeakRetry.enabled !== false,

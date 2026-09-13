@@ -498,6 +498,83 @@ function buildToolHints(config = {}) {
 
 // ==================== 工具上下文 ====================
 
+/** MCP 搜索兜底：本地 provider 全挂时，自动改用一个 MCP 搜索引擎工具（可配置关闭/指定服务器） */
+const MCP_SEARCH_TOOL_PREFERENCE = ['search', 'fast_search', 'any_search', 'mega_search'];
+
+function pickMcpSearchCandidates(definitions = [], target = 'auto') {
+    const wanted = String(target || 'auto').trim();
+    return definitions
+        .filter((item) => {
+            if (wanted === 'off') return false;
+            if (wanted !== 'auto' && wanted !== '1') {
+                const matchesServer = String(item?.serverName || '') === wanted || String(item?.serverId || '') === wanted;
+                if (!matchesServer) return false;
+            }
+            return /search/i.test(String(item?.toolName || item?.name || ''));
+        })
+        .sort((left, right) => {
+            const rank = (item) => {
+                const index = MCP_SEARCH_TOOL_PREFERENCE.indexOf(String(item?.toolName || ''));
+                return index >= 0 ? index : MCP_SEARCH_TOOL_PREFERENCE.length;
+            };
+            return rank(left) - rank(right);
+        });
+}
+
+async function tryMcpSearchFallback({ query, target, mcpClient, logger, maxChars = 4000 }) {
+    if (!mcpClient || typeof mcpClient.getToolDefinitions !== 'function' || typeof mcpClient.callTool !== 'function') {
+        return null;
+    }
+    const candidates = pickMcpSearchCandidates(mcpClient.getToolDefinitions(), target).slice(0, 2);
+    for (const candidate of candidates) {
+        const startedAt = Date.now();
+        try {
+            logger?.info?.('[工具] web_search 本地链路失败，改用 MCP 搜索兜底', {
+                server: candidate.serverName,
+                tool: candidate.toolName,
+                query: summarizeText(query)
+            });
+            const result = await mcpClient.callTool({
+                serverId: candidate.serverId,
+                tool: candidate.toolName,
+                arguments: { text: query }
+            });
+            if (result?.ok) {
+                const text = String(result.text || '').slice(0, maxChars);
+                logger?.info?.('[工具] MCP 搜索兜底成功', {
+                    server: candidate.serverName,
+                    tool: candidate.toolName,
+                    durationMs: Date.now() - startedAt,
+                    chars: text.length
+                });
+                return {
+                    ok: true,
+                    provider: 'mcp',
+                    source: `mcp:${candidate.serverName}:${candidate.toolName}`,
+                    query,
+                    resultCount: 0,
+                    results: [],
+                    text,
+                    note: '本地搜索链路失败，以下为 MCP 搜索工具返回的原始文本'
+                };
+            }
+            logger?.warn?.('[工具] MCP 搜索兜底失败', {
+                server: candidate.serverName,
+                tool: candidate.toolName,
+                durationMs: Date.now() - startedAt,
+                error: result?.error || '未知错误'
+            });
+        } catch (error) {
+            logger?.warn?.('[工具] MCP 搜索兜底异常', {
+                server: candidate.serverName,
+                tool: candidate.toolName,
+                error: error?.message || String(error)
+            });
+        }
+    }
+    return null;
+}
+
 export function buildAIToolContext({
     config = {},
     aiClient,
@@ -576,6 +653,17 @@ export function buildAIToolContext({
                     error: error.message,
                     attempts: error.attempts || []
                 });
+                // 本地 provider 全挂时，按配置改用 MCP 搜索工具兜底
+                const mcpFallbackResult = await tryMcpSearchFallback({
+                    query,
+                    target: webSearchConfig.mcpFallback,
+                    mcpClient,
+                    logger,
+                    maxChars: webSearchConfig.mcpFallbackMaxChars
+                });
+                if (mcpFallbackResult) {
+                    return { ...mcpFallbackResult, attempts: error.attempts || [] };
+                }
                 return {
                     ok: false,
                     error: error.code === 'SEARCH_EMPTY' ? '未找到合适的搜索结果' : `搜索失败: ${error.message}`,

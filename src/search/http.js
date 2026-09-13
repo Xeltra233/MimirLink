@@ -55,6 +55,7 @@ function buildAbortError(message, code) {
 /**
  * 发起请求并返回文本响应。
  * 超时/外部中止都会抛出 name=AbortError 的错误，code 区分 timeout / aborted。
+ * 对 429/5xx/网络错误默认重试 1 次（500ms ×2 + 抖动），可用 options.retry 调整。
  */
 export async function requestText(url, options = {}) {
     const {
@@ -67,36 +68,58 @@ export async function requestText(url, options = {}) {
         redirect = 'follow'
     } = options;
 
-    const timeoutController = new AbortController();
-    const timer = setTimeout(() => timeoutController.abort(buildAbortError('请求超时', 'timeout')), Math.max(500, Number(timeoutMs) || 10000));
-    const combined = combineSignals([signal, timeoutController.signal]);
+    const retryOptions = options.retry === false ? null : (options.retry || {});
+    const maxAttempts = retryOptions
+        ? Math.max(1, Math.min(3, Number(retryOptions.attempts) || 2))
+        : 1;
+    const backoffBase = Math.max(0, Number(retryOptions?.backoffMs ?? 500));
+    const shouldRetryStatus = (status) => status === 429 || (status >= 500 && status <= 599);
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    try {
-        const response = await fetch(url, {
-            method,
-            headers: { ...BROWSER_HEADERS, ...headers },
-            body,
-            signal: combined,
-            redirect
-        });
-        const rawText = await response.text();
-        const truncated = rawText.length > maxBytes;
-        return {
-            status: response.status,
-            ok: response.ok,
-            text: truncated ? rawText.slice(0, maxBytes) : rawText,
-            truncated,
-            url: response.url || String(url),
-            headers: response.headers
-        };
-    } catch (error) {
-        if (error?.name === 'AbortError' && !error.code) {
-            throw buildAbortError('请求已中止', 'aborted');
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const timeoutController = new AbortController();
+        const timer = setTimeout(() => timeoutController.abort(buildAbortError('请求超时', 'timeout')), Math.max(500, Number(timeoutMs) || 10000));
+        const combined = combineSignals([signal, timeoutController.signal]);
+
+        try {
+            const response = await fetch(url, {
+                method,
+                headers: { ...BROWSER_HEADERS, ...headers },
+                body,
+                signal: combined,
+                redirect
+            });
+            const rawText = await response.text();
+            const truncated = rawText.length > maxBytes;
+            const result = {
+                status: response.status,
+                ok: response.ok,
+                text: truncated ? rawText.slice(0, maxBytes) : rawText,
+                truncated,
+                url: response.url || String(url),
+                headers: response.headers,
+                attempts: attempt
+            };
+            if (attempt < maxAttempts && shouldRetryStatus(result.status)) {
+                await sleep(backoffBase * 2 ** (attempt - 1) + Math.floor(Math.random() * 250));
+                continue;
+            }
+            return result;
+        } catch (error) {
+            const abortedByCaller = signal?.aborted === true || (error?.name === 'AbortError' && error.code === 'aborted');
+            if (!abortedByCaller && attempt < maxAttempts) {
+                await sleep(backoffBase * 2 ** (attempt - 1) + Math.floor(Math.random() * 250));
+                continue;
+            }
+            if (error?.name === 'AbortError' && !error.code) {
+                throw buildAbortError('请求已中止', 'aborted');
+            }
+            throw error;
+        } finally {
+            clearTimeout(timer);
         }
-        throw error;
-    } finally {
-        clearTimeout(timer);
     }
+    throw buildAbortError('请求失败', 'aborted');
 }
 
 /** 发起请求并解析 JSON，失败时抛出带状态码的错误 */
