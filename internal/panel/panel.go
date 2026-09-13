@@ -12,6 +12,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,9 @@ import (
 	"mimirlink/internal/config"
 	"mimirlink/internal/store"
 )
+
+// Version 是面板版本号（与 CLI 保持一致）。
+const Version = "0.1.0-dev"
 
 // Options 是面板服务的依赖。
 type Options struct {
@@ -37,6 +41,8 @@ type Server struct {
 	auth      *auth.Manager
 	publicDir string
 	mux       *http.ServeMux
+	dataDir   string
+	startedAt time.Time
 }
 
 // NewServer 构建面板服务。
@@ -53,9 +59,11 @@ func NewServer(options Options) (*Server, error) {
 		rootDir:   options.RootDir,
 		document:  document,
 		logger:    logger,
-		publicDir: filepath.Join(options.RootDir, "public"),
+		publicDir: resolvePublicDir(document, options.RootDir),
 		mux:       http.NewServeMux(),
+		startedAt: time.Now(),
 	}
+	server.dataDir = server.DataDir()
 	server.auth = auth.NewManager(auth.Options{
 		Enabled:     document.Bool("auth.enabled"),
 		Username:    document.String("auth.username"),
@@ -64,7 +72,34 @@ func NewServer(options Options) (*Server, error) {
 		ShortHours:  int(document.Int("auth.shortSessionHours", 12)),
 	})
 	server.registerRoutes()
+	server.registerExtendedRoutes()
 	return server, nil
+}
+
+// resolvePublicDir 依次尝试：配置指定 → <root>/public → 可执行文件同目录/上级目录的 public。
+// 部署时二进制常与数据目录分离，这里保证两者都能找到前端资源。
+func resolvePublicDir(document *config.Document, rootDir string) string {
+	if configured := strings.TrimSpace(document.String("server.publicDir")); configured != "" {
+		if filepath.IsAbs(configured) {
+			return configured
+		}
+		return filepath.Join(rootDir, configured)
+	}
+	candidates := []string{filepath.Join(rootDir, "public")}
+	if executable, err := os.Executable(); err == nil {
+		execDir := filepath.Dir(executable)
+		candidates = append(candidates,
+			filepath.Join(execDir, "public"),
+			filepath.Join(execDir, "..", "public"),
+			filepath.Join(execDir, "..", "..", "public"),
+		)
+	}
+	for _, candidate := range candidates {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return candidates[0]
 }
 
 // Handler 返回可直接挂到 http.Server 的处理器。
@@ -324,23 +359,87 @@ func (s *Server) memoryDatabases() ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	bindings := s.memoryBindings()
 	items := make([]map[string]any, 0, len(paths))
 	for _, path := range paths {
-		item := map[string]any{"path": path, "sizeBytes": int64(0), "updatedAt": int64(0), "stats": map[string]any{}}
+		item := map[string]any{
+			"path":      path,
+			"sizeBytes": int64(0),
+			"updatedAt": int64(0),
+			"bindings":  bindings[path],
+			"stats": map[string]any{
+				"totalSessions": int64(0), "totalMessages": int64(0), "totalSummaries": int64(0),
+			},
+		}
+		if item["bindings"] == nil {
+			item["bindings"] = []map[string]any{}
+		}
 		if info, err := os.Stat(path); err == nil {
 			item["sizeBytes"] = info.Size()
 			item["updatedAt"] = info.ModTime().UnixMilli()
+		} else {
+			item["missing"] = true
 		}
 		handle, err := store.OpenReadOnly(path)
 		if err == nil {
 			if counts, err := handle.Counts(); err == nil {
-				item["stats"] = counts
+				// 键名对齐 Node（前端读取 totalSessions / totalMessages / totalSummaries）
+				item["stats"] = map[string]any{
+					"totalSessions":       counts.Sessions,
+					"totalMessages":       counts.Messages,
+					"totalSummaries":      counts.Summaries,
+					"sessions":            counts.Sessions,
+					"messages":            counts.Messages,
+					"summaries":           counts.Summaries,
+					"memoryNamespaces":    counts.MemoryNamespaces,
+					"memoryEntries":       counts.MemoryEntries,
+					"summaryIndexEntries": counts.SummaryIndexEntries,
+					"stickyEntries":       counts.StickyEntries,
+				}
+				item["counts"] = counts
 			}
 			_ = handle.Close()
 		}
 		items = append(items, item)
 	}
+	// 最近更新的排在前面（与 Node 一致）
+	sort.Slice(items, func(left, right int) bool {
+		return items[left]["updatedAt"].(int64) > items[right]["updatedAt"].(int64)
+	})
 	return items, nil
+}
+
+// memoryBindings 汇总记忆库绑定关系：全局默认 + 每个角色的独立记忆库。
+func (s *Server) memoryBindings() map[string][]map[string]any {
+	result := map[string][]map[string]any{}
+	appendBinding := func(rawPath string, binding map[string]any) {
+		path := strings.TrimSpace(rawPath)
+		if path == "" {
+			return
+		}
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(s.rootDir, path)
+		}
+		path = filepath.Clean(path)
+		result[path] = append(result[path], binding)
+	}
+
+	globalPath := s.document.String("bindings.global.memoryDbPath")
+	if globalPath == "" {
+		globalPath = s.document.String("memory.storage.path")
+	}
+	appendBinding(globalPath, map[string]any{"type": "global-default", "name": "全局默认记忆库"})
+
+	if bindings := s.document.Get("bindings.characters"); bindings.Exists() && bindings.IsObject() {
+		for character, value := range bindings.Map() {
+			entry := value.Get("memoryDbPath").String()
+			if strings.TrimSpace(entry) == "" {
+				continue
+			}
+			appendBinding(entry, map[string]any{"type": "character", "name": character})
+		}
+	}
+	return result
 }
 
 func (s *Server) handleMemoryDatabases(writer http.ResponseWriter, request *http.Request) {
@@ -349,7 +448,22 @@ func (s *Server) handleMemoryDatabases(writer http.ResponseWriter, request *http
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "databases": items, "active": nil})
+	activePath := ""
+	if database, path, err := s.openActiveMemory(); err == nil {
+		activePath = path
+		_ = database.Close()
+	} else {
+		activePath = path
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":   true,
+		"databases": items,
+		"active": map[string]any{
+			"currentCharacter": s.currentCharacterName(),
+			"dbPath":           activePath,
+			"sessionMode":      s.document.String("chat.sessionMode"),
+		},
+	})
 }
 
 func (s *Server) handleMemoryDownload(writer http.ResponseWriter, request *http.Request) {
