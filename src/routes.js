@@ -12,6 +12,7 @@ import multer from 'multer';
 import { RegexProcessor } from './regex.js';
 import { PromptBuilder } from './prompt.js';
 import { inspectMemoryDatabase } from './session.js';
+import { maskConfigSecrets as maskConfigSecretsFromModule } from './secret-mask.js';
 import { buildChatRuntimePreview } from './runtime/chat-preview.js';
 import { resolveChatRuntimeInputs } from './runtime/source-resolver.js';
 import { buildAIToolContext, sendGroupMentionFromPrompt } from './tools.js';
@@ -2518,23 +2519,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
     }
 
     // 递归脱敏配置或请求体中的密钥字段。
-    function maskConfigSecrets(cfg) {
-        if (cfg === undefined || cfg === null) return {};
-        const masked = JSON.parse(JSON.stringify(cfg));
-        const maskKeys = ['apiKey', 'accessToken', 'password', 'sessionSecret', 'secret', 'token'];
-        function walk(obj) {
-            if (!obj || typeof obj !== 'object') return;
-            for (const key of Object.keys(obj)) {
-                if (maskKeys.includes(key) && typeof obj[key] === 'string' && obj[key].length > 0) {
-                    obj[key] = '******';
-                } else if (typeof obj[key] === 'object') {
-                    walk(obj[key]);
-                }
-            }
-        }
-        walk(masked);
-        return masked;
-    }
+    // 密钥脱敏统一走 src/secret-mask.js（同时覆盖 MCP 请求头/环境变量里的密钥）
+    const maskConfigSecrets = maskConfigSecretsFromModule;
 
     // 获取角色列表（需要认证）
     app.get('/api/characters', requireAuth, async (req, res) => {
