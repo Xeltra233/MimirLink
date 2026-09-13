@@ -22,10 +22,16 @@ import (
 	"syscall"
 	"time"
 
+	"mimirlink/internal/ai"
 	"mimirlink/internal/backup"
+	"mimirlink/internal/chat"
 	"mimirlink/internal/config"
 	"mimirlink/internal/datacheck"
+	"mimirlink/internal/onebot"
 	"mimirlink/internal/panel"
+	"mimirlink/internal/search"
+	"mimirlink/internal/store"
+	"mimirlink/internal/tools"
 )
 
 const version = "0.1.0-dev"
@@ -42,6 +48,10 @@ func main() {
 		includeKeys = flag.Bool("include-keys", false, "导出时包含密钥（默认脱敏）")
 		categories  = flag.String("categories", "", "备份分类，逗号分隔（默认全部）")
 		serve       = flag.Bool("serve", false, "启动面板 HTTP 服务")
+		botMode     = flag.Bool("bot", false, "启动 QQ Bot（OneBot + AI）")
+		searchQuery = flag.String("search", "", "执行一次搜索并打印结果（验证用）")
+		searchLimit = flag.Int("search-limit", 5, "搜索条数")
+		searchFetch = flag.String("search-fetch", "", "抓取指定网址正文（验证用）")
 		port        = flag.Int("port", 0, "覆盖监听端口（默认取 config.server.port）")
 		showVer     = flag.Bool("version", false, "输出版本")
 	)
@@ -55,6 +65,18 @@ func main() {
 	absoluteRoot, err := filepath.Abs(*rootDir)
 	if err != nil {
 		fail("解析根目录失败: %v", err)
+	}
+
+	if *searchQuery != "" || *searchFetch != "" {
+		runSearchProbe(absoluteRoot, *searchQuery, *searchLimit, *searchFetch)
+		return
+	}
+
+	if *botMode {
+		if err := runBot(absoluteRoot); err != nil {
+			fail("Bot 运行失败: %v", err)
+		}
+		return
 	}
 
 	if *serve {
@@ -138,6 +160,9 @@ func main() {
 		fmt.Println("  -inspect <归档>          识别备份分类")
 		fmt.Println("  -restore <归档>          从备份恢复")
 		fmt.Println("  -serve                   启动面板 HTTP 服务（可加 -port）")
+		fmt.Println("  -bot                     启动 QQ Bot（连接 OneBot 并回复消息）")
+		fmt.Println("  -search <关键词>          执行一次搜索并打印结果（可加 -search-limit）")
+		fmt.Println("  -search-fetch <网址>      抓取网页正文（验证用）")
 		fmt.Println("  -version                 输出版本")
 		return
 	}
@@ -201,6 +226,125 @@ func servePanel(rootDir string, portOverride int) error {
 	}
 	fmt.Println("面板已停止")
 	return nil
+}
+
+func runSearchProbe(rootDir string, query string, limit int, fetchURL string) {
+	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	if err != nil {
+		fail("读取配置失败: %v", err)
+	}
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+	searchConfig := tools.LoadSearchConfig(document)
+	service := search.New(searchConfig, logger)
+
+	if fetchURL != "" {
+		page, err := service.FetchPage(context.Background(), fetchURL, 0)
+		if err != nil {
+			fail("抓取失败: %v", err)
+		}
+		fmt.Printf("标题: %s\n地址: %s\n字符数: %d（截断=%v）\n\n%s\n", page.Title, page.URL, page.Chars, page.Truncated, page.Text)
+		return
+	}
+
+	startedAt := time.Now()
+	results, attempted, err := service.Search(context.Background(), query, search.Request{Limit: limit})
+	if err != nil {
+		fail("搜索失败（已尝试 %v）: %v", attempted, err)
+	}
+	fmt.Printf("关键词: %s\n尝试: %v\n耗时: %dms\n结果: %d 条\n\n", query, attempted, time.Since(startedAt).Milliseconds(), len(results))
+	for index, item := range results {
+		fmt.Printf("%d. %s\n   %s\n   %s\n", index+1, item.Title, item.URL, item.Snippet)
+	}
+}
+
+func runBot(rootDir string) error {
+	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	if err != nil {
+		return err
+	}
+	dataDir := document.String("chat.dataDir")
+	if dataDir == "" {
+		dataDir = filepath.Join(rootDir, "data")
+	} else if !filepath.IsAbs(dataDir) {
+		dataDir = filepath.Join(rootDir, dataDir)
+	}
+
+	memoryPath := document.String("bindings.global.memoryDbPath")
+	if memoryPath == "" {
+		memoryPath = document.String("memory.storage.path")
+	}
+	if memoryPath == "" {
+		memoryPath = filepath.Join(dataDir, "chats", "memory-store.sqlite")
+	} else if !filepath.IsAbs(memoryPath) {
+		memoryPath = filepath.Join(rootDir, memoryPath)
+	}
+	if err := os.MkdirAll(filepath.Dir(memoryPath), 0o755); err != nil {
+		return err
+	}
+	memory, err := store.Open(memoryPath)
+	if err != nil {
+		return fmt.Errorf("打开记忆库失败: %w", err)
+	}
+	defer memory.Close()
+	if err := memory.EnsureSchema(); err != nil {
+		return fmt.Errorf("初始化记忆库失败: %w", err)
+	}
+
+	provider, err := ai.ResolveProvider(document)
+	if err != nil {
+		return err
+	}
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+	logger.Printf("模型: %s @ %s (provider=%s)", provider.Model, provider.BaseURL, provider.ID)
+
+	client := onebot.New(onebot.Options{
+		URL:         document.String("onebot.url"),
+		AccessToken: document.String("onebot.accessToken"),
+		TokenMode:   document.String("onebot.tokenMode"),
+		Mode:        document.String("onebot.mode"),
+		Logger:      logger,
+	})
+
+	searchConfig := tools.LoadSearchConfig(document)
+	searchService := search.New(searchConfig, logger)
+	toolRegistry := tools.New(searchService, logger)
+	if searchConfig.Enabled {
+		logger.Printf("联网搜索: 已启用（provider=%s，回退=%v，最多 %d 条）",
+			searchConfig.Provider, searchConfig.FallbackProviders, searchConfig.MaxResults)
+	} else {
+		logger.Println("联网搜索: 未启用（ai.tools.webSearch.enabled=false）")
+	}
+
+	runtime := chat.New(chat.Options{
+		Document: document,
+		Memory:   memory,
+		AI:       ai.New(provider),
+		Bot:      client,
+		Tools:    toolRegistry,
+		Logger:   logger,
+	})
+	client.SetHandler(func(event map[string]any) {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				logger.Printf("[聊天] 处理事件异常: %v", recovered)
+			}
+		}()
+		runtime.HandleEvent(event)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		signalChannel := make(chan os.Signal, 1)
+		signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)
+		<-signalChannel
+		logger.Println("收到退出信号，正在停止 Bot…")
+		client.Close()
+		cancel()
+	}()
+
+	logger.Printf("MimirLink(Go) Bot 已启动，记忆库: %s", memoryPath)
+	return client.Run(ctx)
 }
 
 func splitCategories(raw string) []string {

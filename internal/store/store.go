@@ -200,6 +200,7 @@ func (d *DB) RecentMessages(sessionID string, limit int) ([]Message, error) {
 // Message 是一条聊天消息。
 type Message struct {
 	ID           string `json:"id"`
+	SessionID    string `json:"sessionId"`
 	Role         string `json:"role"`
 	Content      string `json:"content"`
 	MetadataJSON string `json:"metadataJson,omitempty"`
