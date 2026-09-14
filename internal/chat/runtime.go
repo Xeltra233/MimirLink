@@ -53,16 +53,18 @@ type Options struct {
 
 // Runtime 处理单条 OneBot 事件。
 type Runtime struct {
-	document     *config.Document
-	memory       *store.DB
-	ai           ChatModel
-	bot          Bot
-	tools        *tools.Registry
-	logger       *log.Logger
-	historySize  int
-	rootDir      string
-	regexProc    *regexProcessor
-	focusSegment string
+	document       *config.Document
+	memory         *store.DB
+	ai             ChatModel
+	bot            Bot
+	tools          *tools.Registry
+	logger         *log.Logger
+	historySize    int
+	rootDir        string
+	regexProc      *regexProcessor
+	focusSegment   string
+	repeatDetector *GroupRepeatDetector
+	seenMessageIDs map[string]time.Time
 }
 
 // New 创建运行时。
@@ -76,15 +78,17 @@ func New(options Options) *Runtime {
 		historySize = 20
 	}
 	return &Runtime{
-		document:    options.Document,
-		memory:      options.Memory,
-		ai:          options.AI,
-		bot:         options.Bot,
-		tools:       options.Tools,
-		logger:      logger,
-		historySize: historySize,
-		rootDir:     options.RootDir,
-		regexProc:   newRegexProcessor(options.Document.Raw()),
+		document:       options.Document,
+		memory:         options.Memory,
+		ai:             options.AI,
+		bot:            options.Bot,
+		tools:          options.Tools,
+		logger:         logger,
+		historySize:    historySize,
+		rootDir:        options.RootDir,
+		regexProc:      newRegexProcessor(options.Document.Raw()),
+		repeatDetector: NewGroupRepeatDetector(),
+		seenMessageIDs: map[string]time.Time{},
 	}
 }
 
@@ -114,11 +118,33 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		}
 	}
 
+	// 消息幂等去重（对齐 Node runtime.js 的去重职责：同一 message_id 只处理一次）
+	if messageID := idField(event, "message_id"); messageID != "" {
+		now := time.Now()
+		if lastAt, seen := r.seenMessageIDs[messageID]; seen && now.Sub(lastAt) < 10*time.Minute {
+			return false
+		}
+		// 顺带清理过期表项
+		if len(r.seenMessageIDs) > 1024 {
+			for key, lastAt := range r.seenMessageIDs {
+				if now.Sub(lastAt) >= 10*time.Minute {
+					delete(r.seenMessageIDs, key)
+				}
+			}
+		}
+		r.seenMessageIDs[messageID] = now
+	}
+
 	segments := messageSegments(event["message"])
 	text := r.renderSegments(segments)
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return false
+	}
+
+	// 管理员戳一戳命令（对齐 Node executeAdminPokeCommand：命中即返回，早于 LLM）
+	if r.maybeHandleAdminPokeCommand(event, messageType, groupID, userID, text) {
+		return true
 	}
 
 	// 点歌指令：独立于 LLM 的能力，命中即返回（对齐 Node handleMusicCommand）
@@ -190,6 +216,20 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	// 回复前摘要检查（对齐 Node summaryBeforeReply）
 	r.maybeSummarize(sessionKey)
 
+	// 群复读检测（对齐 Node group-repeat：命中直发复读文本并跳过 LLM）
+	repeatConfig := NormalizeGroupRepeatConfig(rawMapField(r.document, "chat.groupRepeat"))
+	if repeatResult := r.repeatDetector.ObserveMessage(repeatConfig, event, text, selfID, time.Now()); repeatResult.ShouldRepeat {
+		r.logger.Printf("[复读] 命中群聊复读直发（%d/%d）：%s", repeatResult.Count, repeatResult.TriggerCount, repeatResult.RepeatText)
+		if err := r.appendMessage(sessionKey, "assistant", repeatResult.RepeatText, map[string]any{
+			"messageType": messageType, "generatedBy": "group_repeat",
+		}); err != nil {
+			r.logger.Printf("[复读] 写入复读消息失败: %v", err)
+		}
+		if err := r.bot.SendGroupMessage(groupID, []map[string]any{{"type": "text", "data": map[string]any{"text": repeatResult.RepeatText}}}); err != nil {
+			r.logger.Printf("[复读] 发送复读失败: %v", err)
+		}
+		return true
+	}
 	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
 	r.focusSegment = r.currentMessageFocusSegment(event, text, messageType, isAtBotSelf, replyInfo)
 	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk)

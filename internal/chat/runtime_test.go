@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -127,7 +128,10 @@ func openMemory(t *testing.T, dataDir string) *store.DB {
 	return db
 }
 
+var testEventSeq int64
+
 func buildGroupEvent(text string, atBot bool, groupID string, userID string) map[string]any {
+	testEventSeq++
 	segments := []any{}
 	if atBot {
 		segments = append(segments, map[string]any{"type": "at", "data": map[string]any{"qq": "1000"}})
@@ -138,7 +142,7 @@ func buildGroupEvent(text string, atBot bool, groupID string, userID string) map
 		"message_type": "group",
 		"group_id":     groupID,
 		"user_id":      userID,
-		"message_id":   "m-1",
+		"message_id":   fmt.Sprintf("m-%d", testEventSeq),
 		"message":      segments,
 		"sender":       map[string]any{"nickname": "测试员"},
 		"time":         float64(1789311808),
