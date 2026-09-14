@@ -809,3 +809,52 @@ func (d *DB) UpdateStickyEntries(sessionID string, triggered []StickyTrigger) er
 	}
 	return transaction.Commit()
 }
+
+// DeleteVariableByName 按变量名删除（对齐 Node deleteVariableByName：在命名空间内
+// 找到 key/title 匹配的变量并删除，返回是否删除）。
+func (d *DB) DeleteVariableByName(options NamespaceOptions, key string) (bool, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return false, fmt.Errorf("变量名不能为空")
+	}
+	variables, err := d.ListVariables(VariableFilters{
+		ScopeType:     options.ScopeType,
+		ScopeKey:      options.ScopeKey,
+		CharacterName: options.CharacterName,
+		PresetName:    options.PresetName,
+		Limit:         500,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, variable := range variables {
+		if variable.Key == key || variable.Title == key {
+			return d.DeleteVariable(variable.ID)
+		}
+	}
+	return false, nil
+}
+
+// GetVariableByName 按变量名读取（不存在返回 nil）。
+func (d *DB) GetVariableByName(options NamespaceOptions, key string) (*Variable, error) {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil, nil
+	}
+	variables, err := d.ListVariables(VariableFilters{
+		ScopeType:     options.ScopeType,
+		ScopeKey:      options.ScopeKey,
+		CharacterName: options.CharacterName,
+		PresetName:    options.PresetName,
+		Limit:         500,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for index := range variables {
+		if variables[index].Key == key || variables[index].Title == key {
+			return &variables[index], nil
+		}
+	}
+	return nil, nil
+}

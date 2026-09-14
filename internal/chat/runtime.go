@@ -187,6 +187,8 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
 		return false
 	}
+	// 变量桥接（对齐 Node index.js 3393 段）：静态 setvar → 新用户初始化 → 宏解析 → 状态块注入
+	r.applyVariableBridgeToMessages(&messages, sessionKey, userID)
 	// direct 模式：图片段并入最后一条用户消息（对齐 Node attachImageParts）
 	if len(pendingImageParts) > 0 {
 		if attachErr := attachImageParts(messages, pendingImageParts); attachErr != nil {
@@ -205,7 +207,6 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	startedAt := time.Now()
 	reply, err := r.chatWithTools(context.Background(), messages)
 	reply = strings.TrimSpace(reply)
-	reply = r.regexProc.process(reply, "output", 0)
 	if err != nil {
 		r.logger.Printf("[聊天] AI 调用失败: %v", err)
 		return false
@@ -215,6 +216,28 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		return false
 	}
 	r.logger.Printf("[聊天] AI 回复 %d 字，用时 %dms", len([]rune(reply)), time.Since(startedAt).Milliseconds())
+
+	// 变量桥接后处理（对齐 Node index.js 3562 段）：
+	// UpdateVariable 提取应用 → <content> 可见内容 → 输出正则 → 内部标签剥离
+	varScope := r.variableScope(sessionKey, userID)
+	extraction := r.extractAndApplyVariables(reply, varScope)
+	if len(extraction.Applied) > 0 {
+		r.logger.Printf("[变量] 已应用 %d 个补丁", len(extraction.Applied))
+	} else if extraction.ProtocolPresent {
+		r.logger.Printf("[变量] 主回复含有效 UpdateVariable（空更新），跳过额外模型解析")
+	}
+	visibleReply := extractVisibleContent(extraction.CleanedOutput)
+	reply = r.regexProc.process(visibleReply, "output", 0)
+	stripped := stripInternalTags(reply)
+	if len([]rune(stripped)) != len([]rune(reply)) {
+		r.logger.Printf("[清洗] 标签剥离: %d→%d 字", len([]rune(reply)), len([]rune(stripped)))
+	}
+	reply = stripped
+
+	// 额外模型变量解析（未配置 varparseModel 时跳过）
+	if extraction.ProtocolPresent == false {
+		r.maybeParseVariablesAsync(sessionKey, varScope, content, reply)
+	}
 
 	if err := r.appendMessage(sessionKey, "assistant", reply, map[string]any{"messageType": messageType}); err != nil {
 		r.logger.Printf("[聊天] 写入回复失败: %v", err)
