@@ -36,6 +36,7 @@ type Bot interface {
 	SendGroupMessage(groupID string, message any) error
 	SendPrivateMessage(userID string, message any) error
 	GetForwardMsg(id string) (any, error)
+	GetMsg(messageID string) (map[string]any, error)
 }
 
 // Options 是运行时依赖。
@@ -52,15 +53,16 @@ type Options struct {
 
 // Runtime 处理单条 OneBot 事件。
 type Runtime struct {
-	document    *config.Document
-	memory      *store.DB
-	ai          ChatModel
-	bot         Bot
-	tools       *tools.Registry
-	logger      *log.Logger
-	historySize int
-	rootDir     string
-	regexProc   *regexProcessor
+	document     *config.Document
+	memory       *store.DB
+	ai           ChatModel
+	bot          Bot
+	tools        *tools.Registry
+	logger       *log.Logger
+	historySize  int
+	rootDir      string
+	regexProc    *regexProcessor
+	focusSegment string
 }
 
 // New 创建运行时。
@@ -137,10 +139,16 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	if injectionRisk.Level != "none" {
 		r.logger.Printf("[安全] 疑似注入 (%s) [%s] 规则:%s", injectionRisk.Level, sessionKey, strings.Join(injectionRisk.MatchedRules, ","))
 	}
-	header := r.buildInputHeader(event, messageType, groupID, userID)
+	// 引用消息解析（对齐 Node buildReplyInfo：snippet 前置 + 事件头扩展字段）
+	replyInfo := r.buildReplyInfo(event, messageSegments(event["message"]))
+	if replyInfo.Snippet != "" {
+		text = applyReplySnippet(text, replyInfo)
+	}
+	header := r.standardEventHeader(event, messageType, groupID, userID, replyInfo)
 	content := strings.TrimSpace(header + " " + text)
 	// 输入阶段正则（对齐 Node regexProcessor.processInput）
 	content = r.regexProc.process(content, "input", 0)
+	isAtBotSelf := containsAtSelf(event["message"], selfID)
 
 	if err := r.appendMessage(sessionKey, "user", content, map[string]any{
 		"messageType": messageType,
@@ -182,6 +190,8 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	// 回复前摘要检查（对齐 Node summaryBeforeReply）
 	r.maybeSummarize(sessionKey)
 
+	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
+	r.focusSegment = r.currentMessageFocusSegment(event, text, messageType, isAtBotSelf, replyInfo)
 	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk)
 	if err != nil {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
@@ -317,6 +327,11 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 	partition := partitionPromptItems(parsePreset(r.document.Raw()))
 	for _, item := range partition.PreSystem {
 		messages = append(messages, ai.Message{Role: "system", Content: item.Content})
+	}
+	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
+	if r.focusSegment != "" {
+		messages = append(messages, ai.Message{Role: "system", Content: r.focusSegment})
+		r.focusSegment = ""
 	}
 	// 3) 世界书匹配（常驻 + 关键词 + 粘性），position=0 进 system
 	worldBookEntries := r.matchWorldbook(sessionKey, history, currentContent)
