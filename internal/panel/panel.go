@@ -20,6 +20,7 @@ import (
 	"mimirlink/internal/auth"
 	"mimirlink/internal/backup"
 	"mimirlink/internal/config"
+	"mimirlink/internal/mcp"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tts"
 )
@@ -32,6 +33,7 @@ type Options struct {
 	RootDir  string
 	Document *config.Document
 	Logger   *log.Logger
+	MCP      *mcp.Client
 }
 
 // Server 是面板 HTTP 处理器。
@@ -44,6 +46,7 @@ type Server struct {
 	mux       *http.ServeMux
 	dataDir   string
 	startedAt time.Time
+	mcpClient *mcp.Client
 }
 
 // NewServer 构建面板服务。
@@ -63,6 +66,7 @@ func NewServer(options Options) (*Server, error) {
 		publicDir: resolvePublicDir(document, options.RootDir),
 		mux:       http.NewServeMux(),
 		startedAt: time.Now(),
+		mcpClient: options.MCP,
 	}
 	server.dataDir = server.DataDir()
 	server.auth = auth.NewManager(auth.Options{
@@ -75,6 +79,7 @@ func NewServer(options Options) (*Server, error) {
 	server.registerRoutes()
 	server.registerExtendedRoutes()
 	server.registerSearchRoutes()
+	server.registerMCPRoutes()
 	server.registerOpsRoutes()
 	server.registerTTSRoutes(tts.NewWithAudioDir(server.AudioDir(), logger))
 	return server, nil

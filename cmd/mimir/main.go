@@ -219,10 +219,26 @@ func servePanel(rootDir string, portOverride int) error {
 	if host == "" {
 		host = "0.0.0.0"
 	}
+	// MCP 客户端与面板共享（面板可热重载/重连/调用）
+	var panelMCP *mcp.Client
+	{
+		var mcpRaw map[string]any
+		if err := json.Unmarshal(document.Raw(), &mcpRaw); err == nil {
+			if mcpSection, ok := mcpRaw["mcp"].(map[string]any); ok {
+				mcpConfig := mcp.LoadConfig(mcpSection)
+				if mcpConfig.Enabled && len(mcpConfig.Servers) > 0 {
+					panelMCP = mcp.New(mcpConfig, log.New(os.Stdout, "", log.LstdFlags))
+					panelMCP.ConnectAll(context.Background())
+					defer panelMCP.Close()
+				}
+			}
+		}
+	}
 	server, err := panel.NewServer(panel.Options{
 		RootDir:  rootDir,
 		Document: document,
 		Logger:   log.New(os.Stdout, "", log.LstdFlags),
+		MCP:      panelMCP,
 	})
 	if err != nil {
 		return err

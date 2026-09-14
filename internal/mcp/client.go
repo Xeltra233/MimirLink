@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -95,8 +96,12 @@ func NormalizeServerConfig(raw map[string]any) (ServerConfig, bool) {
 	if name == "" {
 		return ServerConfig{}, false
 	}
+	id := strings.TrimSpace(stringOf(raw["id"]))
+	if id == "" {
+		id = sanitizeIdentifier(name) + "-" + shortHash(name+time.Now().Format("150405.000000000"))
+	}
 	config := ServerConfig{
-		ID:        strings.TrimSpace(stringOf(raw["id"])),
+		ID:        id,
 		Name:      name,
 		Enabled:   raw["enabled"] != false,
 		Transport: "stdio",
@@ -154,6 +159,9 @@ func LoadConfig(raw map[string]any) ClientConfig {
 
 // New 创建客户端。
 func New(config ClientConfig, logger Logger) *Client {
+	if logger == nil {
+		logger = log.Default()
+	}
 	return &Client{config: config, logger: logger, servers: map[string]*serverEntry{}}
 }
 
@@ -823,4 +831,145 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+// ServerStatus 是单个服务器的运行状态（面板展示用）。
+type ServerStatus struct {
+	ID        string         `json:"id"`
+	Name      string         `json:"name"`
+	Enabled   bool           `json:"enabled"`
+	Transport string         `json:"transport"`
+	Command   string         `json:"command,omitempty"`
+	URL       string         `json:"url,omitempty"`
+	Connected bool           `json:"connected"`
+	ToolCount int            `json:"toolCount"`
+	LastError string         `json:"lastError,omitempty"`
+	Tools     []ToolSummary  `json:"tools"`
+	Config    map[string]any `json:"config,omitempty"`
+}
+
+// ToolSummary 是面板展示的工具摘要（对齐 Node getStatus 的 tools 形状）。
+type ToolSummary struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Required    []string `json:"required"`
+}
+
+// MaskedServerConfig 是掩码后的服务器配置（密钥字段替换为 '******'）。
+func MaskedServerConfig(server ServerConfig) map[string]any {
+	encoded, _ := json.Marshal(server)
+	var payload map[string]any
+	_ = json.Unmarshal(encoded, &payload)
+	payload["env"] = maskedSecretMap(server.Env)
+	payload["headers"] = maskedSecretMap(server.Headers)
+	payload["hasEnv"] = hasNonEmptySecret(server.Env)
+	payload["hasHeaders"] = hasNonEmptySecret(server.Headers)
+	return payload
+}
+
+func maskedSecretMap(values map[string]string) map[string]string {
+	masked := map[string]string{}
+	for key, value := range values {
+		if strings.TrimSpace(value) != "" {
+			masked[key] = "******"
+		} else {
+			masked[key] = ""
+		}
+	}
+	return masked
+}
+
+func hasNonEmptySecret(values map[string]string) bool {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// Status 返回全部服务器的运行状态（含已配置但未连接的）。
+func (c *Client) Status() []ServerStatus {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	statuses := make([]ServerStatus, 0, len(c.config.Servers))
+	for _, server := range c.config.Servers {
+		status := ServerStatus{
+			ID:        server.ID,
+			Name:      server.Name,
+			Enabled:   server.Enabled,
+			Transport: server.Transport,
+			Command:   server.Command,
+			URL:       server.URL,
+			Tools:     []ToolSummary{},
+			Config:    MaskedServerConfig(server),
+		}
+		if entry, ok := c.servers[server.ID]; ok {
+			status.LastError = entry.lastError
+			if entry.transport != nil {
+				status.Connected = true
+				status.ToolCount = len(entry.tools)
+				for _, tool := range entry.tools {
+					summary := ToolSummary{Name: tool.Name, Description: tool.Description, Required: []string{}}
+					if required, ok := tool.InputSchema["required"].([]any); ok {
+						for _, item := range required {
+							if text, ok := item.(string); ok {
+								summary.Required = append(summary.Required, text)
+							}
+						}
+					}
+					status.Tools = append(status.Tools, summary)
+				}
+			}
+		}
+		statuses = append(statuses, status)
+	}
+	return statuses
+}
+
+// Reconnect 重连单个服务器（断开旧连接后按当前配置重新握手）。
+func (c *Client) Reconnect(serverID string) error {
+	c.mu.Lock()
+	var serverConfig ServerConfig
+	entry, exists := c.servers[serverID]
+	if exists {
+		serverConfig = entry.config
+		if entry.transport != nil {
+			_ = entry.transport.Close()
+			entry.transport = nil
+		}
+		delete(c.servers, serverID)
+	}
+	c.mu.Unlock()
+	if !exists {
+		return fmt.Errorf("服务器不存在: %s", serverID)
+	}
+	newEntry, err := c.connect(context.Background(), serverConfig)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if err != nil {
+		c.servers[serverID] = &serverEntry{config: serverConfig, lastError: err.Error()}
+		return err
+	}
+	c.servers[serverID] = newEntry
+	return nil
+}
+
+// Reload 用新配置热重载：关闭全部连接、替换配置并重连启用的服务器。
+func (c *Client) Reload(config ClientConfig) []ServerStatus {
+	c.Close()
+	c.mu.Lock()
+	c.config = config
+	c.mu.Unlock()
+	c.ConnectAll(context.Background())
+	return c.Status()
+}
+
+// ConfigSnapshot 返回当前客户端配置（深拷贝 servers 切片）。
+func (c *Client) ConfigSnapshot() ClientConfig {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	servers := make([]ServerConfig, len(c.config.Servers))
+	copy(servers, c.config.Servers)
+	return ClientConfig{Enabled: c.config.Enabled, MaxResultChars: c.config.MaxResultChars, Servers: servers}
 }
