@@ -564,11 +564,7 @@ func (s *Server) handleMCP(writer http.ResponseWriter, request *http.Request) {
 		})
 		return
 	}
-	writeJSON(writer, http.StatusNotImplemented, map[string]any{
-		"jsonrpc": "2.0",
-		"id":      nil,
-		"error":   map[string]any{"code": -32601, "message": "Go 版 MCP 服务尚未实现"},
-	})
+	s.handleMCPRange(writer, request)
 }
 
 // ---------- 静态资源 ----------
