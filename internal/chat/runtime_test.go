@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -43,12 +44,16 @@ func (b *fakeBot) GetForwardMsg(id string) (any, error) {
 type fakeModel struct {
 	replies      []string
 	profileReply string // 命中档案分析提示词时返回
+	failAlways   bool   // 始终返回错误（模拟 vision 模型不可用）
 	requests     [][]ai.Message
 	provider     ai.Provider
 }
 
 func (m *fakeModel) Chat(ctx context.Context, messages []ai.Message, overrides map[string]any) (*ai.ChatResult, error) {
 	m.requests = append(m.requests, messages)
+	if m.failAlways {
+		return nil, errors.New("模型不可用")
+	}
 	// 档案分析提示词按特征返回专用回复，避免异步 goroutine 抢占普通回复
 	for _, message := range messages {
 		if text, ok := message.Content.(string); ok && strings.Contains(text, "人物档案分析器") && m.profileReply != "" {

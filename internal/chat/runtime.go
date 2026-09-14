@@ -145,6 +145,34 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		r.logger.Printf("[聊天] 写入用户消息失败: %v", err)
 	}
 
+	// 图片输入链路（对齐 Node prepareImageInput：direct/caption/placeholder + 三级降级）
+	var pendingImageParts []map[string]any
+	imageDataList := extractImageSegments(event["message"])
+	if len(imageDataList) > 0 {
+		imageInput, imageErr := r.prepareImageInput(imageDataList)
+		if imageErr != nil {
+			if _, isImageError := imageErr.(*ImageInputError); isImageError {
+				r.logger.Printf("[图片] 本轮图片处理失败 [%s]: %v", sessionKey, imageErr)
+				if err := r.dispatch(messageType, groupID, userID, event, "⚠️ "+imageErr.Error()); err != nil {
+					r.logger.Printf("[图片] 错误提示发送失败: %v", err)
+				}
+				return true
+			}
+			return false
+		}
+		if (imageInput.Mode == "caption" || imageInput.Mode == "placeholder") && imageInput.CaptionText != "" {
+			// 转述文本并入本轮输入（Node 再经 sanitizeForInjection；Go 的输入正则已覆盖等价清理）
+			content = content + "\\n\\n" + imageInput.CaptionText
+			r.appendMessage(sessionKey, "user", imageInput.CaptionText, map[string]any{"imageCaption": true})
+		}
+		for _, warning := range imageInput.Warnings {
+			r.logger.Printf("[图片] %s", warning)
+		}
+		if imageInput.Mode == "direct" {
+			pendingImageParts = imageInput.ImageParts
+		}
+	}
+
 	// 回复前摘要检查（对齐 Node summaryBeforeReply）
 	r.maybeSummarize(sessionKey)
 
@@ -152,6 +180,12 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	if err != nil {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
 		return false
+	}
+	// direct 模式：图片段并入最后一条用户消息（对齐 Node attachImageParts）
+	if len(pendingImageParts) > 0 {
+		if attachErr := attachImageParts(messages, pendingImageParts); attachErr != nil {
+			r.logger.Printf("[图片] 图片段附加失败: %v", attachErr)
+		}
 	}
 	// 世界书粘性续期（对齐 Node updateStickyEntries）
 	triggers := make([]store.StickyTrigger, 0, len(worldBookEntries))
