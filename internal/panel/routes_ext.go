@@ -341,7 +341,7 @@ func (s *Server) handleSessionDetail(writer http.ResponseWriter, request *http.R
 			limit = parsed
 		}
 	}
-	if historyRequested {
+	if historyRequested && request.Method == http.MethodGet {
 		messages, err := database.RecentMessagesThread(id, limit)
 		if err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -363,6 +363,24 @@ func (s *Server) handleSessionDetail(writer http.ResponseWriter, request *http.R
 			})
 		}
 		writeJSON(writer, http.StatusOK, payload)
+		return
+	}
+
+	switch request.Method {
+	case http.MethodDelete:
+		if historyRequested {
+			if err := database.ClearHistory(id); err != nil {
+				writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+				return
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "会话历史已清除"})
+			return
+		}
+		if err := database.DeleteSession(id); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "会话已删除"})
 		return
 	}
 

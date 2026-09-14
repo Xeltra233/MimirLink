@@ -543,3 +543,60 @@ func randomSuffix(length int) string {
 	}
 	return builder.String()
 }
+
+// ListMemoryEntriesByType 按条目类型列出记忆条目（支持关键词与上限）。
+func (d *DB) ListMemoryEntriesByType(options NamespaceOptions, entryType string, search string, limit int) ([]MemoryEntry, error) {
+	namespaceID, err := d.FindMemoryNamespace(options)
+	if err != nil {
+		return nil, err
+	}
+	if namespaceID == "" {
+		return []MemoryEntry{}, nil
+	}
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query := `SELECT id, entry_type, title, content, tags_json, metadata_json, source_session_id, source_message_id, created_at, updated_at
+	          FROM memory_entries WHERE namespace_id = ?`
+	arguments := []any{namespaceID}
+	if entryType != "" {
+		query += " AND entry_type = ?"
+		arguments = append(arguments, entryType)
+	}
+	if strings.TrimSpace(search) != "" {
+		pattern := "%" + strings.TrimSpace(search) + "%"
+		query += " AND (IFNULL(title,'') LIKE ? OR content LIKE ?)"
+		arguments = append(arguments, pattern, pattern)
+	}
+	query += " ORDER BY updated_at DESC, rowid DESC LIMIT ?"
+	arguments = append(arguments, limit)
+	rows, err := d.handle.Query(query, arguments...)
+	if err != nil {
+		return nil, fmt.Errorf("读取记忆条目失败: %w", err)
+	}
+	defer rows.Close()
+	return scanMemoryEntries(rows)
+}
+
+// ListAllNamespaces 列出记忆库中的命名空间（供面板统计与筛选使用）。
+func (d *DB) ListAllNamespaces(limit int) ([]NamespaceOptions, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 200
+	}
+	rows, err := d.handle.Query(
+		`SELECT scope_type, scope_key, IFNULL(character_name,''), IFNULL(preset_name,'')
+		 FROM memory_namespaces ORDER BY updated_at DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, fmt.Errorf("读取命名空间失败: %w", err)
+	}
+	defer rows.Close()
+	result := []NamespaceOptions{}
+	for rows.Next() {
+		var item NamespaceOptions
+		if err := rows.Scan(&item.ScopeType, &item.ScopeKey, &item.CharacterName, &item.PresetName); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	return result, rows.Err()
+}
