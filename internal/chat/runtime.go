@@ -249,11 +249,17 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		r.maybeParseVariablesAsync(sessionKey, varScope, content, reply)
 	}
 
+	// 链式泄露检测与重试（对齐 Node detectChainLeak + chat.chainLeakRetry）
+	if retried, didRetry := r.retryOnChainLeak(context.Background(), messages, reply, content); didRetry {
+		reply = retried
+	}
+
 	if err := r.appendMessage(sessionKey, "assistant", reply, map[string]any{"messageType": messageType}); err != nil {
 		r.logger.Printf("[聊天] 写入回复失败: %v", err)
 	}
 
-	if err := r.dispatch(messageType, groupID, userID, event, reply); err != nil {
+	// 回复分发（对齐 Node dispatchReply：引用/at 前缀、splitMessage 分段、[voice] TTS、段间延迟）
+	if err := r.dispatchReply(event, messageType, groupID, userID, reply, r.loadDispatcherConfig(false), r.ttsManagerIfAvailable()); err != nil {
 		r.logger.Printf("[聊天] 发送回复失败: %v", err)
 		return false
 	}
