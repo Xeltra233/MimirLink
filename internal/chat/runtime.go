@@ -184,6 +184,15 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		r.logger.Printf("[聊天] 发送回复失败: %v", err)
 		return false
 	}
+	// 回复后异步人物档案构建（对齐 Node maybeBuildParticipantProfile 的 auto 触发）
+	speakerName := ""
+	if sender, ok := event["sender"].(map[string]any); ok {
+		speakerName = stringValue(sender["nickname"])
+		if card := stringValue(sender["card"]); card != "" {
+			speakerName = card
+		}
+	}
+	r.maybeBuildParticipantProfile(sessionKey, userID, speakerName, messageType, groupID)
 	return true
 }
 
@@ -1146,4 +1155,138 @@ func (r *Runtime) humanChatControlPrompt() string {
 	}
 	prompt := strings.TrimSpace(r.document.String("chat.humanChatControlPrompt"))
 	return prompt
+}
+
+// participantProfileConfig 解析 memory.participantProfile 配置（对齐 Node getParticipantProfileConfig 核心字段）。
+func (r *Runtime) participantProfileConfig() (enabled bool, threshold int, sourceLimit int, analysisMode string, blacklist map[string]bool) {
+	blacklist = map[string]bool{}
+	enabled = r.document.Bool("memory.participantProfile.enabled")
+	threshold = int(r.document.Int("memory.participantProfile.triggerMessages", 8))
+	if threshold < 1 {
+		threshold = 8
+	}
+	sourceLimit = int(r.document.Int("memory.participantProfile.maxSourceMessages", 50))
+	if sourceLimit < 1 {
+		sourceLimit = 50
+	}
+	analysisMode = strings.TrimSpace(r.document.String("memory.participantProfile.analysisMode"))
+	if analysisMode == "" {
+		analysisMode = "all_context"
+	}
+	for _, item := range r.document.Get("memory.participantProfile.blacklistParticipantIds").Array() {
+		if id := strings.TrimSpace(item.String()); id != "" {
+			blacklist[id] = true
+		}
+	}
+	return enabled, threshold, sourceLimit, analysisMode, blacklist
+}
+
+// maybeBuildParticipantProfile 异步构建人物档案：阈值检查 → AI 生成 → 写入档案条目。
+// 失败只记日志，不影响聊天主链路（对齐 Node 异步任务语义）。
+func (r *Runtime) maybeBuildParticipantProfile(sessionKey string, participantID string, participantName string, messageType string, groupID string) {
+	if r.memory == nil || participantID == "" {
+		return
+	}
+	enabled, threshold, sourceLimit, analysisMode, blacklist := r.participantProfileConfig()
+	if !enabled || blacklist[participantID] {
+		return
+	}
+	namespace := r.namespaceOptions(sessionKey)
+	sourceFilter := "all"
+	if analysisMode == "bot_only_messages" || analysisMode == "bot_only_profile" {
+		sourceFilter = "bot_only"
+	}
+	go func() {
+		source, err := r.memory.CollectParticipantProfileSource(participantID, namespace, store.ProfileSourceConfig{
+			Threshold: threshold, Limit: sourceLimit, SourceFilter: sourceFilter,
+		})
+		if err != nil {
+			r.logger.Printf("[档案] 采集源消息失败: %v", err)
+			return
+		}
+		if len(source.Messages) == 0 || (!source.HasEnoughNewInfo && source.Existing != nil) {
+			return
+		}
+		if source.HasEnoughNewInfo == false && source.Existing == nil {
+			r.logger.Printf("[档案] 新信息不足，跳过建档（%s 阈值 %d）", participantID, threshold)
+			return
+		}
+		profileText, err := r.generateParticipantProfile(source, participantID, participantName, analysisMode)
+		if err != nil {
+			r.logger.Printf("[档案] 生成失败 (%s): %v", participantID, err)
+			return
+		}
+		title := participantName
+		if title == "" {
+			title = participantID
+		}
+		metadata := map[string]any{
+			"messageType":            messageType,
+			"groupId":                groupID,
+			"lastProcessedMessageAt": source.LastProcessedAt,
+		}
+		entryID := ""
+		if source.Existing != nil {
+			entryID = source.Existing.ID
+		}
+		savedID, err := r.memory.SaveParticipantProfile(namespace, entryID, participantID, title, profileText, []string{}, metadata, source.Messages[len(source.Messages)-1].SessionID)
+		if err != nil {
+			r.logger.Printf("[档案] 保存失败 (%s): %v", participantID, err)
+			return
+		}
+		r.logger.Printf("[档案] 已保存 %s → %s（来源 %d 条）", participantID, savedID, len(source.Messages))
+	}()
+}
+
+// generateParticipantProfile 调用 AI 生成档案文本（对齐 Node buildParticipantProfilePrompt 归因硬约束）。
+func (r *Runtime) generateParticipantProfile(source *store.ProfileSource, participantID string, participantName string, analysisMode string) (string, error) {
+	targetName := participantName
+	if targetName == "" {
+		targetName = participantID
+	}
+	lines := make([]string, 0, len(source.Messages))
+	for _, message := range source.Messages {
+		speaker := "第三者"
+		switch {
+		case message.Role == "assistant":
+			speaker = "Bot"
+		case messageMetadataUserID(message) == participantID:
+			speaker = targetName
+		}
+		lines = append(lines, fmt.Sprintf("[%s] %s", speaker, message.Content))
+	}
+	existingSection := ""
+	if source.Existing != nil && strings.TrimSpace(source.Existing.Content) != "" {
+		existingSection = "\n\n【现有档案（增量更新基础）】\n" + source.Existing.Content
+	}
+	prompt := fmt.Sprintf(`请基于以下真实聊天内容增量更新人物档案。
+目标人物：%s（QQ:%s）
+
+归因硬约束：
+1. 档案只描述目标人物：%s（QQ:%s）。
+2. 必须把说话人掰开：目标人物 / Bot / 第三者；不得把 Bot 或第三者的话写成目标人物说的。
+3. 目标人物的稳定画像与当前状态，只能依据"说话人=%s"的本人发言归纳。
+4. Bot 与第三者内容可以用于理解语境，但禁止写入成目标人物自己的表达。
+5. 不要臆测未出现的信息；冲突时宁可写不确定或省略。
+
+新增消息如下：
+%s%s`, targetName, participantID, targetName, participantID, targetName, strings.Join(lines, "\n"), existingSection)
+
+	client := r.ai
+	if provider := r.resolveSummaryProvider(); provider != nil {
+		client = ai.New(*provider)
+	}
+	result, err := client.Chat(context.Background(), []ai.Message{
+		{Role: "system", Content: "你是人物档案分析器。只输出档案正文，不要输出多余解释。"},
+		{Role: "user", Content: prompt},
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(result.Content), nil
+}
+
+// messageMetadataUserID 提取消息 metadata.userId（转发到 store 包实现）。
+func messageMetadataUserID(message store.Message) string {
+	return store.MessageUserID(message)
 }

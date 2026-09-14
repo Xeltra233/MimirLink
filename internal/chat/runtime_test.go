@@ -41,13 +41,20 @@ func (b *fakeBot) GetForwardMsg(id string) (any, error) {
 }
 
 type fakeModel struct {
-	replies  []string
-	requests [][]ai.Message
-	provider ai.Provider
+	replies      []string
+	profileReply string // 命中档案分析提示词时返回
+	requests     [][]ai.Message
+	provider     ai.Provider
 }
 
 func (m *fakeModel) Chat(ctx context.Context, messages []ai.Message, overrides map[string]any) (*ai.ChatResult, error) {
 	m.requests = append(m.requests, messages)
+	// 档案分析提示词按特征返回专用回复，避免异步 goroutine 抢占普通回复
+	for _, message := range messages {
+		if text, ok := message.Content.(string); ok && strings.Contains(text, "人物档案分析器") && m.profileReply != "" {
+			return &ai.ChatResult{Content: m.profileReply}, nil
+		}
+	}
 	reply := "空"
 	if len(m.replies) > 0 {
 		reply = m.replies[0]

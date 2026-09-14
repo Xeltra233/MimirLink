@@ -3,6 +3,9 @@ package chat
 import (
 	"strings"
 	"testing"
+	"time"
+
+	"mimirlink/internal/store"
 )
 
 func TestDetectPromptInjectionRisk(t *testing.T) {
@@ -110,5 +113,38 @@ func TestGuardrailSegmentDisabledByDefault(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("开启后护栏应注入")
+	}
+}
+
+// TestParticipantProfileAutoBuild：开启配置后回复触发异步建档并落库。
+func TestParticipantProfileAutoBuild(t *testing.T) {
+	model := &fakeModel{replies: []string{"回复1", "回复2"}, profileReply: "档案正文：张三喜欢聊天气"}
+	runtime, _, memory := newRuntime(t, map[string]any{
+		"memory": map[string]any{
+			"participantProfile": map[string]any{"enabled": true, "triggerMessages": 1},
+		},
+	}, model)
+	runtime.HandleEvent(buildGroupEvent("第一句", true, "99001", "2001"))
+	runtime.HandleEvent(buildGroupEvent("第二句", true, "99001", "2001"))
+
+	// 异步建档轮询等待落库
+	deadline := time.Now().Add(5 * time.Second)
+	var entry *store.MemoryEntry
+	for time.Now().Before(deadline) {
+		result, err := memory.GetParticipantProfileEntry(runtime.namespaceOptions(runtime.sessionKey("group", "99001", "2001")), "2001")
+		if err == nil && result != nil {
+			entry = result
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if entry == nil {
+		t.Fatalf("档案未落库")
+	}
+	if !strings.Contains(entry.Content, "档案正文") {
+		t.Fatalf("档案内容异常: %q", entry.Content)
+	}
+	if entry.Metadata["participantId"] != "2001" {
+		t.Fatalf("participantId 元数据缺失: %+v", entry.Metadata)
 	}
 }
