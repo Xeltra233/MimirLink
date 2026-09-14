@@ -38,15 +38,16 @@ type Options struct {
 
 // Server 是面板 HTTP 处理器。
 type Server struct {
-	rootDir   string
-	document  *config.Document
-	logger    *log.Logger
-	auth      *auth.Manager
-	publicDir string
-	mux       *http.ServeMux
-	dataDir   string
-	startedAt time.Time
-	mcpClient *mcp.Client
+	rootDir    string
+	document   *config.Document
+	logger     *log.Logger
+	auth       *auth.Manager
+	publicDir  string
+	mux        *http.ServeMux
+	dataDir    string
+	startedAt  time.Time
+	mcpClient  *mcp.Client
+	rangeState *rangeState
 }
 
 // NewServer 构建面板服务。
@@ -60,13 +61,14 @@ func NewServer(options Options) (*Server, error) {
 	}
 	document := options.Document
 	server := &Server{
-		rootDir:   options.RootDir,
-		document:  document,
-		logger:    logger,
-		publicDir: resolvePublicDir(document, options.RootDir),
-		mux:       http.NewServeMux(),
-		startedAt: time.Now(),
-		mcpClient: options.MCP,
+		rootDir:    options.RootDir,
+		document:   document,
+		logger:     logger,
+		publicDir:  resolvePublicDir(document, options.RootDir),
+		mux:        http.NewServeMux(),
+		startedAt:  time.Now(),
+		mcpClient:  options.MCP,
+		rangeState: newRangeState(),
 	}
 	server.dataDir = server.DataDir()
 	server.auth = auth.NewManager(auth.Options{
@@ -83,6 +85,8 @@ func NewServer(options Options) (*Server, error) {
 	server.registerManagedRoutes()
 	server.registerOpsRoutes()
 	server.registerTTSRoutes(tts.NewWithAudioDir(server.AudioDir(), logger))
+	server.registerRangeRoutes()
+	server.loadRangeSnapshots()
 	return server, nil
 }
 
@@ -545,11 +549,50 @@ func (s *Server) handleMemoryStats(writer http.ResponseWriter, request *http.Req
 			totals["memoryNamespaces"] += counts.MemoryNamespaces
 		}
 	}
+	// Node GET /api/memory/stats = sessionManager.getStats() + runtime + activeMemory
+	counts := store.Counts{}
+	activePath := ""
+	oldest, newest := int64(0), int64(0)
+	if database, path, err := s.openActiveMemory(); err == nil {
+		activePath = path
+		if c, err := database.Counts(); err == nil {
+			counts = c
+		}
+		oldest, newest = database.MessageTimeRange()
+		_ = database.Close()
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"databases":     items,
-		"totals":        totals,
-		"databaseCount": len(items),
+		"databases":        items,
+		"totals":           totals,
+		"databaseCount":    len(items),
+		"totalMessages":    counts.Messages,
+		"totalSessions":    counts.Sessions,
+		"totalSummaries":   counts.Summaries,
+		"sessionMode":      fallback(s.document.String("chat.sessionMode"), "user_persistent"),
+		"storage":          map[string]any{"type": "sqlite", "path": activePath},
+		"oldestMessage":    nilIfZero(oldest),
+		"newestMessage":    nilIfZero(newest),
+		"memoryFileSizeMB": memoryFileSizeMB(activePath),
+		"runtime":          nil,
+		"activeMemory":     s.activeMemoryInfo(),
 	})
+}
+
+// nilIfZero 把 0 视为未知（Node 无消息时为 null）。
+func nilIfZero(value int64) any {
+	if value == 0 {
+		return nil
+	}
+	return value
+}
+
+// memoryFileSizeMB 返回记忆库文件大小（MB，两位小数）。
+func memoryFileSizeMB(path string) string {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "0.00"
+	}
+	return fmt.Sprintf("%.2f", float64(info.Size())/1024/1024)
 }
 
 // ---------- MCP 入口（令牌校验占位） ----------

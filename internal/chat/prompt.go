@@ -106,6 +106,7 @@ type regexRule struct {
 	PromptOnly   bool   `json:"promptOnly"`
 	MinDepth     *int   `json:"minDepth"`
 	MaxDepth     *int   `json:"maxDepth"`
+	builtin      bool
 	compiled     *regexp.Regexp
 	compileErr   error
 }
@@ -125,10 +126,13 @@ func builtinPresetRules() []regexRule {
 // builtinOutputRules 对齐 Node updateConfig 里追加的两条内置输出规则。
 func builtinOutputRules() []regexRule {
 	return []regexRule{
-		{Name: "【内置】移除当前消息焦点泄漏", Pattern: `^[ \t]*事件:\s*[^\r\n]*(?:\r?\n[ \t]*(?:发言人|意图|回复目标|触发|低信息|最新输入|策略):[^\r\n]*){1,7}(?:\r?\n)?|\r?\n[ \t]*事件:\s*[^\r\n]*(?:\r?\n[ \t]*(?:发言人|意图|回复目标|触发|低信息|最新输入|策略):[^\r\n]*){1,7}`, Flags: "g", Replacement: "", Stage: "output", Enabled: true},
-		{Name: "【内置】去除思考链标签", Pattern: `<thinking>[\s\S]*?</thinking>`, Flags: "g", Replacement: "", Stage: "output", Enabled: true},
+		{Name: "【内置】移除当前消息焦点泄漏", builtin: true, Pattern: `^[ \t]*事件:\s*[^\r\n]*(?:\r?\n[ \t]*(?:发言人|意图|回复目标|触发|低信息|最新输入|策略):[^\r\n]*){1,7}(?:\r?\n)?|\r?\n[ \t]*事件:\s*[^\r\n]*(?:\r?\n[ \t]*(?:发言人|意图|回复目标|触发|低信息|最新输入|策略):[^\r\n]*){1,7}`, Flags: "g", Replacement: "", Stage: "output", Enabled: true},
+		{Name: "【内置】去除思考链标签", builtin: true, Pattern: `<thinking>[\s\S]*?</thinking>`, Flags: "g", Replacement: "", Stage: "output", Enabled: true},
 	}
 }
+
+// delimitedRegexPattern 匹配 /pattern/flags 形式。
+var delimitedRegexPattern = regexp.MustCompile(`^/(.*)/([a-z]*)$`)
 
 // normalizeRuleStage 对齐 Node RegexProcessor.normalizeRuleStage。
 func normalizeRuleStage(stage string, promptOnly bool) string {

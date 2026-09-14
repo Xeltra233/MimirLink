@@ -44,6 +44,9 @@ func (s *Server) handleTTSConfig(writer http.ResponseWriter, request *http.Reque
 			safe[key] = value
 		}
 		safe["hasApiKey"] = hasKey
+		if _, ok := safe["encoding"]; !ok {
+			safe["encoding"] = "mp3"
+		}
 		writeJSON(writer, http.StatusOK, safe)
 	case http.MethodPost:
 		var incoming map[string]any

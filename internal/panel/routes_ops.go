@@ -264,6 +264,10 @@ func (s *Server) handleMemoryKnowledge(writer http.ResponseWriter, request *http
 // ---------- 人物档案 ----------
 
 func (s *Server) handleParticipantProfiles(writer http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodPost {
+		s.handleParticipantProfileSave(writer, request)
+		return
+	}
 	if request.Method != http.MethodGet {
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 		return
@@ -741,11 +745,18 @@ func (s *Server) handleRangeCorpusProgress(writer http.ResponseWriter, request *
 		return
 	}
 	lines, embeddings, _, _, _ := s.rangeCorpus()
+	progress := s.rangeEmbedProgressPayload()
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"success":       true,
-		"running":       false,
-		"lineCount":     len(lines),
-		"hasEmbeddings": embeddings > 0,
+		"success":         true,
+		"running":         progress["running"],
+		"stage":           progress["stage"],
+		"currentMessage":  progress["currentMessage"],
+		"progressPercent": progress["progressPercent"],
+		"totalBatches":    progress["totalBatches"],
+		"currentBatch":    progress["currentBatch"],
+		"error":           progress["error"],
+		"lineCount":       len(lines),
+		"hasEmbeddings":   embeddings > 0,
 	})
 }
 

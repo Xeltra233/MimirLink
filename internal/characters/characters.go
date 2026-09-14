@@ -54,8 +54,18 @@ func List(dataDir string) []Card {
 }
 
 // Read 读取角色卡数据：优先 PNG 内嵌 chara/ccv3，其次同名 .json。
+// 读取后合并 data/character_overrides/<name>.json 覆盖层（对齐 Node readFromPng）。
 func Read(dataDir string, name string) (map[string]any, error) {
 	base := strings.TrimSuffix(name, filepath.Ext(name))
+	card, err := readRaw(dataDir, base)
+	if err != nil {
+		return nil, err
+	}
+	return mergeOverrides(dataDir, base, card), nil
+}
+
+// readRaw 读取角色卡本体（不含覆盖层）。
+func readRaw(dataDir string, base string) (map[string]any, error) {
 	pngPath := filepath.Join(Dir(dataDir), base+".png")
 	if payload, err := readPNGText(pngPath); err == nil && payload != nil {
 		return payload, nil
@@ -68,6 +78,22 @@ func Read(dataDir string, name string) (map[string]any, error) {
 		}
 	}
 	return nil, fmt.Errorf("未找到角色卡: %s", base)
+}
+
+// mergeOverrides 把覆盖层字段合并进角色卡（覆盖层优先）。
+func mergeOverrides(dataDir string, base string, card map[string]any) map[string]any {
+	overrides := ReadOverrides(dataDir, base)
+	if len(overrides) == 0 {
+		return card
+	}
+	merged := map[string]any{}
+	for key, value := range card {
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	return merged
 }
 
 // Exist 判断角色卡文件是否存在。

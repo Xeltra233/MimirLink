@@ -5,8 +5,10 @@ package panel
 // status onebot/llm、data/clear、logs 下载。
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -15,40 +17,61 @@ import (
 	"time"
 
 	"mimirlink/internal/characters"
+	"mimirlink/internal/chat"
+	"mimirlink/internal/search"
+	"mimirlink/internal/store"
+	"mimirlink/internal/tools"
 )
 
 // registerManagedRoutes 注册管理路由（/api/characters/ 与 /api/worldbooks/ 前缀
 // 复用 routes_ext.go 的注册点，子操作在 handler 内分发）。
 func (s *Server) registerManagedRoutes() {
 	s.mux.HandleFunc("/api/characters/select", s.requireAuth(s.handleCharacterSelect))
+	s.mux.HandleFunc("/api/characters/refresh", s.requireAuth(s.handleCharacterRefresh))
 	s.mux.HandleFunc("/api/characters/upload", s.requireAuth(s.handleCharacterUpload))
 	s.mux.HandleFunc("/api/characters/batch-download", s.requireAuth(s.handleCharacterBatchDownload))
 	s.mux.HandleFunc("/api/worldbooks/select", s.requireAuth(s.handleWorldbookSelect))
 	s.mux.HandleFunc("/api/worldbooks/upload", s.requireAuth(s.handleWorldbookUpload))
+	s.mux.HandleFunc("/api/worldbooks/refresh", s.requireAuth(s.handleWorldbookRefresh))
 	s.mux.HandleFunc("/api/worldbooks/batch-delete", s.requireAuth(s.handleWorldbookBatchDelete))
+	s.mux.HandleFunc("/api/worldbooks/batch-download", s.requireAuth(s.handleWorldbookBatchDownload))
 	s.mux.HandleFunc("/api/worldbooks/test", s.requireAuth(s.handleWorldbookTest))
-	s.mux.HandleFunc("/api/worldbooks/extract-from-character", s.requireAuth(s.handleWorldbookExtract))
+	s.mux.HandleFunc("/api/worldbooks/extract-from-character", s.requireAuth(s.handleWorldbookExtractFromCharacter))
 	s.mux.HandleFunc("/api/worldbooks/", s.requireAuth(s.handleWorldbookManage))
+	s.mux.HandleFunc("/api/regex", s.requireAuth(s.handleRegex))
+	s.mux.HandleFunc("/api/regex/", s.requireAuth(s.handleRegexIndex))
 	s.mux.HandleFunc("/api/regex/test", s.requireAuth(s.handleRegexTest))
 	s.mux.HandleFunc("/api/regex/import", s.requireAuth(s.handleRegexImport))
 	s.mux.HandleFunc("/api/regex/export", s.requireAuth(s.handleRegexExport))
 	s.mux.HandleFunc("/api/regex/imports/", s.requireAuth(s.handleRegexImportDelete))
 	s.mux.HandleFunc("/api/regex-write", s.requireAuth(s.handleRegexWrite))
-	s.mux.HandleFunc("/api/preset/import", s.requireAuth(s.handlePresetImport))
-	s.mux.HandleFunc("/api/preset/train", s.requireAuth(s.handlePresetTrain))
-	s.mux.HandleFunc("/api/preset/tune", s.requireAuth(s.handlePresetTrain))
+	s.mux.HandleFunc("/api/preset/import", s.requireAuth(s.handlePresetImportFull))
+	s.mux.HandleFunc("/api/preset/imports/", s.requireAuth(s.handlePresetImportDelete))
+	s.mux.HandleFunc("/api/preset/train", s.requireAuth(s.handlePresetTrainFull))
+	s.mux.HandleFunc("/api/preset/tune", s.requireAuth(s.handlePresetTune))
 	s.mux.HandleFunc("/api/memory/global", s.requireAuth(s.handleMemoryGlobal))
 	s.mux.HandleFunc("/api/memory/export", s.requireAuth(s.handleMemoryExport))
 	s.mux.HandleFunc("/api/memory/clear-all", s.requireAuth(s.handleMemoryClearAll))
+	s.mux.HandleFunc("/api/memory/knowledge/", s.requireAuth(s.handleMemoryKnowledgeDetail))
+	s.mux.HandleFunc("/api/memory/knowledge/import", s.requireAuth(s.handleMemoryKnowledgeImport))
 	s.mux.HandleFunc("/api/status/onebot/reconnect", s.requireAuth(s.handleOnebotReconnect))
 	s.mux.HandleFunc("/api/status/llm", s.requireAuth(s.handleLLMStatus))
 	s.mux.HandleFunc("/api/status/llm/toggle", s.requireAuth(s.handleLLMToggle))
 	s.mux.HandleFunc("/api/data/clear", s.requireAuth(s.handleDataClear))
+	s.mux.HandleFunc("/api/logs", s.requireAuth(s.handleRecentLogs))
 	s.mux.HandleFunc("/api/logs/download/", s.requireAuth(s.handleLogDownload))
+	s.mux.HandleFunc("/api/participant-profiles/", s.requireAuth(s.handleParticipantProfileDetail))
 	s.mux.HandleFunc("/api/participant-profiles-analyze", s.requireAuth(s.handleProfileAnalyze))
+	s.mux.HandleFunc("/api/favicon.ico", s.handleFavicon)
+	s.mux.HandleFunc("/favicon.ico", s.handleFavicon)
 	s.mux.HandleFunc("/api/test/mention", s.requireAuth(s.handleTestMention))
 	s.mux.HandleFunc("/api/tools/web-search/test", s.requireAuth(s.handleWebSearchTest))
 	s.mux.HandleFunc("/api/runtime/prompt-preview", s.requireAuth(s.handlePromptPreview))
+}
+
+// handleFavicon 对齐 Node：返回 204 空响应。
+func (s *Server) handleFavicon(writer http.ResponseWriter, request *http.Request) {
+	writer.WriteHeader(http.StatusNoContent)
 }
 
 func decodeBody(request *http.Request) map[string]any {
@@ -105,11 +128,53 @@ func (s *Server) handleCharacterSelect(writer http.ResponseWriter, request *http
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "character": name, "message": "角色已切换"})
+	// 对齐 Node POST /api/characters/select 的返回：前端要读 metadataSummary/bindingSummary/
+	// appliedActions/importPlan，用来渲染「酒馆导入信息」与绑定提示。
+	metadata := s.characterMetadata(name)
+	card, _ := characters.Read(s.dataDir, name)
+	applied := []string{}
+	if metadata["hasEmbeddedWorldBook"] == true {
+		applied = append(applied, "检测到内嵌世界书")
+	}
+	if summarizeCharacterMetadata(metadata)["importableRegexScriptCount"].(int) > 0 {
+		applied = append(applied, "检测到可导入正则")
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":          true,
+		"character":        card,
+		"importedMetadata": metadata,
+		"metadataSummary":  summarizeCharacterMetadata(metadata),
+		"appliedActions":   applied,
+		"importPlan":       characterImportPlan(metadata),
+		"importOptions":    map[string]any{"importWorldBook": nil, "importPreset": nil, "importRegex": nil},
+		"bindingSummary":   s.bindingSummary(name),
+		"variableInit":     map[string]any{"readCount": 0, "appliedCount": 0, "unsupportedCount": 0},
+		"message":          "角色已切换",
+	})
 }
 
-// handleCharacterUpload 上传角色卡 JSON。
+// handleCharacterRefresh 重新扫描角色目录并返回列表（对齐 Node POST /api/characters/refresh）。
+func (s *Server) handleCharacterRefresh(writer http.ResponseWriter, request *http.Request) {
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "characters": s.characterListPayload()})
+}
+
+// characterListPayload 返回 [{name, filename}]（对齐 Node GET /api/characters）。
+func (s *Server) characterListPayload() []map[string]any {
+	cards := characters.List(s.dataDir)
+	payload := make([]map[string]any, 0, len(cards))
+	for _, card := range cards {
+		payload = append(payload, map[string]any{"name": card.Name, "filename": card.Filename})
+	}
+	return payload
+}
+
+// handleCharacterUpload 上传角色卡：兼容 multipart(file) 与 JSON(card) 两种形式。
+// 对齐 Node：写 PNG 到 data/characters，并返回元信息/导入计划供前端弹窗。
 func (s *Server) handleCharacterUpload(writer http.ResponseWriter, request *http.Request) {
+	if strings.HasPrefix(request.Header.Get("Content-Type"), "multipart/form-data") {
+		s.handleCharacterUploadMultipart(writer, request)
+		return
+	}
 	body := decodeBody(request)
 	name := strings.TrimSuffix(orDefault(textOf(body["filename"]), textOf(body["name"])), ".png")
 	if name == "" {
@@ -126,22 +191,68 @@ func (s *Server) handleCharacterUpload(writer http.ResponseWriter, request *http
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "filename": name + ".json"})
+	writeJSON(writer, http.StatusOK, s.characterUploadPayload(name))
 }
 
-// handleCharacterBatchDownload 批量导出角色卡。
+// handleCharacterUploadMultipart 处理前端 FormData 上传的 PNG 角色卡。
+func (s *Server) handleCharacterUploadMultipart(writer http.ResponseWriter, request *http.Request) {
+	if err := request.ParseMultipartForm(64 << 20); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "上传内容解析失败: " + err.Error()})
+		return
+	}
+	file, header, err := request.FormFile("file")
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "未上传文件"})
+		return
+	}
+	defer file.Close()
+	raw, err := io.ReadAll(io.LimitReader(file, 64<<20))
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "读取上传内容失败"})
+		return
+	}
+	name := safeBase(header.Filename)
+	if name == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "文件名为空"})
+		return
+	}
+	charDir := filepath.Join(s.dataDir, "characters")
+	if err := os.MkdirAll(charDir, 0o755); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	target := filepath.Join(charDir, name+".png")
+	if !bytes.HasPrefix(raw, []byte{0x89, 'P', 'N', 'G'}) {
+		// 非 PNG（如 JSON 卡）：落成同名字符串文件，与 characters.Read 的 JSON 回退一致
+		target = filepath.Join(charDir, name+".json")
+	}
+	if err := os.WriteFile(target, raw, 0o644); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, s.characterUploadPayload(name))
+}
+
+// characterUploadPayload 组装上传响应（对齐 Node upload 的返回字段）。
+func (s *Server) characterUploadPayload(name string) map[string]any {
+	metadata := s.characterMetadata(name)
+	return map[string]any{
+		"success":          true,
+		"message":          "角色卡上传成功",
+		"filename":         name + ".png",
+		"characters":       s.characterListPayload(),
+		"importedMetadata": metadata,
+		"metadataSummary":  summarizeCharacterMetadata(metadata),
+		"importPlan":       characterImportPlan(metadata),
+		"bindingSummary":   s.bindingSummary(name),
+		"variableInit":     nil,
+	}
+}
+
+// handleCharacterBatchDownload 打包导出角色卡（对齐 Node：tar.gz）。
 func (s *Server) handleCharacterBatchDownload(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
-	result := []map[string]any{}
-	if items, ok := body["filenames"].([]any); ok {
-		for _, item := range items {
-			name := safeBase(textOf(item))
-			if card, err := characters.Read(s.dataDir, name); err == nil {
-				result = append(result, card)
-			}
-		}
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"characters": result})
+	serveArchive(writer, filepath.Join(s.dataDir, "characters"), body["filenames"], "characters")
 }
 
 // handleCharacterManage /api/characters/:filename 的子操作分发
@@ -155,19 +266,12 @@ func (s *Server) handleCharacterManage(writer http.ResponseWriter, request *http
 	case strings.HasSuffix(rest, "/update"):
 		name := safeBase(strings.TrimSuffix(rest, "/update"))
 		body := decodeBody(request)
-		card, err := characters.Read(s.dataDir, name)
+		updated, err := characters.Update(s.dataDir, name, body)
 		if err != nil {
 			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": err.Error()})
 			return
 		}
-		for key, value := range body {
-			card[key] = value
-		}
-		if err := s.writeCharacterCardByName(name, card); err != nil {
-			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
-			return
-		}
-		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "角色已更新"})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "角色卡已保存", "character": updated})
 	case strings.HasSuffix(rest, "/variable-defaults"):
 		name := safeBase(strings.TrimSuffix(rest, "/variable-defaults"))
 		card, err := characters.Read(s.dataDir, name)
@@ -177,24 +281,44 @@ func (s *Server) handleCharacterManage(writer http.ResponseWriter, request *http
 		}
 		switch request.Method {
 		case http.MethodGet:
-			writeJSON(writer, http.StatusOK, map[string]any{"success": true, "defaults": card["variable_defaults"]})
+			defaults := card["variable_defaults"]
+			if defaults == nil {
+				defaults = map[string]any{}
+			}
+			writeJSON(writer, http.StatusOK, map[string]any{"success": true, "variableDefaults": defaults, "defaults": defaults})
 		case http.MethodPut:
 			body := decodeBody(request)
-			card["variable_defaults"] = body["variable_defaults"]
-			if err := s.writeCharacterCardByName(name, card); err != nil {
+			defaults := body["variableDefaults"]
+			if defaults == nil {
+				defaults = body["variable_defaults"]
+			}
+			if _, ok := defaults.(map[string]any); !ok {
+				writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "variableDefaults 必须是对象"})
+				return
+			}
+			if _, err := characters.Update(s.dataDir, name, map[string]any{"variable_defaults": defaults}); err != nil {
 				writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 				return
 			}
 			writeJSON(writer, http.StatusOK, map[string]any{"success": true})
+		default:
+			writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 		}
 	case strings.HasSuffix(rest, "/download"):
 		name := safeBase(strings.TrimSuffix(rest, "/download"))
-		card, err := characters.Read(s.dataDir, name)
-		if err != nil {
-			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": err.Error()})
+		path := filepath.Join(s.dataDir, "characters", name+".png")
+		if _, err := os.Stat(path); err != nil {
+			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "角色文件不存在"})
 			return
 		}
-		writeJSON(writer, http.StatusOK, card)
+		writer.Header().Set("Content-Type", "image/png")
+		writer.Header().Set("Content-Disposition", "attachment; filename=\""+name+".png\"")
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		_, _ = writer.Write(raw)
 	case strings.HasSuffix(rest, "/memory-binding"):
 		s.handleMemoryBinding(writer, request, safeBase(strings.TrimSuffix(rest, "/memory-binding")), "memory")
 	case strings.HasSuffix(rest, "/worldbook-binding"):
@@ -202,14 +326,25 @@ func (s *Server) handleCharacterManage(writer http.ResponseWriter, request *http
 	default:
 		if request.Method == http.MethodDelete {
 			name := safeBase(rest)
-			if err := os.Remove(filepath.Join(s.dataDir, "characters", name+".json")); err != nil {
+			removed := false
+			for _, ext := range []string{".png", ".json"} {
+				if err := os.Remove(filepath.Join(s.dataDir, "characters", name+ext)); err == nil {
+					removed = true
+				}
+			}
+			if !removed {
 				writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "角色不存在"})
 				return
 			}
+			_ = os.Remove(characters.OverridesPath(s.dataDir, name))
 			writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "角色已删除"})
 			return
 		}
-		s.handleCharacterDetail(writer, request)
+		if strings.HasSuffix(rest, "/detail") {
+			s.renderCharacterDetail(writer, strings.TrimSuffix(rest, "/detail"))
+			return
+		}
+		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "未知子路径"})
 	}
 }
 
@@ -240,17 +375,26 @@ func (s *Server) handleMemoryBinding(writer http.ResponseWriter, request *http.R
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true})
+	message := "角色记忆绑定已更新"
+	if kind == "worldbook" {
+		message = "角色世界书绑定已更新"
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":        true,
+		"message":        message,
+		"bindingSummary": s.bindingSummary(name),
+	})
 }
 
-// writeCharacterCardByName 写回角色卡 JSON。
+// writeCharacterCardByName 写回角色卡：已有 PNG 走内嵌数据重写，否则新建 PNG。
+// 之前直接写 characters/<name>.json，Node 版看不到、Go 自己的读路径也优先 PNG，更新等于丢失。
 func (s *Server) writeCharacterCardByName(name string, card map[string]any) error {
 	safe := safeBase(name)
-	encoded, err := json.MarshalIndent(card, "", "  ")
-	if err != nil {
+	if _, err := os.Stat(filepath.Join(s.dataDir, "characters", safe+".png")); err == nil {
+		_, err := characters.Update(s.dataDir, safe, card)
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.dataDir, "characters", safe+".json"), encoded, 0o644)
+	return characters.Create(s.dataDir, safe, card)
 }
 
 // ---------------- worldbooks ----------------
@@ -308,8 +452,8 @@ func (s *Server) handleWorldbookBatchDelete(writer http.ResponseWriter, request 
 
 func (s *Server) handleWorldbookTest(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
-	name := safeBase(textOf(body["characterName"]))
-	input := textOf(body["input"])
+	name := safeBase(firstText(textOf(body["characterName"]), strings.TrimSuffix(s.currentWorldbookName(), ".json")))
+	input := firstText(textOf(body["text"]), textOf(body["input"]))
 	book := map[string]any{}
 	raw, err := os.ReadFile(filepath.Join(s.dataDir, "worlds", name+".json"))
 	if err == nil {
@@ -333,24 +477,7 @@ func (s *Server) handleWorldbookTest(writer http.ResponseWriter, request *http.R
 			}
 		}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "matched": matched, "count": len(matched)})
-}
-
-func (s *Server) handleWorldbookExtract(writer http.ResponseWriter, request *http.Request) {
-	body := decodeBody(request)
-	name := safeBase(textOf(body["characterName"]))
-	card, err := characters.Read(s.dataDir, name)
-	if err != nil {
-		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": err.Error()})
-		return
-	}
-	entries := []any{}
-	if lorebook, ok := card["character_book"].(map[string]any); ok {
-		if items, ok := lorebook["entries"].([]any); ok {
-			entries = items
-		}
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "entries": entries, "count": len(entries)})
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "entries": matched, "matched": matched, "count": len(matched)})
 }
 
 // handleWorldbookManage /api/worldbooks/:filename 的子操作分发。
@@ -361,15 +488,32 @@ func (s *Server) handleWorldbookManage(writer http.ResponseWriter, request *http
 		name := safeBase(strings.TrimSuffix(rest, "/content"))
 		raw, err := os.ReadFile(filepath.Join(s.dataDir, "worlds", name+".json"))
 		if err != nil {
-			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "世界书不存在"})
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": "世界书不存在"})
 			return
 		}
-		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-		_, _ = writer.Write(raw)
+		var worldbook any
+		if err := json.Unmarshal(raw, &worldbook); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": "世界书解析失败: " + err.Error()})
+			return
+		}
+		// 对齐 Node GET /api/worldbooks/:filename/content → { success, worldbook }
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "worldbook": worldbook})
 	case strings.HasSuffix(rest, "/save"):
 		name := safeBase(strings.TrimSuffix(rest, "/save"))
 		body := decodeBody(request)
-		encoded, _ := json.MarshalIndent(body, "", "  ")
+		// Node 契约是 { worldbook: {...} }；同时兼容直接提交世界书对象的历史用法
+		worldbook, ok := body["worldbook"].(map[string]any)
+		if !ok {
+			if _, hasEntries := body["entries"]; hasEntries {
+				worldbook = body
+				ok = true
+			}
+		}
+		if !ok {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请提供世界书数据"})
+			return
+		}
+		encoded, _ := json.MarshalIndent(worldbook, "", "  ")
 		if err := os.WriteFile(filepath.Join(s.dataDir, "worlds", name+".json"), encoded, 0o644); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 			return
@@ -428,9 +572,27 @@ func (s *Server) handleRegexWrite(writer http.ResponseWriter, request *http.Requ
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true})
 }
 
-// handleRegexTest 正则规则测试。
+// handleRegexTest 正则规则测试：兼容 Node 契约 {pattern, flags, replacement, testText}
+// 与靶场/规则列表用的 {input, rules} 两种请求体。
 func (s *Server) handleRegexTest(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
+	if pattern := textOf(body["pattern"]); pattern != "" {
+		testText := firstText(textOf(body["testText"]), textOf(body["input"]), textOf(body["text"]))
+		compiled, err := compileJSRegexFlags(pattern, textOf(body["flags"]))
+		if err != nil {
+			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		matches := compiled.FindAllString(testText, -1)
+		if matches == nil {
+			matches = []string{}
+		}
+		result := compiled.ReplaceAllString(testText, textOf(body["replacement"]))
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"success": true, "matches": matches, "result": result, "changed": result != testText,
+		})
+		return
+	}
 	input := textOf(body["input"])
 	output := input
 	if items, ok := body["rules"].([]any); ok {
@@ -454,38 +616,149 @@ func (s *Server) handleRegexTest(writer http.ResponseWriter, request *http.Reque
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "output": output})
 }
 
-// handleRegexImport 正则规则导入。
+// handleRegexImport 正则规则导入（对齐 Node POST /api/regex/import）。
 func (s *Server) handleRegexImport(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
 	layer := orDefault(textOf(body["targetLayer"]), "global")
-	imported, _ := body["rules"].([]any)
-	if err := s.document.Set(regexConfigKey(layer), imported); err != nil {
+	importedRules := chat.NormalizeImportedRules(body)
+	if len(importedRules) == 0 {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "未识别到可导入的正则规则"})
+		return
+	}
+	path, ok := s.regexLayerPath(layer)
+	if !ok {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "当前没有选中角色，无法导入到角色层"})
+		return
+	}
+	existing, _ := s.regexLayerRules(layer)
+	seen := map[string]bool{}
+	for _, item := range existing {
+		if rule, ok := item.(map[string]any); ok {
+			seen[ruleFingerprint(rule)] = true
+		}
+	}
+	nextRules := []map[string]any{}
+	for _, rule := range importedRules {
+		key := ruleFingerprint(rule)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		nextRules = append(nextRules, rule)
+	}
+	merged := append(existing, toAnyList(nextRules)...)
+	if err := s.document.Set(path, merged); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
+	record := map[string]any{
+		"id": fmt.Sprintf("regex_%d", nowMillis()), "type": "regex",
+		"filename":    orDefault(textOf(body["sourceFilename"]), fmt.Sprintf("regex-%d.json", nowMillis())),
+		"targetLayer": layer, "createdAt": time.Now().UTC().Format(time.RFC3339),
+		"importedRules": toAnyList(nextRules),
+	}
+	records := s.regexImportRecords()
+	records = append([]map[string]any{record}, records...)
+	_ = s.document.Set("imports.regexFiles", toAnyList(records))
 	if err := s.document.Save(); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "count": len(imported)})
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success": true, "count": len(nextRules), "importedRules": nextRules,
+		"diagnostics": map[string]any{"recognized": len(importedRules), "applied": len(nextRules)},
+		"targetLayer": layer,
+		"importRecord": map[string]any{
+			"id": record["id"], "type": "regex", "filename": record["filename"],
+			"targetLayer": layer, "createdAt": record["createdAt"], "importedCount": len(nextRules),
+		},
+	})
 }
 
-// handleRegexExport 正则规则导出。
-func (s *Server) handleRegexExport(writer http.ResponseWriter, request *http.Request) {
-	layer := orDefault(request.URL.Query().Get("targetLayer"), "global")
-	raw := s.document.Get(regexConfigKey(layer))
-	payload := []any{}
-	if raw.Exists() {
-		_ = json.Unmarshal([]byte(raw.Raw), &payload)
+// ruleFingerprint 是规则去重键（对齐 Node 的 name|pattern|replacement）。
+func ruleFingerprint(rule map[string]any) string {
+	return textOf(rule["name"]) + "|" + textOf(rule["pattern"]) + "|" + textOf(rule["replacement"])
+}
+
+// toAnyList 把强类型切片转成 []any（配置文档写入用）。
+func toAnyList[T any](items []T) []any {
+	result := make([]any, 0, len(items))
+	for _, item := range items {
+		result = append(result, item)
 	}
-	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
+	return result
+}
+
+// handleRegexExport 正则规则导出（对齐 Node GET /api/regex/export）。
+func (s *Server) handleRegexExport(writer http.ResponseWriter, request *http.Request) {
+	format := "native"
+	if request.URL.Query().Get("format") == "sillytavern" {
+		format = "sillytavern"
+	}
+	payload := chat.ExportRules(s.document, format)
+	writer.Header().Set("Content-Type", "application/json")
+	writer.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=regex-%s-%d.json", format, nowMillis()))
 	encoded, _ := json.MarshalIndent(payload, "", "  ")
 	_, _ = writer.Write(encoded)
 }
 
-// handleRegexImportDelete 删除导入记录（精简实现：导入直接写配置，无独立记录表）。
+// handleRegexImportDelete 删除导入记录并移除其导入的规则（对齐 Node）。
 func (s *Server) handleRegexImportDelete(writer http.ResponseWriter, request *http.Request) {
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "Go 版导入直接写配置，无独立导入记录"})
+	recordID := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/regex/imports/"), "/")
+	records := s.regexImportRecords()
+	var target map[string]any
+	remaining := []map[string]any{}
+	for _, record := range records {
+		if textOf(record["id"]) == recordID {
+			target = record
+			continue
+		}
+		remaining = append(remaining, record)
+	}
+	if target == nil {
+		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "导入记录不存在"})
+		return
+	}
+	layer := orDefault(textOf(target["targetLayer"]), "global")
+	imported, _ := target["importedRules"].([]any)
+	if path, ok := s.regexLayerPath(layer); ok && len(imported) > 0 {
+		signatures := map[string]bool{}
+		for _, item := range imported {
+			if rule, ok := item.(map[string]any); ok {
+				signatures[ruleFingerprint(rule)] = true
+			}
+		}
+		existing, _ := s.regexLayerRules(layer)
+		kept := []any{}
+		for _, item := range existing {
+			if rule, ok := item.(map[string]any); ok && signatures[ruleFingerprint(rule)] {
+				continue
+			}
+			kept = append(kept, item)
+		}
+		_ = s.document.Set(path, kept)
+	}
+	_ = s.document.Set("imports.regexFiles", toAnyList(remaining))
+	if err := s.document.Save(); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "导入记录已删除", "removedCount": len(imported)})
+}
+
+// compileJSRegexFlags 按 Node new RegExp(pattern, flags) 的语义编译（支持 g/i/m/s）。
+func compileJSRegexFlags(pattern string, flags string) (*regexp.Regexp, error) {
+	prefix := ""
+	if strings.Contains(flags, "i") {
+		prefix += "(?i)"
+	}
+	if strings.Contains(flags, "s") {
+		prefix += "(?s)"
+	}
+	if strings.Contains(flags, "m") {
+		prefix += "(?m)"
+	}
+	return regexp.Compile(prefix + pattern)
 }
 
 // compileJSRegex 剥 JS 正则 /.../flags 定界符后编译。
@@ -508,29 +781,6 @@ func compileJSRegex(pattern string) (*regexp.Regexp, error) {
 }
 
 // ---------------- preset import/train ----------------
-
-func (s *Server) handlePresetImport(writer http.ResponseWriter, request *http.Request) {
-	body := decodeBody(request)
-	name := safeBase(textOf(body["name"]))
-	if name == "" {
-		name = fmt_Sprint(time.Now().UnixMilli())
-	}
-	preset, _ := body["preset"].(map[string]any)
-	if preset == nil {
-		preset = body
-		delete(preset, "name")
-	}
-	encoded, _ := json.MarshalIndent(preset, "", "  ")
-	if err := os.WriteFile(filepath.Join(s.dataDir, "presets", "preset-"+name+".json"), encoded, 0o644); err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
-		return
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "filename": "preset-" + name + ".json"})
-}
-
-func (s *Server) handlePresetTrain(writer http.ResponseWriter, request *http.Request) {
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "训练任务已接受（Go 版精简实现：AI 迭代训练见 MCP range_test/analyze 工具）"})
-}
 
 // ---------------- memory global/export/clear-all ----------------
 
@@ -557,8 +807,27 @@ func (s *Server) handleMemoryExport(writer http.ResponseWriter, request *http.Re
 	}
 	defer database.Close()
 	sessions, _ := database.ListSessions(500)
+	counts := store.Counts{}
+	if c, err := database.Counts(); err == nil {
+		counts = c
+	}
+	knowledge, _ := database.ListKnowledgeEntriesFiltered(store.VariableFilters{Limit: 500})
 	writer.Header().Set("Content-Disposition", "attachment; filename=memory-export-"+fmt_Sprint(time.Now().UnixMilli())+".json")
-	writeJSON(writer, http.StatusOK, map[string]any{"sessions": sessions, "exportedAt": time.Now().UnixMilli(), "dbPath": path})
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"sessions":       sessions,
+		"knowledge":      knowledge,
+		"globalTimeline": []any{},
+		"stats": map[string]any{
+			"totalMessages":    counts.Messages,
+			"totalSessions":    counts.Sessions,
+			"totalSummaries":   counts.Summaries,
+			"memoryFileSizeMB": memoryFileSizeMB(path),
+		},
+		"exportDate": time.Now().UTC().Format(time.RFC3339),
+		"storage":    map[string]any{"type": "sqlite", "path": path},
+		"exportedAt": time.Now().UnixMilli(),
+		"dbPath":     path,
+	})
 }
 
 func (s *Server) handleMemoryClearAll(writer http.ResponseWriter, request *http.Request) {
@@ -659,14 +928,55 @@ func (s *Server) handleTestMention(writer http.ResponseWriter, request *http.Req
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "主动 @ 测试请在 bot 进程内使用 chat.commands.adminMention 命令触发"})
 }
 
+// handleWebSearchTest 执行真实联网搜索（对齐 Node POST /api/tools/web-search/test）。
 func (s *Server) handleWebSearchTest(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
-	query := textOf(body["query"])
+	query := strings.TrimSpace(textOf(body["query"]))
 	if query == "" {
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "query 不能为空"})
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "搜索关键词不能为空"})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "搜索测试请在 bot 进程触发（联网搜索按需构建），query=" + query})
+	topic := "web"
+	if textOf(body["topic"]) == "news" {
+		topic = "news"
+	}
+	limit := intOr(body["limit"], 0)
+	config := tools.LoadSearchConfig(s.document)
+	service := search.New(config, s.logger)
+	requestOptions := search.Request{
+		Topic:     topic,
+		TimeRange: textOf(body["timeRange"]),
+		Site:      textOf(body["site"]),
+	}
+	if limit > 0 {
+		requestOptions.Limit = limit
+	}
+	startedAt := time.Now()
+	results, attempts, err := service.Search(request.Context(), query, requestOptions)
+	durationMs := time.Since(startedAt).Milliseconds()
+	if err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{
+			"success": false, "error": err.Error(), "attempts": attempts, "query": query, "durationMs": durationMs,
+		})
+		return
+	}
+	providerID := config.Provider
+	source := providerID
+	if len(results) > 0 && results[0].Source != "" {
+		source = results[0].Source
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":     true,
+		"ok":          true,
+		"provider":    providerID,
+		"source":      source,
+		"query":       query,
+		"topic":       topic,
+		"durationMs":  durationMs,
+		"resultCount": len(results),
+		"results":     results,
+		"attempts":    attempts,
+	})
 }
 
 func (s *Server) handlePromptPreview(writer http.ResponseWriter, request *http.Request) {

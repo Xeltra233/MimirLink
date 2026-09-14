@@ -3,18 +3,20 @@ package panel
 import (
 	"encoding/json"
 	"fmt"
+	"mimirlink/internal/ai"
+	"mimirlink/internal/characters"
+	"mimirlink/internal/chat"
+	"mimirlink/internal/config"
+	"mimirlink/internal/store"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
-
-	"mimirlink/internal/ai"
-	"mimirlink/internal/characters"
-	"mimirlink/internal/config"
-	"mimirlink/internal/store"
 )
 
 // 本文件补齐前端主要页面依赖的读接口（形状对齐 Node 版 src/routes.js）。
@@ -28,7 +30,6 @@ func (s *Server) registerExtendedRoutes() {
 	s.mux.HandleFunc("/api/worldbooks/current", s.requireAuth(s.handleWorldbookCurrent))
 	s.mux.HandleFunc("/api/sessions", s.requireAuth(s.handleSessions))
 	s.mux.HandleFunc("/api/sessions/", s.requireAuth(s.handleSessionDetail))
-	s.mux.HandleFunc("/api/regex", s.requireAuth(s.handleRegex))
 	s.mux.HandleFunc("/api/logs/files", s.requireAuth(s.handleLogFiles))
 	s.mux.HandleFunc("/api/logs/content/", s.requireAuth(s.handleLogContent))
 	s.mux.HandleFunc("/api/test/ai", s.requireAuth(s.handleTestAI))
@@ -51,10 +52,27 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 	worldbook := s.currentWorldbookName()
 	sessionMode := fallback(s.document.String("chat.sessionMode"), "user_persistent")
 
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"version":    Version,
-		"uptime":     time.Since(s.startedAt).Seconds(),
-		"llmEnabled": true,
+		"version": Version,
+		"uptime":  time.Since(s.startedAt).Seconds(),
+		"memory": map[string]any{
+			"rss":       memStats.Sys,
+			"heapUsed":  memStats.HeapAlloc,
+			"heapTotal": memStats.HeapSys,
+			"external":  memStats.StackInuse,
+		},
+		"llmEnabled":                  true,
+		"participantProfileProgress":  nil,
+		"knowledgeImportProgress":     nil,
+		"corpusEmbedProgress":         s.rangeEmbedProgressPayload(),
+		"dashboardMetrics":            nil,
+		"lastRouting":                 nil,
+		"lastInjectionObservation":    nil,
+		"recentInjectionObservations": []any{},
+		"lastRecall":                  nil,
+		"tokenStats":                  nil,
 		"runtime": map[string]any{
 			"maxConcurrentSessions": s.document.Int("chat.maxConcurrentSessions", 4),
 			"bufferWindowMs":        s.document.Int("chat.bufferWindowMs", 1200),
@@ -103,8 +121,9 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 		},
 		"model": s.document.String("chat.model"),
 		"server": map[string]any{
-			"host": s.document.String("server.host"),
-			"port": s.document.Int("server.port", 8001),
+			"host":                s.document.String("server.host"),
+			"port":                s.document.Int("server.port", 8001),
+			"healthLogIntervalMs": s.document.Int("server.healthLogIntervalMs", 60000),
 		},
 	})
 }
@@ -192,37 +211,99 @@ func (s *Server) handleCharacterCurrent(writer http.ResponseWriter, request *htt
 	writeJSON(writer, http.StatusOK, data)
 }
 
+// characterManageActions 是需要交给 handleCharacterManage 处理的子操作后缀。
+// 之前用「路径分段数 > 0」判断，导致 /api/characters/<name>/detail 与
+// handleCharacterManage 的 default 分支互相递归，直接栈溢出杀掉面板进程。
+var characterManageActions = []string{
+	"/update", "/variable-defaults", "/download",
+	"/memory-binding", "/worldbook-binding",
+}
+
 func (s *Server) handleCharacterDetail(writer http.ResponseWriter, request *http.Request) {
-	// 子操作分发（update/variable-defaults/download/memory-binding/worldbook-binding/delete）
-	if request.URL.Path != "/api/characters/" && strings.Count(strings.TrimPrefix(request.URL.Path, "/api/characters/"), "/") > 0 ||
-		request.Method == http.MethodDelete {
+	rest := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/characters/"), "/")
+	if request.Method == http.MethodDelete {
 		s.handleCharacterManage(writer, request)
 		return
 	}
-	rest := strings.TrimPrefix(request.URL.Path, "/api/characters/")
-	rest = strings.TrimSuffix(rest, "/detail")
-	name, err := safeName(rest)
+	for _, action := range characterManageActions {
+		if strings.HasSuffix(rest, action) {
+			s.handleCharacterManage(writer, request)
+			return
+		}
+	}
+	name := strings.TrimSuffix(rest, "/detail")
+	if strings.Contains(name, "/") {
+		// 未识别的多级子路径：与 Node（未注册路由）一致返回 404，且不得进入递归分发
+		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "未知子路径"})
+		return
+	}
+	s.renderCharacterDetail(writer, name)
+}
+
+// renderCharacterDetail 输出角色卡详情（/api/characters/:filename[/detail]）。
+func (s *Server) renderCharacterDetail(writer http.ResponseWriter, name string) {
+	safe, err := safeName(name)
 	if err != nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	data, err := characters.Read(s.dataDir, name)
+	data, err := characters.Read(s.dataDir, safe)
 	if err != nil {
 		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
+	metadata := s.characterMetadata(name)
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"success":   true,
-		"character": data,
-		"metadataSummary": map[string]any{
+		"success":             true,
+		"character":           data,
+		"importedMetadata":    metadata,
+		"importPlan":          characterImportPlan(metadata),
+		"bindingSummary":      s.bindingSummary(name),
+		"variableScanSummary": s.variableScanSummary(name, metadata),
+		// 前端「酒馆导入信息」面板读的是 summarizeCharacterMetadata 的字段
+		// （hasEmbeddedWorldBook / regexScriptCount / hasSystemPrompt ...）
+		"metadataSummary": mergeMetadataSummary(summarizeCharacterMetadata(metadata), map[string]any{
 			"name":        data["name"],
 			"description": data["description"],
 			"scenario":    data["scenario"],
 			"firstMes":    data["first_mes"],
 			"tags":        data["tags"],
 			"creator":     data["creator"],
-		},
+		}),
 	})
+}
+
+// variableScanSummary 扫描角色卡/预设/世界书的变量玩法（对齐 Node scanVariableUsage 的输入源）。
+func (s *Server) variableScanSummary(name string, metadata map[string]any) map[string]any {
+	sources := []map[string]string{}
+	if card, err := characters.Read(s.dataDir, name); err == nil {
+		for _, field := range []string{"description", "personality", "scenario", "first_mes", "mes_example", "system_prompt", "post_history_instructions"} {
+			if content := textOf(card[field]); content != "" {
+				sources = append(sources, map[string]string{"name": "character." + field, "content": content})
+			}
+		}
+	}
+	if preferred, ok := metadata["preferredPreset"].(map[string]any); ok {
+		for _, field := range []string{"systemPrompt", "postHistoryInstructions", "assistantPrefill"} {
+			if content := textOf(preferred[field]); content != "" {
+				sources = append(sources, map[string]string{"name": "preset." + field, "content": content})
+			}
+		}
+	}
+	if book, ok := metadata["worldBook"].(map[string]any); ok {
+		if entries, ok := book["entries"].([]any); ok {
+			for index, item := range entries {
+				entry, _ := item.(map[string]any)
+				if entry == nil {
+					continue
+				}
+				if content := textOf(entry["content"]); content != "" {
+					sources = append(sources, map[string]string{"name": fmt.Sprintf("worldbook.%d", index), "content": content})
+				}
+			}
+		}
+	}
+	return chat.ScanVariableUsage(sources)
 }
 
 // safeName 拒绝路径穿越并去掉扩展名。
@@ -417,30 +498,104 @@ func (s *Server) handleSessionDetail(writer http.ResponseWriter, request *http.R
 
 // ---------- 正则 ----------
 
-func (s *Server) handleRegex(writer http.ResponseWriter, request *http.Request) {
-	target := request.URL.Query().Get("targetLayer")
-	if target == "" {
-		target = "global"
-	}
-	path := "regex.global"
-	switch target {
-	case "character", "characters":
-		path = "regex.character"
+// regexLayerPath 返回 targetLayer 对应的配置路径（对齐 Node getRegexTargetRules：
+// preset → preset.regexRules；character → bindings.characters.<name>.regexRules；
+// 其余（global）→ bindings.global.regexRules）。
+func (s *Server) regexLayerPath(layer string) (string, bool) {
+	switch layer {
 	case "preset":
-		path = "regex.preset"
+		return "preset.regexRules", true
+	case "character", "characters":
+		name := s.currentCharacterName()
+		if name == "" {
+			return "", false
+		}
+		return "bindings.characters." + name + ".regexRules", true
+	default:
+		return "bindings.global.regexRules", true
 	}
-	result := s.document.Get(path)
-	if !result.Exists() {
-		writeJSON(writer, http.StatusOK, []any{})
+}
+
+// regexLayerRules 读取指定层的规则数组。
+func (s *Server) regexLayerRules(layer string) ([]any, bool) {
+	path, ok := s.regexLayerPath(layer)
+	if !ok {
+		return nil, false
+	}
+	rules := []any{}
+	if raw := s.document.Get(path); raw.Exists() && strings.TrimSpace(raw.Raw) != "" {
+		_ = json.Unmarshal([]byte(raw.Raw), &rules)
+	}
+	if rules == nil {
+		rules = []any{}
+	}
+	return rules, true
+}
+
+// handleRegex 处理 GET/POST /api/regex。
+func (s *Server) handleRegex(writer http.ResponseWriter, request *http.Request) {
+	if request.URL.Query().Get("summary") == "1" {
+		writeJSON(writer, http.StatusOK, s.regexImportSummaries())
 		return
 	}
-	raw := result.Raw
-	if strings.TrimSpace(raw) == "" {
-		writeJSON(writer, http.StatusOK, []any{})
+	layer := orDefault(request.URL.Query().Get("targetLayer"), "global")
+	rules, ok := s.regexLayerRules(layer)
+	if !ok {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "当前没有选中角色，无法读取角色层规则"})
 		return
 	}
-	writer.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = writer.Write([]byte(raw))
+	if request.Method == http.MethodPost {
+		body := decodeBody(request)
+		delete(body, "targetLayer")
+		path, _ := s.regexLayerPath(layer)
+		rules = append(rules, body)
+		if err := s.document.Set(path, rules); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		if err := s.document.Save(); err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "规则已添加"})
+		return
+	}
+	writeJSON(writer, http.StatusOK, rules)
+}
+
+// regexImportSummaries 返回正则导入记录摘要（对齐 Node summarizeRegexImportRecord）。
+func (s *Server) regexImportSummaries() []map[string]any {
+	records := []map[string]any{}
+	for _, record := range s.regexImportRecords() {
+		imported := []any{}
+		if list, ok := record["importedRules"].([]any); ok {
+			imported = list
+		}
+		records = append(records, map[string]any{
+			"id": record["id"], "type": orDefault(textOf(record["type"]), "regex"),
+			"filename": record["filename"], "targetLayer": orDefault(textOf(record["targetLayer"]), "global"),
+			"createdAt": record["createdAt"], "importedCount": len(imported),
+			"sourceType": record["sourceType"],
+		})
+	}
+	return records
+}
+
+// regexImportRecords 读取原始导入记录（含导入的规则快照）。
+func (s *Server) regexImportRecords() []map[string]any {
+	raw := s.document.Get("imports.regexFiles")
+	if !raw.Exists() || !raw.IsArray() {
+		return nil
+	}
+	records := []map[string]any{}
+	for _, item := range raw.Array() {
+		record := map[string]any{}
+		if err := json.Unmarshal([]byte(item.Raw), &record); err != nil {
+			continue
+		}
+		records = append(records, record)
+	}
+	return records
 }
 
 // ---------- 日志 ----------
@@ -453,7 +608,7 @@ func (s *Server) handleLogFiles(writer http.ResponseWriter, request *http.Reques
 	}
 	files := []map[string]any{}
 	for _, entry := range entries {
-		if entry.IsDir() {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".log") {
 			continue
 		}
 		info, err := entry.Info()
@@ -461,40 +616,71 @@ func (s *Server) handleLogFiles(writer http.ResponseWriter, request *http.Reques
 			continue
 		}
 		files = append(files, map[string]any{
-			"name":     entry.Name(),
-			"size":     info.Size(),
-			"modified": info.ModTime().UnixMilli(),
+			"name":  entry.Name(),
+			"size":  info.Size(),
+			"mtime": info.ModTime().UnixMilli(),
 		})
 	}
 	sort.Slice(files, func(left, right int) bool {
-		return files[left]["modified"].(int64) > files[right]["modified"].(int64)
+		return files[left]["mtime"].(int64) > files[right]["mtime"].(int64)
 	})
 	writeJSON(writer, http.StatusOK, files)
 }
 
+var logFilePattern = regexp.MustCompile(`^[\w\-\.]+\.log$`)
+
 func (s *Server) handleLogContent(writer http.ResponseWriter, request *http.Request) {
-	name, err := safeName(strings.TrimPrefix(request.URL.Path, "/api/logs/content/"))
-	if err != nil {
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"error": err.Error()})
+	name := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/logs/content/"), "/")
+	// 对齐 Node：文件名必须是 xxx.log；返回 text/plain 原文（前端用 res.text() 直接展示）。
+	if !logFilePattern.MatchString(name) {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "无效的文件名"})
 		return
 	}
-	path := filepath.Join(s.logDir(), name)
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(filepath.Join(s.logDir(), name))
 	if err != nil {
-		writeJSON(writer, http.StatusNotFound, map[string]any{"error": "日志不存在"})
+		writeJSON(writer, http.StatusNotFound, map[string]any{"error": "文件不存在"})
 		return
 	}
-	const maxBytes = 512 * 1024
-	truncated := false
-	if len(raw) > maxBytes {
-		raw = raw[len(raw)-maxBytes:]
-		truncated = true
+	writer.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = writer.Write(raw)
+}
+
+// handleRecentLogs 对齐 Node GET /api/logs：返回最近日志（取最新日志文件尾部）。
+func (s *Server) handleRecentLogs(writer http.ResponseWriter, request *http.Request) {
+	entries, err := os.ReadDir(s.logDir())
+	if err != nil {
+		writeJSON(writer, http.StatusOK, []any{})
+		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"name":      name,
-		"content":   string(raw),
-		"truncated": truncated,
-	})
+	latest := ""
+	var latestTime time.Time
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".log") {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		if latest == "" || info.ModTime().After(latestTime) {
+			latest = entry.Name()
+			latestTime = info.ModTime()
+		}
+	}
+	if latest == "" {
+		writeJSON(writer, http.StatusOK, []any{})
+		return
+	}
+	raw, err := os.ReadFile(filepath.Join(s.logDir(), latest))
+	if err != nil {
+		writeJSON(writer, http.StatusOK, []any{})
+		return
+	}
+	lines := strings.Split(string(raw), "\n")
+	if len(lines) > 100 {
+		lines = lines[len(lines)-100:]
+	}
+	writeJSON(writer, http.StatusOK, lines)
 }
 
 func (s *Server) logDir() string {
