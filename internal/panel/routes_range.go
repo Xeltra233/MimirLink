@@ -809,34 +809,42 @@ func (s *Server) handleRangeApplyChanges(writer http.ResponseWriter, request *ht
 
 // rangeTestPayload 是靶场测试的请求体。
 type rangeTestPayload struct {
-	UserMessage     string         `json:"userMessage"`
-	CharacterName   string         `json:"characterName"`
-	MessageType     string         `json:"messageType"`
-	GroupID         string         `json:"groupId"`
-	UserID          string         `json:"userId"`
-	UserName        string         `json:"userName"`
-	GroupName       string         `json:"groupName"`
-	ModelProviderID string         `json:"modelProviderId"`
-	Model           string         `json:"model"`
-	WorldbookName   string         `json:"worldbookName"`
-	Context         map[string]any `json:"context"`
-	IncludeAI       *bool          `json:"includeAIResponse"`
-	InjectVariables *bool          `json:"injectVariables"`
+	UserMessage      string          `json:"userMessage"`
+	CharacterName    string          `json:"characterName"`
+	MessageType      string          `json:"messageType"`
+	GroupID          string          `json:"groupId"`
+	UserID           string          `json:"userId"`
+	UserName         string          `json:"userName"`
+	GroupName        string          `json:"groupName"`
+	ModelProviderID  string          `json:"modelProviderId"`
+	Model            string          `json:"model"`
+	WorldbookName    string          `json:"worldbookName"`
+	SessionKey       string          `json:"sessionKey"`
+	ReplyReference   string          `json:"replyReference"`
+	Context          map[string]any  `json:"context"`
+	ContextOverrides map[string]bool `json:"contextConfig"`
+	InjectProfiles   *bool           `json:"injectProfiles"`
+	IncludeAI        *bool           `json:"includeAIResponse"`
+	InjectVariables  *bool           `json:"injectVariables"`
 }
 
 func (s *Server) parseRangePayload(body map[string]any) rangeTestPayload {
 	payload := rangeTestPayload{
-		UserMessage:     firstText(textOf(body["userMessage"]), textOf(body["text"])),
-		CharacterName:   textOf(body["characterName"]),
-		MessageType:     orDefault(textOf(body["messageType"]), "group"),
-		GroupID:         textOf(body["groupId"]),
-		UserID:          textOf(body["userId"]),
-		UserName:        firstText(textOf(body["userName"]), textOf(body["senderName"])),
-		GroupName:       textOf(body["groupName"]),
-		ModelProviderID: textOf(body["modelProviderId"]),
-		Model:           textOf(body["model"]),
-		WorldbookName:   textOf(body["worldbookName"]),
-		Context:         objectOf(body["context"]),
+		UserMessage:      firstText(textOf(body["userMessage"]), textOf(body["text"])),
+		CharacterName:    textOf(body["characterName"]),
+		MessageType:      orDefault(textOf(body["messageType"]), "group"),
+		GroupID:          textOf(body["groupId"]),
+		UserID:           textOf(body["userId"]),
+		UserName:         firstText(textOf(body["userName"]), textOf(body["senderName"])),
+		GroupName:        textOf(body["groupName"]),
+		ModelProviderID:  textOf(body["modelProviderId"]),
+		Model:            textOf(body["model"]),
+		WorldbookName:    textOf(body["worldbookName"]),
+		SessionKey:       textOf(body["sessionKey"]),
+		ReplyReference:   textOf(body["replyReference"]),
+		ContextOverrides: contextOverridesOf(body),
+		InjectProfiles:   boolPointerOf(body["injectProfiles"]),
+		Context:          objectOf(body["context"]),
 	}
 	if value, ok := body["includeAIResponse"].(bool); ok {
 		payload.IncludeAI = &value
@@ -851,6 +859,84 @@ func (s *Server) parseRangePayload(body map[string]any) rangeTestPayload {
 		payload.WorldbookName = s.currentWorldbookName()
 	}
 	return payload
+}
+
+// rangeSpeakerProfile 按 injectProfiles 开关注入当前发言人画像（对齐 Node injectProfiles）。
+func (s *Server) rangeSpeakerProfile(memory *store.DB, payload rangeTestPayload) string {
+	if payload.InjectProfiles != nil && !*payload.InjectProfiles {
+		return ""
+	}
+	if payload.InjectProfiles == nil && s.document.Exists("range.injectProfiles") && !s.document.Bool("range.injectProfiles") {
+		return ""
+	}
+	if memory == nil || strings.TrimSpace(payload.UserID) == "" {
+		return ""
+	}
+	entry, err := memory.GetParticipantProfileEntry(store.NamespaceOptions{
+		ScopeType:     s.document.String("chat.sessionMode"),
+		ScopeKey:      payload.SessionKey,
+		CharacterName: s.currentCharacterName(),
+	}, payload.UserID)
+	if err != nil || entry == nil {
+		return ""
+	}
+	return strings.TrimSpace(entry.Content)
+}
+
+// contextOverridesOf 把请求体 contextConfig 转成开关覆盖表。
+func contextOverridesOf(body map[string]any) map[string]bool {
+	raw, ok := body["contextConfig"].(map[string]any)
+	if !ok || len(raw) == 0 {
+		return nil
+	}
+	overrides := map[string]bool{}
+	for key, value := range raw {
+		if flag, ok := value.(bool); ok {
+			overrides[key] = flag
+		}
+	}
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
+}
+
+// rangeParticipants 汇总靶场参与者（显式昵称 + 模拟记忆中的昵称）。
+func rangeParticipants(payload rangeTestPayload, history []ai.Message) []string {
+	result := []string{}
+	seen := map[string]bool{}
+	appendName := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			return
+		}
+		seen[name] = true
+		result = append(result, name)
+	}
+	appendName(payload.UserName)
+	if payload.Context != nil {
+		if items, ok := payload.Context["recentMessages"].([]any); ok {
+			for _, item := range items {
+				entry, _ := item.(map[string]any)
+				if entry == nil {
+					continue
+				}
+				appendName(textOf(entry["userName"]))
+			}
+		}
+	}
+	return result
+}
+
+// countStageSegments 统计某阶段的分段数量。
+func countStageSegments(segments []chat.RangeSegment, stage string) int {
+	count := 0
+	for _, segment := range segments {
+		if segment.Stage == stage {
+			count++
+		}
+	}
+	return count
 }
 
 // rangeTestResult 执行一次靶场测试（供单次与批量共用）。
@@ -879,12 +965,22 @@ func (s *Server) rangeTestResult(body map[string]any, mode string) (map[string]a
 	if payload.InjectVariables == nil || *payload.InjectVariables {
 		variableBlock = s.rangeVariableBlock(payload.CharacterName)
 	}
+	// 上下文注入与数据库召回：与运行时同一套开关与实现（config.context.*）
+	memory, _, memoryErr := s.openActiveMemory()
+	if memoryErr == nil {
+		defer func() { _ = memory.Close() }()
+	}
 	messages, segments, activeBook, err := chat.BuildRangePrompt(chat.RangeInput{
 		Document: s.document, DataDir: s.dataDir,
 		CharacterName: payload.CharacterName, WorldbookName: payload.WorldbookName,
 		Message: payload.UserMessage, MessageType: payload.MessageType,
 		GroupID: payload.GroupID, UserID: payload.UserID, UserName: payload.UserName, GroupName: payload.GroupName,
 		History: history, VariableBlock: variableBlock,
+		Memory: memory, SessionKey: payload.SessionKey, Participants: rangeParticipants(payload, history),
+		SpeakerProfile:   s.rangeSpeakerProfile(memory, payload),
+		ReplyReference:   payload.ReplyReference,
+		ContextOverrides: payload.ContextOverrides,
+		Logger:           s.logger,
 	})
 	if err != nil {
 		return nil, http.StatusInternalServerError, err
@@ -903,12 +999,20 @@ func (s *Server) rangeTestResult(body map[string]any, mode string) (map[string]a
 			worldbookHits++
 		}
 	}
+	recallCount := 0
+	for _, segment := range segments {
+		if segment.Stage == "recall" {
+			recallCount = 1
+		}
+	}
 	stats := map[string]any{
 		"totalTokenEstimate": totalTokens,
 		"segmentCount":       len(segments),
 		"worldbookHits":      worldbookHits,
-		"memoryRecallCount":  0,
+		"memoryRecallCount":  recallCount,
 		"messageCount":       len(messages),
+		"contextSegments":    countStageSegments(segments, "context"),
+		"recallSegments":     recallCount,
 	}
 	messagePayload := make([]map[string]any, 0, len(messages))
 	for _, message := range messages {
@@ -926,7 +1030,7 @@ func (s *Server) rangeTestResult(body map[string]any, mode string) (map[string]a
 		"messages":    messagePayload,
 		"prompt": map[string]any{
 			"messages":            messagePayload,
-			"messageTrace":        []any{},
+			"messageTrace":        chat.BuildMessageTrace(messages, segments),
 			"currentMessageFocus": "",
 		},
 		"fakeHistory":          messagePayload[:minInt(len(messagePayload), 0)],
@@ -1501,4 +1605,12 @@ func (s *Server) rangeEmbedProgressPayload() map[string]any {
 		"currentBatch":    s.rangeState.embedCurrent,
 		"error":           nil,
 	}
+}
+
+// boolPointerOf 把请求体里的可选布尔值转成指针（nil 表示未提供）。
+func boolPointerOf(value any) *bool {
+	if flag, ok := value.(bool); ok {
+		return &flag
+	}
+	return nil
 }

@@ -16,8 +16,10 @@ import (
 	"strings"
 	"time"
 
+	"mimirlink/internal/ai"
 	"mimirlink/internal/characters"
 	"mimirlink/internal/chat"
+	"mimirlink/internal/config"
 	"mimirlink/internal/search"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tools"
@@ -1008,32 +1010,168 @@ func (s *Server) handleWebSearchTest(writer http.ResponseWriter, request *http.R
 }
 
 func (s *Server) handlePromptPreview(writer http.ResponseWriter, request *http.Request) {
-	_ = decodeBody(request)
-	presetPath, err := s.resolveRangePresetPath("")
-	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "segments": []any{}, "message": "无预设"})
-		return
+	body := decodeBody(request)
+	contextBody, _ := body["context"].(map[string]any)
+
+	message := strings.TrimSpace(textOf(body["userMessage"]))
+	history := []ai.Message{}
+	if contextBody != nil {
+		if items, ok := contextBody["recentMessages"].([]any); ok {
+			for _, item := range items {
+				entry, _ := item.(map[string]any)
+				if entry == nil {
+					continue
+				}
+				content := strings.TrimSpace(fmt.Sprintf("%v", entry["content"]))
+				if content == "" {
+					continue
+				}
+				role := strings.TrimSpace(fmt.Sprintf("%v", entry["role"]))
+				if role != "user" && role != "assistant" {
+					role = "user"
+				}
+				history = append(history, ai.Message{Role: role, Content: content})
+			}
+		}
 	}
-	preset, err := readJSONFile(presetPath)
+	if message == "" && len(history) > 0 {
+		message = orDefault(fmt.Sprintf("%v", history[len(history)-1].Content), "")
+	}
+
+	// 角色/世界书：沿用运行时的解析顺序（显式指定 → 当前绑定）
+	characterName := strings.TrimSuffix(strings.TrimSpace(textOf(body["characterName"])), ".png")
+	if characterName == "" {
+		characterName = strings.TrimSuffix(s.currentCharacterName(), ".png")
+	}
+	worldbookName := strings.TrimSpace(textOf(body["worldbookName"]))
+
+	memory, _, memoryErr := s.openActiveMemory()
+	if memoryErr == nil {
+		defer func() { _ = memory.Close() }()
+	}
+
+	in := chat.RangeInput{
+		Document:         s.document,
+		DataDir:          s.dataDir,
+		CharacterName:    characterName,
+		WorldbookName:    worldbookName,
+		Message:          message,
+		MessageType:      orDefault(strings.TrimSpace(textOf(body["messageType"])), "group"),
+		GroupID:          strings.TrimSpace(textOf(body["groupId"])),
+		UserID:           strings.TrimSpace(textOf(body["userId"])),
+		History:          history,
+		Memory:           memory,
+		SessionKey:       strings.TrimSpace(textOf(body["sessionKey"])),
+		Participants:     s.previewParticipants(body),
+		ReplyReference:   strings.TrimSpace(textOf(body["replyReference"])),
+		ContextOverrides: contextOverridesOf(body),
+		Logger:           s.logger,
+	}
+	if variables, ok := body["variableBlock"].(string); ok {
+		in.VariableBlock = variables
+	}
+	messages, segments, activeBook, err := chat.BuildRangePrompt(in)
 	if err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	segments := []map[string]any{}
-	if prompts, ok := preset["prompts"].([]any); ok {
-		for _, item := range prompts {
+	composition := chat.BuildRuntimeComposition(segments)
+	sources := make([]map[string]any, 0, len(segments))
+	for _, segment := range segments {
+		sources = append(sources, map[string]any{
+			"sourceSlot": segment.ID,
+			"stage":      segment.Stage,
+			"kind":       segment.Kind,
+			"label":      segment.Label,
+			"tokens":     segment.Tokens,
+			"chars":      len([]rune(segment.Content)),
+			"meta":       segment.Meta,
+		})
+	}
+	binding := map[string]any{"characterName": characterName, "worldbookName": activeBook}
+	worldbookSource := "none"
+	if strings.TrimSpace(worldbookName) != "" {
+		worldbookSource = "explicit"
+	} else if strings.TrimSpace(activeBook) != "" {
+		worldbookSource = "global"
+	}
+	regexRules, _ := s.regexLayerRules("global")
+	bindingTrace := map[string]any{
+		"worldbook": map[string]any{"source": worldbookSource, "value": nilIfEmpty(activeBook)},
+		"preset":    chat.ResolvePresetTrace(s.document, characterName),
+		"regexRules": map[string]any{
+			"source": "global",
+			"count":  len(regexRules),
+		},
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":            true,
+		"character":          map[string]any{"name": characterName},
+		"worldBook":          map[string]any{"name": nilIfEmpty(activeBook)},
+		"effectiveBinding":   binding,
+		"bindingTrace":       bindingTrace,
+		"sources":            sources,
+		"segments":           segments,
+		"runtimeComposition": composition,
+		"messageTrace":       chat.BuildMessageTrace(messages, segments),
+		"messages":           messages,
+		"contextConfig":      contextConfigSnapshot(s.document),
+	})
+}
+
+// previewParticipants 从请求体（或模拟记忆）整理参与者名单，供上下文注入展示。
+func (s *Server) previewParticipants(body map[string]any) []string {
+	if raw, ok := body["participants"].([]any); ok {
+		result := []string{}
+		for _, item := range raw {
+			if value := strings.TrimSpace(fmt.Sprintf("%v", item)); value != "" {
+				result = append(result, value)
+			}
+		}
+		if len(result) > 0 {
+			return result
+		}
+	}
+	contextBody, _ := body["context"].(map[string]any)
+	if contextBody == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	result := []string{}
+	if items, ok := contextBody["recentMessages"].([]any); ok {
+		for _, item := range items {
 			entry, _ := item.(map[string]any)
 			if entry == nil {
 				continue
 			}
-			content := strings.TrimSpace(fmt.Sprintf("%v", entry["content"]))
-			segments = append(segments, map[string]any{
-				"identifier": entry["identifier"],
-				"enabled":    entry["enabled"] != false,
-				"length":     len([]rune(content)),
-				"role":       entry["role"],
-			})
+			name := strings.TrimSpace(fmt.Sprintf("%v", entry["userName"]))
+			if name == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			result = append(result, name)
 		}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "preset": filepath.Base(presetPath), "segments": segments})
+	return result
+}
+
+// contextConfigSnapshot 回传上下文注入开关现状（前端展示「哪些开关已生效」）。
+func contextConfigSnapshot(document *config.Document) map[string]any {
+	keys := []string{"enabled", "includeSessionFacts", "includeParticipants", "includeReplyReference", "includeRecentUserIntent"}
+	snapshot := map[string]any{}
+	for _, key := range keys {
+		enabled := true
+		if document != nil && document.Exists("context."+key) {
+			enabled = document.Bool("context." + key)
+		}
+		snapshot[key] = enabled
+	}
+	return snapshot
+}
+
+func nilIfEmpty(value string) any {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return value
 }

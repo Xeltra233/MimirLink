@@ -3,7 +3,10 @@ package chat
 import (
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
+
+	"mimirlink/internal/config"
 )
 
 // 本文件移植 Node src/prompt.js 的 partitionPromptItems（四段提示注入）
@@ -89,6 +92,90 @@ func parsePreset(rawJSON []byte) map[string]any {
 	}
 	preset, _ := document["preset"].(map[string]any)
 	return preset
+}
+
+// hasPresetContent 判断一个预设立层是否真的带内容（对齐 Node PromptBuilder.hasPresetContent）。
+func hasPresetContent(source map[string]any) bool {
+	if source == nil {
+		return false
+	}
+	if items, ok := source["prompts"].([]any); ok {
+		for _, item := range items {
+			entry, _ := item.(map[string]any)
+			if entry == nil {
+				continue
+			}
+			if content, ok := entry["content"].(string); ok && strings.TrimSpace(content) != "" {
+				return true
+			}
+		}
+		return false
+	}
+	for _, key := range []string{"systemPrompt", "postHistoryInstructions", "jailbreak", "assistantPrefill"} {
+		if value, ok := source[key].(string); ok && strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// PresetResolution 是预设解析结果（含来源层，供预览展示 bindingTrace）。
+type PresetResolution struct {
+	Preset map[string]any
+	Source string // character_binding / imported_from_card / global / legacy / none
+}
+
+// resolvePresetResolution 按 Node getPresetResolution 的分层顺序解析预设：
+// 角色绑定 → 角色卡导入 → 全局绑定 → 内联 config.preset（旧版兼容）。
+func resolvePresetResolution(document *config.Document, characterName string) PresetResolution {
+	if document == nil {
+		return PresetResolution{Source: "none"}
+	}
+	character := strings.TrimSuffix(strings.TrimSpace(characterName), ".png")
+	candidates := []struct {
+		source string
+		path   string
+	}{}
+	if character != "" {
+		candidates = append(candidates,
+			struct {
+				source string
+				path   string
+			}{"character_binding", "bindings.characters." + escapeJSONPath(character) + ".preset"},
+			struct {
+				source string
+				path   string
+			}{"imported_from_card", "bindings.characters." + escapeJSONPath(character) + ".importedFromCard.preset"},
+		)
+	}
+	candidates = append(candidates,
+		struct {
+			source string
+			path   string
+		}{"global", "bindings.global.preset"},
+		struct {
+			source string
+			path   string
+		}{"legacy", "preset"},
+	)
+	for _, candidate := range candidates {
+		result := document.Get(candidate.path)
+		if !result.Exists() {
+			continue
+		}
+		layer, _ := result.Value().(map[string]any)
+		if !hasPresetContent(layer) {
+			continue
+		}
+		return PresetResolution{Preset: layer, Source: candidate.source}
+	}
+	return PresetResolution{Source: "none"}
+}
+
+// escapeJSONPath 转义 gjson 路径中的特殊字符（角色名可能含点、星号）。
+func escapeJSONPath(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `.`, `\.`, `*`, `\*`, `?`, `\?`, `|`, `\|`, `@`, `\@`)
+	return replacer.Replace(value)
 }
 
 // ---------------- 正则管线（移植 src/regex.js） ----------------
@@ -305,9 +392,27 @@ func (p *regexProcessor) process(text string, stage string, depth int) string {
 func intOr(value any, fallback int) int {
 	switch typed := value.(type) {
 	case float64:
+		if typed == float64(int(typed)) {
+			return int(typed)
+		}
+		return fallback
+	case float32:
 		return int(typed)
 	case int:
 		return typed
+	case int64:
+		return int(typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return int(parsed)
+		}
+		return fallback
+	case string:
+		// 对齐 Node normalizePromptInteger：Number(value) 后取整数
+		if parsed, err := strconv.Atoi(strings.TrimSpace(typed)); err == nil {
+			return parsed
+		}
+		return fallback
 	}
 	return fallback
 }

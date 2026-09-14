@@ -71,6 +71,9 @@ type Runtime struct {
 	focusSegment   string
 	repeatDetector *GroupRepeatDetector
 	seenMessageIDs map[string]time.Time
+	// 消息聚合状态（对齐 Node 连发合并）
+	aggregateCount  int
+	aggregateReason string
 }
 
 // New 创建运行时。
@@ -431,7 +434,7 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 		messages = append(messages, ai.Message{Role: "system", Content: prompt})
 	}
 	// 2) 预设四段切分（对齐 Node partitionPromptItems）
-	partition := partitionPromptItems(parsePreset(r.document.Raw()))
+	partition := partitionPromptItems(resolvePresetResolution(r.document, r.characterName()).Preset)
 	for _, item := range partition.PreSystem {
 		messages = append(messages, ai.Message{Role: "system", Content: item.Content})
 	}
@@ -700,18 +703,21 @@ func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message) (str
 // ---------------- 记忆召回与角色段 ----------------
 
 // recallOptions 读取配置里的召回规模（缺省与 Node 一致）。
-func (r *Runtime) recallOptions() store.RecallOptions {
+func (r *Runtime) recallOptions() store.RecallOptions { return recallOptionsFor(r.document) }
+
+// recallOptionsFor 读取召回参数（运行时与靶场/预览共用）。
+func recallOptionsFor(document *config.Document) store.RecallOptions {
 	options := store.DefaultRecallOptions
-	if value := r.document.Int("memory.recall.limit", 0); value > 0 {
+	if value := document.Int("memory.recall.limit", 0); value > 0 {
 		options.Limit = int(value)
 	}
-	if value := r.document.Int("memory.recall.searchLimit", 0); value > 0 {
+	if value := document.Int("memory.recall.searchLimit", 0); value > 0 {
 		options.SearchLimit = int(value)
 	}
-	if value := r.document.Int("memory.recall.recentLimit", 0); value > 0 {
+	if value := document.Int("memory.recall.recentLimit", 0); value > 0 {
 		options.RecentLimit = int(value)
 	}
-	if value := r.document.Int("memory.recall.summaryLimit", 0); value > 0 {
+	if value := document.Int("memory.recall.summaryLimit", 0); value > 0 {
 		options.SummaryLimit = int(value)
 	}
 	return options
@@ -719,13 +725,20 @@ func (r *Runtime) recallOptions() store.RecallOptions {
 
 // recallSection 渲染数据库召回文本段（与 Node prompt.js 的 database_recall 段一致）。
 func (r *Runtime) recallSection(sessionKey string, query string) string {
-	if r.memory == nil {
+	return recallSectionFor(r.memory, r.document, r.characterName(), sessionKey, query, r.logger)
+}
+
+// recallSectionFor 数据库召回段落（运行时与靶场/预览共用）。
+func recallSectionFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger) string {
+	if memory == nil {
 		return ""
 	}
-	namespace := r.namespaceOptions(sessionKey)
-	entries, err := r.memory.RecallMemory(namespace, query, r.recallOptions())
+	namespace := namespaceOptionsFor(document, character, sessionKey)
+	entries, err := memory.RecallMemory(namespace, query, recallOptionsFor(document))
 	if err != nil {
-		r.logger.Printf("[记忆] 召回失败: %v", err)
+		if logger != nil {
+			logger.Printf("[记忆] 召回失败: %v", err)
+		}
 		return ""
 	}
 	if len(entries) == 0 {
@@ -775,14 +788,20 @@ func (r *Runtime) recallSection(sessionKey string, query string) string {
 	if len(sections) == 0 {
 		return ""
 	}
-	r.logger.Printf("[记忆] 召回 %d 条（固定 %d / 动态 %d / 其他 %d）", len(entries), len(fixed), len(dynamic), len(others))
+	if logger != nil {
+		logger.Printf("[记忆] 召回 %d 条（固定 %d / 动态 %d / 其他 %d）", len(entries), len(fixed), len(dynamic), len(others))
+	}
 	return strings.Join(append([]string{"【数据库召回】"}, sections...), "\n\n")
 }
 
 // namespaceOptions 按 sessionMode 计算记忆命名空间（对齐 Node ensureMemoryNamespace 的用法）。
 func (r *Runtime) namespaceOptions(sessionKey string) store.NamespaceOptions {
-	character := r.characterName()
-	mode := r.document.String("chat.sessionMode")
+	return namespaceOptionsFor(r.document, r.characterName(), sessionKey)
+}
+
+// namespaceOptionsFor 计算会话命名空间（运行时与靶场/预览共用）。
+func namespaceOptionsFor(document *config.Document, character string, sessionKey string) store.NamespaceOptions {
+	mode := document.String("chat.sessionMode")
 	switch mode {
 	case "global_shared":
 		return store.NamespaceOptions{ScopeType: "global_shared", ScopeKey: "global_shared_memory", CharacterName: character}
@@ -1345,33 +1364,95 @@ func (r *Runtime) resolveSummaryProvider() *ai.Provider {
 }
 
 // contextFlag 读取 context.<key>（默认 true，对齐 Node contextConfig 的 !== false 语义）。
-func (r *Runtime) contextFlag(key string) bool {
-	if !r.document.Exists("context." + key) {
+func (r *Runtime) contextFlag(key string) bool { return contextFlagFor(r.document, nil, key) }
+
+// contextFlagFor 读取上下文注入开关（缺省开启，对齐 Node）。
+// overrides 非空时优先（靶场单次测试的 contextConfig 覆盖）。
+func contextFlagFor(document *config.Document, overrides map[string]bool, key string) bool {
+	if overrides != nil {
+		if value, ok := overrides[key]; ok {
+			return value
+		}
+	}
+	if document == nil {
 		return true
 	}
-	return r.document.Bool("context." + key)
+	if !document.Exists("context." + key) {
+		return true
+	}
+	return document.Bool("context." + key)
 }
 
 // buildSituationalContext 组装会话上下文段（对齐 Node buildSituationalContext 可用子集：
 // 会话感知 + 参与者 + 最近用户意图；画像/引用上下文依赖运行时状态，Go 版暂缺数据源）。
 func (r *Runtime) buildSituationalContext(sessionKey string, history []store.Message, messageType string) string {
-	if !r.contextFlag("enabled") {
+	return situationalContextFor(r.document, SituationalInput{
+		SessionKey:    sessionKey,
+		MessageType:   messageType,
+		History:       history,
+		MessageCount:  r.pendingMessageCount(),
+		TriggerReason: r.pendingTriggerReason(),
+	})
+}
+
+// SituationalInput 是情境感知段落的输入（字段与 Node runtimeContext 对齐）。
+type SituationalInput struct {
+	SessionKey     string
+	MessageType    string
+	MessageCount   int
+	TriggerReason  string
+	Participants   []string
+	SpeakerProfile string
+	ReplyReference string
+	History        []store.Message
+	Overrides      map[string]bool
+}
+
+// situationalContextFor 生成情境感知段落（运行时与靶场/预览共用，
+// 段序与文案对齐 Node buildSituationalContext）。
+func situationalContextFor(document *config.Document, input SituationalInput) string {
+	if !contextFlagFor(document, input.Overrides, "enabled") {
 		return ""
 	}
 	sections := []string{}
-	if r.contextFlag("includeSessionFacts") {
-		facts := []string{"会话ID: " + sessionKey}
-		if messageType != "" {
-			facts = append(facts, "会话类型: "+messageType)
+	if contextFlagFor(document, input.Overrides, "includeSessionFacts") {
+		facts := []string{}
+		if input.SessionKey != "" {
+			facts = append(facts, "会话ID: "+input.SessionKey)
 		}
-		sections = append(sections, "【会话感知】\n"+strings.Join(facts, " | "))
+		if input.MessageType != "" {
+			facts = append(facts, "会话类型: "+input.MessageType)
+		}
+		if input.MessageCount > 0 {
+			facts = append(facts, "本次聚合消息数: "+itoa(input.MessageCount))
+		}
+		if input.TriggerReason != "" {
+			facts = append(facts, "触发原因: "+input.TriggerReason)
+		}
+		if len(facts) > 0 {
+			sections = append(sections, "【会话感知】\n"+strings.Join(facts, " | "))
+		}
 	}
-	if r.contextFlag("includeRecentUserIntent") {
+	if contextFlagFor(document, input.Overrides, "includeParticipants") && len(input.Participants) > 0 {
+		sections = append(sections, "【参与者】\n"+strings.Join(input.Participants, " | "))
+	}
+	if profile := strings.TrimSpace(input.SpeakerProfile); profile != "" {
+		sections = append(sections, "【当前发言人画像】\n"+profile)
+	}
+	if contextFlagFor(document, input.Overrides, "includeReplyReference") {
+		if reference := strings.TrimSpace(input.ReplyReference); reference != "" {
+			sections = append(sections, "【引用上下文】\n"+reference)
+		}
+	}
+	if contextFlagFor(document, input.Overrides, "includeRecentUserIntent") {
 		recent := []string{}
-		for index := len(history) - 1; index >= 0 && len(recent) < 3; index -= 1 {
-			if history[index].Role == "user" {
-				recent = append([]string{history[index].Content}, recent...)
+		for index := len(input.History) - 1; index >= 0 && len(recent) < 3; index -= 1 {
+			if input.History[index].Role == "user" {
+				recent = append([]string{input.History[index].Content}, recent...)
 			}
+		}
+		if len(recent) > 0 {
+			sections = append(sections, "【最近用户意图】\n"+strings.Join(recent, "\n"))
 		}
 	}
 	return strings.Join(sections, "\n\n")
@@ -1615,3 +1696,9 @@ func (r *Runtime) sendFile(groupID string, userID string, filePath string, fileN
 	}
 	return fmt.Errorf("当前 OneBot 适配器不支持发送文件")
 }
+
+// pendingMessageCount / pendingTriggerReason 供消息聚合（goal-37 第 8 项）使用；
+// 未启用聚合时返回零值，情境段落不会输出这两个字段。
+func (r *Runtime) pendingMessageCount() int { return r.aggregateCount }
+
+func (r *Runtime) pendingTriggerReason() string { return r.aggregateReason }
