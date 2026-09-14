@@ -59,6 +59,7 @@ type Runtime struct {
 	logger      *log.Logger
 	historySize int
 	rootDir     string
+	regexProc   *regexProcessor
 }
 
 // New 创建运行时。
@@ -80,6 +81,7 @@ func New(options Options) *Runtime {
 		logger:      logger,
 		historySize: historySize,
 		rootDir:     options.RootDir,
+		regexProc:   newRegexProcessor(options.Document.Raw()),
 	}
 }
 
@@ -119,6 +121,8 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	sessionKey := r.sessionKey(messageType, groupID, userID)
 	header := r.buildInputHeader(event, messageType, groupID, userID)
 	content := strings.TrimSpace(header + " " + text)
+	// 输入阶段正则（对齐 Node regexProcessor.processInput）
+	content = r.regexProc.process(content, "input", 0)
 
 	if err := r.appendMessage(sessionKey, "user", content, map[string]any{
 		"messageType": messageType,
@@ -129,15 +133,24 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		r.logger.Printf("[聊天] 写入用户消息失败: %v", err)
 	}
 
-	messages, err := r.buildMessages(sessionKey, content)
+	messages, worldBookEntries, err := r.buildMessages(sessionKey, content)
 	if err != nil {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
 		return false
+	}
+	// 世界书粘性续期（对齐 Node updateStickyEntries）
+	triggers := make([]store.StickyTrigger, 0, len(worldBookEntries))
+	for _, entry := range worldBookEntries {
+		triggers = append(triggers, store.StickyTrigger{Key: entry.Key, Sticky: int(entry.Sticky)})
+	}
+	if err := r.memory.UpdateStickyEntries(sessionKey, triggers); err != nil {
+		r.logger.Printf("[聊天] 更新粘性条目失败: %v", err)
 	}
 
 	startedAt := time.Now()
 	reply, err := r.chatWithTools(context.Background(), messages)
 	reply = strings.TrimSpace(reply)
+	reply = r.regexProc.process(reply, "output", 0)
 	if err != nil {
 		r.logger.Printf("[聊天] AI 调用失败: %v", err)
 		return false
@@ -189,79 +202,138 @@ func (r *Runtime) requireAtInGroup() bool {
 
 // ---------------- 提示词与历史 ----------------
 
-func (r *Runtime) buildMessages(sessionKey string, currentContent string) ([]ai.Message, error) {
-	messages := []ai.Message{}
-	for _, prompt := range r.presetPrompts() {
-		role := "system"
-		if strings.EqualFold(prompt.role, "user") || strings.EqualFold(prompt.role, "assistant") {
-			role = strings.ToLower(prompt.role)
-		}
-		messages = append(messages, ai.Message{Role: role, Content: prompt.content})
-	}
-	// 角色卡描述/性格/场景/世界观
-	for _, segment := range r.characterSegments() {
-		messages = append(messages, ai.Message{Role: "system", Content: segment})
-	}
-	// 数据库召回（固定知识 / 动态知识 / 其他召回）
-	if recalled := r.recallSection(sessionKey, currentContent); recalled != "" {
-		messages = append(messages, ai.Message{Role: "system", Content: recalled})
-	}
-
+func (r *Runtime) buildMessages(sessionKey string, currentContent string) ([]ai.Message, []matchedWorldBookEntry, error) {
 	history, err := r.memory.RecentMessagesThread(sessionKey, r.historySize)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// 历史里最后一条通常是刚落库的当前消息：剥离后作为最后一条用户消息单独追加
 	if len(history) > 0 && strings.TrimSpace(history[len(history)-1].Content) == strings.TrimSpace(currentContent) {
 		history = history[:len(history)-1]
 	}
-	for _, item := range history {
+
+	messages := []ai.Message{}
+	// 1) 当前时间（对齐 Node current-time 段）
+	messages = append(messages, ai.Message{Role: "system", Content: "【当前时间】" + currentTimeString()})
+	// 2) 预设四段切分（对齐 Node partitionPromptItems）
+	partition := partitionPromptItems(parsePreset(r.document.Raw()))
+	for _, item := range partition.PreSystem {
+		messages = append(messages, ai.Message{Role: "system", Content: item.Content})
+	}
+	// 3) 世界书匹配（常驻 + 关键词 + 粘性），position=0 进 system
+	worldBookEntries := r.matchWorldbook(sessionKey, history, currentContent)
+	for _, entry := range worldBookEntries {
+		if resolveWorldBookPositionFromEntry(entry) == 1 {
+			continue
+		}
+		messages = append(messages, ai.Message{Role: "system", Content: "【世界设定】\n" + entry.Content})
+	}
+	for _, segment := range r.characterSegments() {
+		messages = append(messages, ai.Message{Role: "system", Content: segment})
+	}
+	// 5) 数据库召回（固定知识 / 动态知识 / 其他召回）
+	if recalled := r.recallSection(sessionKey, currentContent); recalled != "" {
+		messages = append(messages, ai.Message{Role: "system", Content: recalled})
+	}
+
+	// 6) 历史 + historyInjection（injection_depth = 从历史末尾插入的位置）
+	injectionBuckets := map[int][]promptItem{}
+	for _, item := range partition.HistoryInjection {
+		insertionIndex := item.InjectionDepth
+		if insertionIndex < 0 {
+			insertionIndex = 0
+		}
+		if insertionIndex > len(history) {
+			insertionIndex = len(history)
+		}
+		injectionBuckets[insertionIndex] = append(injectionBuckets[insertionIndex], item)
+	}
+	appendInjections := func(index int) {
+		for _, item := range injectionBuckets[index] {
+			messages = append(messages, ai.Message{Role: "system", Content: item.Content})
+		}
+	}
+	appendInjections(0)
+	for index, item := range history {
 		role := item.Role
 		if role != "user" && role != "assistant" {
 			role = "user"
 		}
 		messages = append(messages, ai.Message{Role: role, Content: item.Content})
+		appendInjections(index + 1)
 	}
+	// 7) postHistory：世界书 after_char 条目 + injection_position==1 的预设项
+	for _, entry := range worldBookEntries {
+		if resolveWorldBookPositionFromEntry(entry) == 1 {
+			messages = append(messages, ai.Message{Role: "system", Content: "【世界设定】\n" + entry.Content})
+		}
+	}
+	for _, item := range partition.PostHistory {
+		messages = append(messages, ai.Message{Role: "system", Content: item.Content})
+	}
+	// 8) 当前用户消息
 	messages = append(messages, ai.Message{Role: "user", Content: currentContent})
-	return messages, nil
+	// 9) assistantPrefill（拼接为一条 assistant 预填）
+	prefillParts := []string{}
+	for _, item := range partition.AssistantPrefill {
+		if trimmed := strings.TrimSpace(item.Content); trimmed != "" {
+			prefillParts = append(prefillParts, trimmed)
+		}
+	}
+	if len(prefillParts) > 0 {
+		messages = append(messages, ai.Message{Role: "assistant", Content: strings.Join(prefillParts, "\n\n")})
+	}
+	return messages, worldBookEntries, nil
 }
 
-type presetPrompt struct {
-	role    string
-	content string
+// matchWorldbook 读取当前生效的世界书并执行匹配（对齐 Node promptBuilder.build 的世界书分支）。
+func (r *Runtime) matchWorldbook(sessionKey string, history []store.Message, currentContent string) []matchedWorldBookEntry {
+	book := r.currentWorldbook()
+	if book == nil {
+		return nil
+	}
+	stickyKeys := map[string]bool{}
+	if sticky, err := r.memory.ListStickyEntries(sessionKey); err == nil {
+		for key := range sticky {
+			stickyKeys[key] = true
+		}
+	}
+	builder := strings.Builder{}
+	for _, message := range history {
+		builder.WriteString(message.Content)
+		builder.WriteString(" ")
+	}
+	builder.WriteString(currentContent)
+	return matchWorldBookEntries(book, builder.String(), 10, stickyKeys)
 }
 
-// presetPrompts 读取 config.preset.prompts 中启用的提示词（按 injection_depth 升序）。
-func (r *Runtime) presetPrompts() []presetPrompt {
-	var raw map[string]any
-	if err := json.Unmarshal(r.document.Raw(), &raw); err != nil {
-		return nil
+// currentWorldbook 解析生效世界书：bindings.global.worldbook 优先，其次按角色名模糊匹配。
+func (r *Runtime) currentWorldbook() *worldBook {
+	worldbookName := r.document.String("bindings.global.worldbook")
+	if worldbookName != "" {
+		if book, err := loadWorldBookFile(filepath.Join(r.dataDir(), "worlds", worldbookName+".json")); err == nil {
+			return book
+		}
+		if book, err := loadWorldBookFile(filepath.Join(r.dataDir(), "worlds", worldbookName)); err == nil {
+			return book
+		}
 	}
-	preset, _ := raw["preset"].(map[string]any)
-	if preset == nil {
-		return nil
+	book, _, _ := readWorldBook(r.dataDir(), r.characterName())
+	return book
+}
+
+// resolveWorldBookPositionFromEntry 输出条目位置（1=post_history，0=system）。
+func resolveWorldBookPositionFromEntry(entry matchedWorldBookEntry) int {
+	return entry.Position
+}
+
+// currentTimeString 输出上海时区的当前时间串（对齐 Node toLocaleString('zh-CN', Asia/Shanghai)）。
+func currentTimeString() string {
+	location, err := time.LoadLocation("Asia/Shanghai")
+	if err != nil {
+		location = time.FixedZone("CST", 8*3600)
 	}
-	items, _ := preset["prompts"].([]any)
-	prompts := make([]presetPrompt, 0, len(items))
-	for _, item := range items {
-		entry, _ := item.(map[string]any)
-		if entry == nil {
-			continue
-		}
-		if enabled, ok := entry["enabled"].(bool); ok && !enabled {
-			continue
-		}
-		content := strings.TrimSpace(stringValue(entry["content"]))
-		if content == "" {
-			continue
-		}
-		role := "system"
-		if systemPrompt, ok := entry["system_prompt"].(bool); ok && !systemPrompt {
-			role = "system" // 非系统提示词也走 system，MVP 保持简单
-		}
-		prompts = append(prompts, presetPrompt{role: role, content: content})
-	}
-	return prompts
+	return time.Now().In(location).Format("2006/1/2 15:04:05")
 }
 
 // ---------------- 记忆 ----------------

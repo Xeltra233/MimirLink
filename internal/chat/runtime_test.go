@@ -71,6 +71,7 @@ func buildDocument(t *testing.T, overrides map[string]any) (*config.Document, st
 			"model":            "test-model",
 		},
 		"preset": map[string]any{
+			"enabled": true,
 			"name":    "测试预设",
 			"prompts": []any{map[string]any{"enabled": true, "content": "你是测试角色，回答要简短。", "role": "system"}},
 		},
@@ -205,11 +206,15 @@ func TestPromptIncludesPresetAndHistoryAndStoresMessages(t *testing.T) {
 		t.Fatalf("应有两次模型调用，实际 %d", len(model.requests))
 	}
 	first := model.requests[0]
-	if first[0].Role != "system" || !strings.Contains(first[0].Content.(string), "测试角色") {
-		t.Fatalf("系统提示词未注入预设内容: %+v", first[0])
+	// 对齐 Node 顺序：首条是【当前时间】system 段，预设内容紧随其后
+	if len(first) < 3 || !strings.Contains(first[0].Content.(string), "【当前时间】") {
+		t.Fatalf("首条应为当前时间系统段: %+v", first[0])
 	}
-	if !strings.Contains(first[1].Content.(string), "第一句") || !strings.Contains(first[1].Content.(string), "isAtBot:true") {
-		t.Fatalf("用户消息缺少结构化头或正文: %v", first[1].Content)
+	if first[1].Role != "system" || !strings.Contains(first[1].Content.(string), "测试角色") {
+		t.Fatalf("系统提示词未注入预设内容: %+v", first[1])
+	}
+	if !strings.Contains(first[2].Content.(string), "第一句") || !strings.Contains(first[2].Content.(string), "isAtBot:true") {
+		t.Fatalf("用户消息缺少结构化头或正文: %v", first[2].Content)
 	}
 	second := model.requests[1]
 	if len(second) < 3 {

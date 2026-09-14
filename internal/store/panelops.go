@@ -742,3 +742,70 @@ func anyStringOr(values ...any) string {
 	}
 	return ""
 }
+
+// ListStickyEntries 返回会话的粘性条目（entry_key → remaining），对齐 Node getStickyEntriesObject。
+func (d *DB) ListStickyEntries(sessionID string) (map[string]int, error) {
+	rows, err := d.handle.Query(`SELECT entry_key, remaining FROM sticky_entries WHERE session_id = ?`, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := map[string]int{}
+	for rows.Next() {
+		var key string
+		var remaining int
+		if err := rows.Scan(&key, &remaining); err != nil {
+			return nil, err
+		}
+		result[key] = remaining
+	}
+	return result, rows.Err()
+}
+
+// StickyTrigger 是本次触发需要续期的粘性条目。
+type StickyTrigger struct {
+	Key    string
+	Sticky int
+}
+
+// UpdateStickyEntries 对齐 Node updateStickyEntries：现有条目递减、归零删除、触发的条目续期。
+func (d *DB) UpdateStickyEntries(sessionID string, triggered []StickyTrigger) error {
+	if err := d.EnsureSession(sessionID); err != nil {
+		return err
+	}
+	current, err := d.ListStickyEntries(sessionID)
+	if err != nil {
+		return err
+	}
+	transaction, err := d.handle.Begin()
+	if err != nil {
+		return err
+	}
+	defer transaction.Rollback()
+	for key, remaining := range current {
+		next := remaining - 1
+		if next <= 0 {
+			if _, err := transaction.Exec(`DELETE FROM sticky_entries WHERE session_id = ? AND entry_key = ?`, sessionID, key); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := transaction.Exec(
+			`INSERT INTO sticky_entries (session_id, entry_key, remaining) VALUES (?, ?, ?)
+			 ON CONFLICT(session_id, entry_key) DO UPDATE SET remaining = excluded.remaining`,
+			sessionID, key, next); err != nil {
+			return err
+		}
+	}
+	for _, entry := range triggered {
+		if entry.Sticky > 0 && entry.Key != "" {
+			if _, err := transaction.Exec(
+				`INSERT INTO sticky_entries (session_id, entry_key, remaining) VALUES (?, ?, ?)
+				 ON CONFLICT(session_id, entry_key) DO UPDATE SET remaining = excluded.remaining`,
+				sessionID, entry.Key, entry.Sticky); err != nil {
+				return err
+			}
+		}
+	}
+	return transaction.Commit()
+}
