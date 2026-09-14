@@ -473,6 +473,8 @@ func runBot(rootDir string) error {
 		Bot:      client,
 		Tools:    toolRegistry,
 		Logger:   logger,
+		// 配置热加载后按新配置重建 AI 客户端（面板改模型/Key 无需重启 bot）
+		AIProvider: func() (ai.Provider, error) { return ai.ResolveProvider(document) },
 	})
 	client.SetHandler(func(event map[string]any) {
 		defer func() {
@@ -485,6 +487,17 @@ func runBot(rootDir string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// 配置热加载：面板写 config.json 后无需重启 bot（对齐 Node 单进程的即时生效）
+	configPath := filepath.Join(rootDir, "config.json")
+	stopWatch := make(chan struct{})
+	defer close(stopWatch)
+	go config.WatchConfig(document, 2*time.Second, func() {
+		logger.Printf("[配置] 已热加载: %s", configPath)
+	}, func(err error) {
+		logger.Printf("[配置] 热加载失败（沿用现有配置）: %v", err)
+	}, stopWatch)
+
 	go func() {
 		signalChannel := make(chan os.Signal, 1)
 		signal.Notify(signalChannel, os.Interrupt, syscall.SIGTERM)

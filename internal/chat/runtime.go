@@ -49,6 +49,9 @@ type Options struct {
 	Logger      *log.Logger
 	HistorySize int
 	RootDir     string
+	// AIProvider 由 bot 注入：配置热加载后按新配置重新解析供应商/模型，
+	// 使面板修改模型、Base URL、Key 后无需重启 bot（对齐 Node 的 applyRuntimeConfig）。
+	AIProvider func() (ai.Provider, error)
 }
 
 // Runtime 处理单条 OneBot 事件。
@@ -56,6 +59,9 @@ type Runtime struct {
 	document       *config.Document
 	memory         *store.DB
 	ai             ChatModel
+	aiProvider     func() (ai.Provider, error)
+	aiSignature    string
+	configGen      uint64
 	bot            Bot
 	tools          *tools.Registry
 	logger         *log.Logger
@@ -81,6 +87,7 @@ func New(options Options) *Runtime {
 		document:       options.Document,
 		memory:         options.Memory,
 		ai:             options.AI,
+		aiProvider:     options.AIProvider,
 		bot:            options.Bot,
 		tools:          options.Tools,
 		logger:         logger,
@@ -93,7 +100,54 @@ func New(options Options) *Runtime {
 }
 
 // HandleEvent 处理一条事件；返回是否产生了回复。
+// llmEnabled 读取 LLM 总开关（对齐 Node：config.runtime.llmEnabled !== false，默认开启）。
+func (r *Runtime) llmEnabled() bool {
+	if r.document == nil {
+		return true
+	}
+	if !r.document.Exists("runtime.llmEnabled") {
+		return true
+	}
+	return r.document.Bool("runtime.llmEnabled")
+}
+
+// refreshDerivedState 在配置热加载后重建依赖配置的派生状态
+// （正则处理器与 AI 客户端），使面板改配置无需重启 bot。
+func (r *Runtime) refreshDerivedState() {
+	if r.document == nil {
+		return
+	}
+	generation := r.document.Generation()
+	if generation == r.configGen {
+		return
+	}
+	r.configGen = generation
+	r.regexProc = newRegexProcessor(r.document.Raw())
+	r.logger.Printf("[配置] 检测到配置更新，已重建正则规则与运行时派生状态")
+	r.refreshAIClient()
+}
+
+// refreshAIClient 按当前配置重新解析 AI 供应商；签名变化时替换客户端。
+func (r *Runtime) refreshAIClient() {
+	if r.aiProvider == nil {
+		return
+	}
+	provider, err := r.aiProvider()
+	if err != nil {
+		r.logger.Printf("[配置] 重新解析 AI 供应商失败，沿用旧客户端: %v", err)
+		return
+	}
+	signature := strings.Join([]string{provider.ID, provider.BaseURL, provider.APIKey, provider.Model, provider.Timeout.String()}, "|")
+	if r.aiSignature == signature && r.ai != nil {
+		return
+	}
+	r.aiSignature = signature
+	r.ai = ai.New(provider)
+	r.logger.Printf("[配置] AI 供应商已更新: %s / %s", orDefaultString(provider.ID, "默认"), provider.Model)
+}
+
 func (r *Runtime) HandleEvent(event map[string]any) bool {
+	r.refreshDerivedState()
 	eventType := stringField(event, "post_type")
 	if eventType != "message" {
 		return false
@@ -150,6 +204,13 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	// 点歌指令：独立于 LLM 的能力，命中即返回（对齐 Node handleMusicCommand）
 	if r.tryHandleMusicCommand(event, messageType, groupID, userID, text) {
 		return true
+	}
+
+	// LLM 开关（对齐 Node：`if (!llmEnabled) return;` —— 关闭时不处理任何消息，
+	// 也不写入历史；音乐等独立能力在此之前已处理）
+	if !r.llmEnabled() {
+		r.logger.Printf("[聊天] LLM 已关闭（runtime.llmEnabled=false），忽略消息 [%s]", messageType)
+		return false
 	}
 
 	sessionKey := r.sessionKey(messageType, groupID, userID)
