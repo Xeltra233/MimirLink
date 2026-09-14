@@ -856,7 +856,15 @@ func (s *Server) handleMemoryClearAll(writer http.ResponseWriter, request *http.
 // ---------------- status / data / logs / 其它 ----------------
 
 func (s *Server) handleOnebotReconnect(writer http.ResponseWriter, request *http.Request) {
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "重连指令已接受（bot 进程内自动重连，面板进程无 OneBot 连接）"})
+	result, err := s.callBotControl("/control/onebot/reconnect", map[string]any{})
+	if err != nil {
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success": true,
+		"message": orDefault(fmt_Sprint(result["message"]), "已向 Bot 进程下发重连指令"),
+	})
 }
 
 func (s *Server) handleLLMStatus(writer http.ResponseWriter, request *http.Request) {
@@ -948,14 +956,117 @@ func (s *Server) handleLogDownload(writer http.ResponseWriter, request *http.Req
 }
 
 func (s *Server) handleProfileAnalyze(writer http.ResponseWriter, request *http.Request) {
+	body := decodeBody(request)
+	result, item, err := s.forwardProfileAction("/control/participant-profile/analyze", body)
+	if err != nil {
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"success": true,
-		"message": "手动分析由 bot 进程的 chat.commands.participantProfileManual 命令触发；面板进程无 bot 上下文",
+		"message": orDefault(fmt_Sprint(result["message"]), "人物档案已重新分析"),
+		"item":    item,
 	})
 }
 
+// forwardProfileAction 把档案相关动作转发给 bot，并回读最新档案条目。
+func (s *Server) forwardProfileAction(path string, body map[string]any) (map[string]any, map[string]any, error) {
+	payload := map[string]any{
+		"entryId":         textOf(body["entryId"]),
+		"participantId":   orDefault(textOf(body["participantId"]), s.profileParticipantID(textOf(body["entryId"]))),
+		"participantName": textOf(body["participantName"]),
+		"scopeKey":        textOf(body["scopeKey"]),
+		"scopeType":       textOf(body["scopeType"]),
+		"characterName":   orDefault(textOf(body["characterName"]), s.currentCharacterName()),
+		"messageType":     orDefault(textOf(body["messageType"]), "group"),
+		"groupId":         textOf(body["groupId"]),
+	}
+	result, err := s.callBotControl(path, payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	entryID := orDefault(textOf(result["entryId"]), textOf(body["entryId"]))
+	return result, s.participantProfileItem(entryID), nil
+}
+
+// profileParticipantID 从档案条目反查 participantId（前端只传条目 ID）。
+func (s *Server) profileParticipantID(entryID string) string {
+	if strings.TrimSpace(entryID) == "" {
+		return ""
+	}
+	database, _, err := s.openActiveMemory()
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = database.Close() }()
+	profile, err := database.GetParticipantProfileByEntryID(entryID)
+	if err != nil || profile == nil {
+		return ""
+	}
+	if participantID := strings.TrimSpace(profile.ParticipantID); participantID != "" {
+		return participantID
+	}
+	// 兜底：metadata.participantId
+	entry, err := database.GetKnowledgeEntry(entryID)
+	if err != nil || entry == nil {
+		return ""
+	}
+	participantID, _ := entry.Metadata["participantId"].(string)
+	return strings.TrimSpace(participantID)
+}
+
+// participantProfileItem 回读档案条目（对齐前端 data.item 期望结构）。
+func (s *Server) participantProfileItem(entryID string) map[string]any {
+	if strings.TrimSpace(entryID) == "" {
+		return nil
+	}
+	database, _, err := s.openActiveMemory()
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = database.Close() }()
+	profile, err := database.GetParticipantProfileByEntryID(entryID)
+	if err != nil || profile == nil {
+		return nil
+	}
+	return map[string]any{
+		"id":              profile.ID,
+		"participantId":   profile.ParticipantID,
+		"participantName": profile.ParticipantName,
+		"title":           profile.Title,
+		"content":         profile.Content,
+		"scopeType":       profile.ScopeType,
+		"scopeKey":        profile.ScopeKey,
+		"characterName":   profile.CharacterName,
+		"metadata":        profile.Metadata,
+		"updatedAt":       profile.UpdatedAt,
+	}
+}
+
 func (s *Server) handleTestMention(writer http.ResponseWriter, request *http.Request) {
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "主动 @ 测试请在 bot 进程内使用 chat.commands.adminMention 命令触发"})
+	body := decodeBody(request)
+	groupID := textOf(body["groupId"])
+	targetUserID := orDefault(textOf(body["targetUserId"]), textOf(body["userId"]))
+	message := orDefault(textOf(body["message"]), textOf(body["prompt"]))
+	if groupID == "" || targetUserID == "" || message == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "群号、目标 QQ 与内容都不能为空"})
+		return
+	}
+	result, err := s.callBotControl("/control/mention", map[string]any{
+		"groupId":      groupID,
+		"targetUserId": targetUserID,
+		"targetName":   textOf(body["targetName"]),
+		"message":      message,
+	})
+	if err != nil {
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":          true,
+		"message":          orDefault(fmt_Sprint(result["message"]), "主动 @ 消息已发送"),
+		"generatedMessage": fmt_Sprint(result["generatedMessage"]),
+	})
 }
 
 // handleWebSearchTest 执行真实联网搜索（对齐 Node POST /api/tools/web-search/test）。

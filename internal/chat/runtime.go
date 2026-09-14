@@ -74,6 +74,8 @@ type Runtime struct {
 	// 消息聚合状态（对齐 Node 连发合并）
 	aggregateCount  int
 	aggregateReason string
+	// startedAt 供控制接口展示运行时长
+	startedAt time.Time
 }
 
 // New 创建运行时。
@@ -87,6 +89,7 @@ func New(options Options) *Runtime {
 		historySize = 20
 	}
 	return &Runtime{
+		startedAt:      time.Now(),
 		document:       options.Document,
 		memory:         options.Memory,
 		ai:             options.AI,
@@ -1499,11 +1502,21 @@ func (r *Runtime) participantProfileConfig() (enabled bool, threshold int, sourc
 // maybeBuildParticipantProfile 异步构建人物档案：阈值检查 → AI 生成 → 写入档案条目。
 // 失败只记日志，不影响聊天主链路（对齐 Node 异步任务语义）。
 func (r *Runtime) maybeBuildParticipantProfile(sessionKey string, participantID string, participantName string, messageType string, groupID string) {
-	if r.memory == nil || participantID == "" {
+	if r.memory == nil {
+		r.logger.Printf("[档案] 记忆库未就绪，跳过建档")
+		return
+	}
+	if strings.TrimSpace(participantID) == "" {
+		r.logger.Printf("[档案] 缺少参与者 ID，跳过建档")
 		return
 	}
 	enabled, threshold, sourceLimit, analysisMode, blacklist := r.participantProfileConfig()
-	if !enabled || blacklist[participantID] {
+	if !enabled {
+		r.logger.Printf("[档案] 自动建档未启用（memory.participantProfile.enabled=false）")
+		return
+	}
+	if blacklist[participantID] {
+		r.logger.Printf("[档案] %s 在黑名单中，跳过建档", participantID)
 		return
 	}
 	namespace := r.namespaceOptions(sessionKey)

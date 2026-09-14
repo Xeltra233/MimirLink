@@ -3,6 +3,7 @@ package panel
 import (
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mimirlink/internal/store"
@@ -258,5 +259,35 @@ func TestRangeContextConfigOverrides(t *testing.T) {
 	}
 	if joined != "" {
 		t.Fatalf("开关全关时不应注入上下文段落: %.200s", joined)
+	}
+}
+
+// TestBotControlOfflineGuidance 守护「bot 未运行时返回可读错误」，
+// 避免面板对必须由 bot 执行的动作返回假成功（goal-37 控制通道）。
+func TestBotControlOfflineGuidance(t *testing.T) {
+	server, _ := newTestServer(t)
+	cases := []struct {
+		path string
+		body string
+	}{
+		{"/api/test/mention", `{"groupId":"99001","targetUserId":"20002","message":"hi"}`},
+		{"/api/status/onebot/reconnect", `{}`},
+		{"/api/participant-profiles-analyze", `{"participantId":"20002"}`},
+		{"/api/participant-profiles/entry-x/analyze", `{}`},
+		{"/api/participant-profiles/entry-x/refresh-name", `{}`},
+	}
+	for _, item := range cases {
+		recorder := doRequest(server, "POST", item.path, item.body)
+		payload := decodeJSON(t, recorder.Body.Bytes())
+		if payload["success"] == true {
+			t.Fatalf("%s 在 bot 未运行时应返回失败: %+v", item.path, payload)
+		}
+		message := textOf(payload["error"])
+		if message == "" {
+			t.Fatalf("%s 缺少可读错误信息: %+v", item.path, payload)
+		}
+		if !strings.Contains(message, "Bot") && !strings.Contains(message, "控制") && !strings.Contains(message, "档案") {
+			t.Fatalf("%s 错误信息应说明 Bot 未运行: %s", item.path, message)
+		}
 	}
 }

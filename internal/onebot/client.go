@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -50,6 +51,13 @@ type Client struct {
 	handler       EventHandler
 	stopCh        chan struct{}
 	reconnectWait time.Duration
+	// reconnectCh 用于面板下发的主动重连：关闭当前连接并立即重试
+	reconnectCh chan struct{}
+	// eventQueue 把事件处理从读取循环中解耦：handler 内部会 Call() 并等待
+	// 响应，而响应只能由读取循环接收，同 goroutine 处理会造成自锁（15s 超时）。
+	eventQueue chan map[string]any
+	workerOnce sync.Once
+	dropped    int64
 }
 
 type apiResponse struct {
@@ -75,6 +83,8 @@ func New(options Options) *Client {
 		logger:        logger,
 		pending:       map[int64]chan apiResponse{},
 		stopCh:        make(chan struct{}),
+		reconnectCh:   make(chan struct{}, 1),
+		eventQueue:    make(chan map[string]any, 256),
 		reconnectWait: 5 * time.Second,
 	}
 }
@@ -134,7 +144,38 @@ func (c *Client) buildHeaders() http.Header {
 }
 
 // Run 建立连接并在断开后自动重连，直到 context 结束。
+// startEventWorker 启动单线程事件消费者，保证事件按序处理且不阻塞读取循环。
+func (c *Client) startEventWorker() {
+	c.workerOnce.Do(func() {
+		go func() {
+			for {
+				select {
+				case event := <-c.eventQueue:
+					c.dispatchEvent(event)
+				case <-c.stopCh:
+					return
+				}
+			}
+		}()
+	})
+}
+
+func (c *Client) dispatchEvent(event map[string]any) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			c.logger.Printf("处理事件异常: %v", recovered)
+		}
+	}()
+	c.mu.Lock()
+	handler := c.handler
+	c.mu.Unlock()
+	if handler != nil {
+		handler(event)
+	}
+}
+
 func (c *Client) Run(ctx context.Context) error {
+	c.startEventWorker()
 	for {
 		if err := c.connectOnce(ctx); err != nil {
 			c.logger.Printf("OneBot 连接结束: %v", err)
@@ -144,9 +185,30 @@ func (c *Client) Run(ctx context.Context) error {
 			return nil
 		case <-c.stopCh:
 			return nil
+		case <-c.reconnectCh:
+			// 主动重连：重置退避，立即重试
+			c.resetReconnectDelay()
+			c.logger.Println("收到主动重连指令，立即重建连接")
 		case <-time.After(c.nextReconnectDelay()):
 		}
 	}
+}
+
+// Reconnect 请求立即重建 OneBot 连接（非阻塞）。
+func (c *Client) Reconnect() error {
+	// 关闭当前连接，让 connectOnce 尽快返回
+	c.mu.Lock()
+	connection := c.connection
+	c.mu.Unlock()
+	if connection != nil {
+		_ = connection.Close()
+	}
+	select {
+	case c.reconnectCh <- struct{}{}:
+	default:
+		// 已有待处理的重连请求，合并处理
+	}
+	return nil
 }
 
 func (c *Client) nextReconnectDelay() time.Duration {
@@ -214,6 +276,11 @@ func (c *Client) connectOnce(ctx context.Context) error {
 	}()
 
 	go c.pingLoop(ctx, connection)
+	// ctx 取消时主动断开，避免 Run 卡在读取循环里无法退出
+	go func() {
+		<-ctx.Done()
+		_ = connection.Close()
+	}()
 
 	// 读取循环必须立刻开始，否则 API 响应无人接收（Call 会一直等到超时）
 	go func() {
@@ -287,11 +354,16 @@ func (c *Client) handlePayload(payload []byte) {
 			return
 		}
 	}
-	c.mu.Lock()
-	handler := c.handler
-	c.mu.Unlock()
-	if handler != nil {
-		handler(envelope)
+	// 事件交给独立 goroutine 按序处理，避免 handler 内的 Call 等待响应时
+	// 与读取循环互相阻塞（响应必须由本循环接收）
+	select {
+	case c.eventQueue <- envelope:
+	default:
+		atomic.AddInt64(&c.dropped, 1)
+		count := atomic.LoadInt64(&c.dropped)
+		if count == 1 || count%100 == 0 {
+			c.logger.Printf("事件队列已满，丢弃事件（累计 %d 条）", count)
+		}
 	}
 }
 

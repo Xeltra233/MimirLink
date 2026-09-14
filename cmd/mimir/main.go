@@ -26,6 +26,7 @@ import (
 
 	"mimirlink/internal/ai"
 	"mimirlink/internal/backup"
+	"mimirlink/internal/botctl"
 	"mimirlink/internal/chat"
 	"mimirlink/internal/config"
 	"mimirlink/internal/datacheck"
@@ -485,6 +486,15 @@ func runBot(rootDir string) error {
 		runtime.HandleEvent(event)
 	})
 
+	// 本地控制接口：面板（另一进程）据此触发「主动 @ 测试 / 立即增量分析 /
+	// 刷新用户名 / OneBot 重连」，这些动作必须由持有连接与 AI 客户端的 bot 执行
+	controlServer, controlErr := botctl.Start(botControlAdapter{runtime: runtime, client: client}, dataDir, logger)
+	if controlErr != nil {
+		logger.Printf("[控制接口] 启动失败（面板对应功能将不可用）: %v", controlErr)
+	} else {
+		defer func() { _ = controlServer.Close() }()
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -509,6 +519,28 @@ func runBot(rootDir string) error {
 
 	logger.Printf("MimirLink(Go) Bot 已启动，记忆库: %s", memoryPath)
 	return client.Run(ctx)
+}
+
+// botControlAdapter 把 bot 运行时能力适配成 botctl.Handler。
+type botControlAdapter struct {
+	runtime *chat.Runtime
+	client  *onebot.Client
+}
+
+func (a botControlAdapter) Status() map[string]any { return a.runtime.ControlStatus() }
+
+func (a botControlAdapter) ReconnectOneBot() error { return a.runtime.ReconnectOneBot() }
+
+func (a botControlAdapter) AdminMention(request botctl.MentionRequest) (map[string]any, error) {
+	return a.runtime.AdminMention(request)
+}
+
+func (a botControlAdapter) AnalyzeParticipantProfile(request botctl.ProfileRequest) (map[string]any, error) {
+	return a.runtime.AnalyzeParticipantProfile(request)
+}
+
+func (a botControlAdapter) RefreshParticipantName(request botctl.ProfileRequest) (map[string]any, error) {
+	return a.runtime.RefreshParticipantName(request)
 }
 
 func splitCategories(raw string) []string {

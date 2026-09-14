@@ -491,10 +491,23 @@ func (s *Server) handleParticipantProfileDetail(writer http.ResponseWriter, requ
 			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "人物档案不存在"})
 			return
 		}
-		// 面板进程无 bot 上下文（在线昵称/群成员资料）：按 Node 无能力时的语义返回 501
-		writeJSON(writer, http.StatusNotImplemented, map[string]any{
-			"success": false,
-			"error":   "人物档案手动分析由 bot 进程触发；面板进程无 OneBot 连接与聊天上下文",
+		// 转发给 bot 进程真实执行（面板无 AI 客户端与聊天上下文）
+		result, item, err := s.forwardProfileAction("/control/participant-profile/analyze", map[string]any{
+			"entryId":         id,
+			"participantId":   s.profileParticipantID(id),
+			"scopeKey":        existing.ScopeKey,
+			"scopeType":       existing.ScopeType,
+			"characterName":   existing.CharacterName,
+			"participantName": existing.Title,
+		})
+		if err != nil {
+			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"success": true,
+			"message": orDefault(fmt_Sprint(result["message"]), "人物档案已重新分析"),
+			"item":    item,
 		})
 		return
 	}
@@ -515,9 +528,34 @@ func (s *Server) handleParticipantProfileDetail(writer http.ResponseWriter, requ
 			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "人物档案不存在"})
 			return
 		}
-		writeJSON(writer, http.StatusNotImplemented, map[string]any{
-			"success": false,
-			"error":   "刷新昵称需要 OneBot 连接（QQ 全局资料/群成员资料），面板进程无该能力",
+		groupID := ""
+		if existing.Metadata != nil {
+			groupID = textOf(existing.Metadata["groupId"])
+		}
+		if groupID == "" {
+			for _, part := range strings.Split(existing.ScopeKey, ":") {
+				if trimmed := strings.TrimSpace(part); trimmed != "" && trimmed != existing.ScopeKey {
+					groupID = strings.TrimPrefix(trimmed, "group_")
+				}
+			}
+		}
+		result, item, err := s.forwardProfileAction("/control/participant-profile/refresh-name", map[string]any{
+			"entryId":         id,
+			"participantId":   textOf(existing.Metadata["participantId"]),
+			"participantName": existing.Title,
+			"scopeKey":        existing.ScopeKey,
+			"scopeType":       existing.ScopeType,
+			"characterName":   existing.CharacterName,
+			"groupId":         groupID,
+		})
+		if err != nil {
+			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"success": true,
+			"message": orDefault(fmt_Sprint(result["message"]), "用户名已刷新"),
+			"item":    item,
 		})
 		return
 	}

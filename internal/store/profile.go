@@ -14,6 +14,8 @@ type ProfileSourceConfig struct {
 	SourceFilter  string // all / bot_only
 	ContextBefore int
 	ContextAfter  int
+	// Force 为手动「立即增量分析」：忽略上次处理时间窗口，基于全部可见消息重建
+	Force bool
 }
 
 // NormalizeProfileSourceConfig 应用默认值。
@@ -93,7 +95,7 @@ func (d *DB) CollectParticipantProfileSource(participantID string, options Names
 		return nil, err
 	}
 	var since int64
-	if existing != nil {
+	if existing != nil && !config.Force {
 		if value, ok := existing.Metadata["lastProcessedMessageAt"].(float64); ok {
 			since = int64(value)
 		}
