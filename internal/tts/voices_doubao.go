@@ -1,0 +1,31 @@
+package tts
+
+// voiceTypesDoubao 火山引擎音色表（从 src/tts.js VOICE_TYPES 同步）。
+var voiceTypesDoubao = map[string]string{
+	"zh_female_tianmeixiaoyuan_moon_bigtts": "甜美小源(多情感)",
+	"zh_male_chunhouzhubo_moon_bigtts":      "醇厚主播(多情感)",
+	"zh_female_shuangkuaisisi_moon_bigtts":  "爽快思思(多情感)",
+	"zh_male_yangguangqingnian_moon_bigtts": "阳光青年(多情感)",
+	"zh_female_tianmeixiaoyuan":             "甜美小源",
+	"zh_female_shuangkuaisisi":              "爽快思思",
+	"zh_female_wanwanxiaohe":                "湾湾小何",
+	"zh_female_qingcheyouni":                "清澈悠尼",
+	"zh_female_gaolengyujie":                "高冷御姐",
+	"zh_female_sajiaonvyou":                 "撒娇女友",
+	"zh_female_yuanqinvhai":                 "元气女孩",
+	"zh_male_chunhouzhubo":                  "醇厚主播",
+	"zh_male_yangguangqingnian":             "阳光青年",
+	"zh_male_wenzhidianshang":               "稳重电商",
+	"zh_male_qingshuangdege":                "清爽德哥",
+	"zh_male_shaonianzixin":                 "少年子鑫",
+	"zh_female_linjianvhai":                 "邻家女孩",
+	"zh_male_shaonianxiaoxiao":              "少年萧萧",
+	"zh_female_yuehangyuan":                 "悦航员",
+	"zh_female_sichuan":                     "四川妹子",
+	"zh_male_dongbei":                       "东北老铁",
+	"zh_female_taiwan":                      "台湾甜妹",
+	"en_female_sarah":                       "Sarah(英文女声)",
+	"en_male_adam":                          "Adam(英文男声)",
+	"jp_female_mai":                         "Mai(日文女声)",
+	"jp_male_kenta":                         "Kenta(日文男声)",
+}

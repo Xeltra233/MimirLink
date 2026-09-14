@@ -21,6 +21,7 @@ import (
 	"mimirlink/internal/backup"
 	"mimirlink/internal/config"
 	"mimirlink/internal/store"
+	"mimirlink/internal/tts"
 )
 
 // Version 是面板版本号（与 CLI 保持一致）。
@@ -73,6 +74,7 @@ func NewServer(options Options) (*Server, error) {
 	})
 	server.registerRoutes()
 	server.registerExtendedRoutes()
+	server.registerTTSRoutes(tts.NewWithAudioDir(server.AudioDir(), logger))
 	return server, nil
 }
 
@@ -115,6 +117,11 @@ func (s *Server) DataDir() string {
 		return filepath.Join(s.rootDir, dataDir)
 	}
 	return dataDir
+}
+
+// AudioDir 返回合成音频缓存目录（与 Node 版项目根 audio/ 对齐）。
+func (s *Server) AudioDir() string {
+	return filepath.Join(s.rootDir, "audio")
 }
 
 func (s *Server) registerRoutes() {
