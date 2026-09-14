@@ -12,16 +12,18 @@ import (
 
 // Defaults 与 Node 版 WEB_SEARCH_DEFAULTS 保持一致。
 var Defaults = Config{
-	Provider:         "duckduckgo",
-	Region:           "cn-zh",
-	Locale:           "zh-cn",
-	SafeSearch:       "moderate",
-	TimeRange:        "all",
-	MaxResults:       5,
-	TimeoutMs:        10000,
-	MaxSnippetLength: 800,
-	Fetch:            FetchConfig{Enabled: true, TimeoutMs: 15000, MaxChars: 8000},
-	MCPFallback:      "auto",
+	Provider:            "duckduckgo",
+	Region:              "cn-zh",
+	Locale:              "zh-cn",
+	SafeSearch:          "moderate",
+	TimeRange:           "all",
+	MaxResults:          5,
+	TimeoutMs:           10000,
+	MaxSnippetLength:    800,
+	Fetch:               FetchConfig{Enabled: true, TimeoutMs: 15000, MaxChars: 8000},
+	MCPFallback:         "auto",
+	Spice:               SpiceConfig{WeatherDays: 3},
+	MCPFallbackMaxChars: 4000,
 }
 
 // FetchConfig 是抓页配置。
@@ -33,23 +35,31 @@ type FetchConfig struct {
 
 // Config 是 webSearch 配置（键名与 Node 版一致，直接来自 ai.tools.webSearch）。
 type Config struct {
-	Enabled           bool              `json:"enabled"`
-	Provider          string            `json:"provider"`
-	FallbackProviders []string          `json:"fallbackProviders"`
-	APIKeys           map[string]string `json:"apiKeys"`
-	SearxngBaseURL    string            `json:"searxngBaseUrl"`
-	SearxngEngines    string            `json:"searxngEngines"`
-	Region            string            `json:"region"`
-	Locale            string            `json:"locale"`
-	SafeSearch        string            `json:"safeSearch"`
-	TimeRange         string            `json:"timeRange"`
-	MaxResults        int               `json:"maxResults"`
-	TimeoutMs         int               `json:"timeoutMs"`
-	MaxSnippetLength  int               `json:"maxSnippetLength"`
-	AllowedDomains    []string          `json:"allowedDomains"`
-	BlockedDomains    []string          `json:"blockedDomains"`
-	Fetch             FetchConfig       `json:"fetch"`
-	MCPFallback       string            `json:"mcpFallback"`
+	Enabled             bool              `json:"enabled"`
+	Provider            string            `json:"provider"`
+	FallbackProviders   []string          `json:"fallbackProviders"`
+	APIKeys             map[string]string `json:"apiKeys"`
+	SearxngBaseURL      string            `json:"searxngBaseUrl"`
+	SearxngEngines      string            `json:"searxngEngines"`
+	Region              string            `json:"region"`
+	Locale              string            `json:"locale"`
+	SafeSearch          string            `json:"safeSearch"`
+	TimeRange           string            `json:"timeRange"`
+	MaxResults          int               `json:"maxResults"`
+	TimeoutMs           int               `json:"timeoutMs"`
+	MaxSnippetLength    int               `json:"maxSnippetLength"`
+	AllowedDomains      []string          `json:"allowedDomains"`
+	BlockedDomains      []string          `json:"blockedDomains"`
+	Fetch               FetchConfig       `json:"fetch"`
+	MCPFallback         string            `json:"mcpFallback"`
+	Spice               SpiceConfig       `json:"spice"`
+	MCPFallbackMaxChars int               `json:"mcpFallbackMaxChars"`
+}
+
+// SpiceConfig 是 DuckDuckGo Spice 即时数据配置（get_weather/convert_currency）。
+type SpiceConfig struct {
+	Enabled     bool `json:"enabled"`
+	WeatherDays int  `json:"weatherDays"`
 }
 
 // Service 是搜索服务。

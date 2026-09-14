@@ -39,6 +39,9 @@ func (r *Registry) Definitions() []ai.ToolDefinition {
 	definitions := []ai.ToolDefinition{}
 	if r.search != nil && r.search.Enabled() {
 		definitions = append(definitions, buildSearchToolDefinition(), buildFetchToolDefinition())
+		if r.search.Config().Spice.Enabled {
+			definitions = append(definitions, buildWeatherToolDefinition(), buildCurrencyToolDefinition())
+		}
 	}
 	if r.mcp != nil {
 		for _, item := range r.mcp.Definitions() {
@@ -97,6 +100,10 @@ func (r *Registry) dispatch(ctx context.Context, name string, rawArguments strin
 		return r.webSearch(ctx, arguments)
 	case "web_fetch":
 		return r.webFetch(ctx, arguments)
+	case "get_weather":
+		return r.getWeather(ctx, arguments)
+	case "convert_currency":
+		return r.convertCurrency(ctx, arguments)
 	default:
 		if strings.HasPrefix(name, "mcp__") {
 			return r.callMCP(ctx, name, arguments)
@@ -145,6 +152,10 @@ func (r *Registry) webSearch(ctx context.Context, arguments map[string]any) (str
 		Site:      site,
 	})
 	if err != nil {
+		// MCP 搜索兜底（对齐 Node tryMcpSearchFallback：本地链路失败时改用 MCP 搜索工具）
+		if fallback := r.tryMCPSearchFallback(ctx, query); fallback != "" {
+			return fallback, nil
+		}
 		return "", fmt.Errorf("搜索失败（已尝试 %s）: %w", strings.Join(attempted, " → "), err)
 	}
 	payload := map[string]any{
@@ -160,6 +171,168 @@ func (r *Registry) webSearch(ctx context.Context, arguments map[string]any) (str
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+// mcpSearchPreference 对齐 Node MCP_SEARCH_TOOL_PREFERENCE。
+var mcpSearchPreference = []string{"search", "fast_search", "any_search", "mega_search"}
+
+// tryMCPSearchFallback 对齐 Node tryMcpSearchFallback：按名称含 search 挑候选（最多 2 个），
+// 以 {text: query} 调用，返回原始文本。
+func (r *Registry) tryMCPSearchFallback(ctx context.Context, query string) string {
+	if r.mcp == nil || !r.mcp.Enabled() {
+		return ""
+	}
+	target := r.search.Config().MCPFallback
+	maxChars := r.search.Config().MCPFallbackMaxChars
+	if maxChars <= 0 {
+		maxChars = 4000
+	}
+	type candidate struct {
+		definition mcp.ToolDefinition
+		rank       int
+	}
+	candidates := []candidate{}
+	for _, item := range r.mcp.Definitions() {
+		if target == "off" {
+			break
+		}
+		if target != "auto" && item.ServerName != target && item.ServerID != target {
+			continue
+		}
+		name := item.ToolName
+		if name == "" {
+			name = item.Name
+		}
+		if !strings.Contains(strings.ToLower(name), "search") {
+			continue
+		}
+		rank := len(mcpSearchPreference)
+		for index, preferred := range mcpSearchPreference {
+			if name == preferred {
+				rank = index
+				break
+			}
+		}
+		candidates = append(candidates, candidate{definition: item, rank: rank})
+	}
+	// 稳定排序：偏好序
+	for i := 0; i < len(candidates); i++ {
+		for j := i + 1; j < len(candidates); j++ {
+			if candidates[j].rank < candidates[i].rank {
+				candidates[i], candidates[j] = candidates[j], candidates[i]
+			}
+		}
+	}
+	for index, item := range candidates {
+		if index >= 2 {
+			break
+		}
+		text, err := r.mcp.CallTool(ctx, item.definition.ServerID, item.definition.ToolName, map[string]any{"text": query})
+		if err != nil {
+			r.logger.Printf("[工具] MCP 搜索兜底异常 [%s:%s]: %v", item.definition.ServerName, item.definition.ToolName, err)
+			continue
+		}
+		runes := []rune(text)
+		if len(runes) > maxChars {
+			text = string(runes[:maxChars])
+		}
+		r.logger.Printf("[工具] MCP 搜索兜底成功 [%s:%s]", item.definition.ServerName, item.definition.ToolName)
+		payload := map[string]any{
+			"ok":          true,
+			"provider":    "mcp",
+			"source":      fmt.Sprintf("mcp:%s:%s", item.definition.ServerName, item.definition.ToolName),
+			"query":       query,
+			"resultCount": 0,
+			"results":     []any{},
+			"text":        text,
+			"note":        "本地搜索链路失败，以下为 MCP 搜索工具返回的原始文本",
+		}
+		encoded, marshalErr := json.Marshal(payload)
+		if marshalErr != nil {
+			continue
+		}
+		return string(encoded)
+	}
+	return ""
+}
+
+// getWeather 执行天气查询（DuckDuckGo Spice）。
+func (r *Registry) getWeather(ctx context.Context, arguments map[string]any) (string, error) {
+	if r.search == nil || !r.search.Enabled() || !r.search.Config().Spice.Enabled {
+		return "", fmt.Errorf("天气工具未启用")
+	}
+	location := strings.TrimSpace(stringArg(arguments, "location"))
+	if location == "" {
+		return "", fmt.Errorf("地点不能为空")
+	}
+	days := clampInt(intArg(arguments, "days"), 1, 7, r.search.Config().Spice.WeatherDays)
+	result, err := r.search.FetchWeather(ctx, location, days, r.search.Config().Locale, r.search.Config().TimeoutMs)
+	if err != nil {
+		return "", fmt.Errorf("天气查询失败: %w", err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+// convertCurrency 执行汇率换算（DuckDuckGo Spice / xe.com 中间价）。
+func (r *Registry) convertCurrency(ctx context.Context, arguments map[string]any) (string, error) {
+	if r.search == nil || !r.search.Enabled() || !r.search.Config().Spice.Enabled {
+		return "", fmt.Errorf("汇率工具未启用")
+	}
+	from := strings.TrimSpace(stringArg(arguments, "from"))
+	to := strings.TrimSpace(stringArg(arguments, "to"))
+	amount := floatArg(arguments, "amount")
+	if amount <= 0 {
+		amount = 1
+	}
+	if from == "" || to == "" {
+		return "", fmt.Errorf("需要提供 from 和 to 两个货币代码")
+	}
+	result, err := r.search.FetchCurrency(ctx, from, to, amount, r.search.Config().TimeoutMs)
+	if err != nil {
+		return "", fmt.Errorf("汇率查询失败: %w", err)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+// buildWeatherToolDefinition 对齐 Node buildWeatherToolDefinition。
+func buildWeatherToolDefinition() ai.ToolDefinition {
+	definition := ai.ToolDefinition{Type: "function"}
+	definition.Function.Name = "get_weather"
+	definition.Function.Description = "查询指定城市/地点的当前天气与未来几天预报（气温、体感、湿度、风速、降水概率）。"
+	definition.Function.Parameters = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"location": map[string]any{"type": "string", "description": "明确的地点名称，例如「北京」「上海」「Tokyo」。"},
+			"days":     map[string]any{"type": "integer", "description": "预报天数（1-7，默认 3）。"},
+		},
+		"required": []string{"location"},
+	}
+	return definition
+}
+
+// buildCurrencyToolDefinition 对齐 Node buildCurrencyToolDefinition。
+func buildCurrencyToolDefinition() ai.ToolDefinition {
+	definition := ai.ToolDefinition{Type: "function"}
+	definition.Function.Name = "convert_currency"
+	definition.Function.Description = "按实时中间价换算货币，例如 USD→CNY。"
+	definition.Function.Parameters = map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"from":   map[string]any{"type": "string", "description": "源货币代码，例如 USD。"},
+			"to":     map[string]any{"type": "string", "description": "目标货币代码，例如 CNY。"},
+			"amount": map[string]any{"type": "number", "description": "金额，默认 1。"},
+		},
+		"required": []string{"from", "to"},
+	}
+	return definition
 }
 
 func (r *Registry) webFetch(ctx context.Context, arguments map[string]any) (string, error) {
@@ -406,4 +579,12 @@ func clampInt(value int, minValue int, maxValue int, fallback int) int {
 // RandomIdentifier 生成工具调用兜底 id（部分模型不返回 id）。
 func RandomIdentifier() string {
 	return fmt.Sprintf("call_%d_%d", time.Now().UnixMilli(), rand.Intn(100000))
+}
+
+// floatArg 取浮点参数。
+func floatArg(arguments map[string]any, key string) float64 {
+	if number, ok := arguments[key].(float64); ok {
+		return number
+	}
+	return 0
 }
