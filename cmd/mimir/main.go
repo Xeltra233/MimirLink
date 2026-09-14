@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -420,15 +421,22 @@ func runBot(rootDir string) error {
 	if err != nil {
 		return err
 	}
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+	stdoutLogger := log.New(os.Stdout, "", log.LstdFlags)
+	// 日志文件（对齐 Node logger.js：logs/<date>.log，面板 /api/logs 展示）
+	fileLogger := chat.NewFileLogger(filepath.Join(rootDir, "logs"), time.Now())
+	logger := stdoutLogger
+	if fileLogger != nil {
+		logger = log.New(io.MultiWriter(os.Stdout, fileLogger.Writer()), "", log.LstdFlags)
+	}
 	logger.Printf("模型: %s @ %s (provider=%s)", provider.Model, provider.BaseURL, provider.ID)
 
 	client := onebot.New(onebot.Options{
-		URL:         document.String("onebot.url"),
-		AccessToken: document.String("onebot.accessToken"),
-		TokenMode:   document.String("onebot.tokenMode"),
-		Mode:        document.String("onebot.mode"),
-		Logger:      logger,
+		URL:            document.String("onebot.url"),
+		AccessToken:    document.String("onebot.accessToken"),
+		TokenMode:      document.String("onebot.tokenMode"),
+		Mode:           document.String("onebot.mode"),
+		HTTPListenAddr: document.String("onebot.httpListen"),
+		Logger:         logger,
 	})
 
 	searchConfig := tools.LoadSearchConfig(document)

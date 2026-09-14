@@ -24,11 +24,12 @@ import (
 
 // Options 是 OneBot 客户端配置。
 type Options struct {
-	URL         string
-	AccessToken string
-	TokenMode   string // header | query | ""
-	Mode        string // ws | http
-	Logger      *log.Logger
+	URL            string
+	AccessToken    string
+	TokenMode      string // header | query | ""
+	Mode           string // ws | http
+	Logger         *log.Logger
+	HTTPListenAddr string // http 模式的事件上报监听地址（POST /onebot/event）
 }
 
 // EventHandler 处理收到的 OneBot 事件。
@@ -169,6 +170,21 @@ func (c *Client) resetReconnectDelay() {
 
 func (c *Client) connectOnce(ctx context.Context) error {
 	if c.options.Mode == "http" {
+		// HTTP 模式有两种形态：主动调 API（runHTTP）+ 接收上报事件（ServeHTTPReceiver）
+		if c.options.HTTPListenAddr != "" {
+			go func() {
+				if err := c.ServeHTTPReceiver(ctx, c.options.HTTPListenAddr, func(event map[string]any) {
+					c.mu.Lock()
+					handler := c.handler
+					c.mu.Unlock()
+					if handler != nil {
+						handler(event)
+					}
+				}); err != nil {
+					c.logger.Printf("[OneBot] HTTP 上报接收失败: %v", err)
+				}
+			}()
+		}
 		return c.runHTTP(ctx)
 	}
 	target := c.buildConnectionURL()
@@ -530,4 +546,43 @@ func toNumericIfPossible(value string) any {
 		return parsed
 	}
 	return value
+}
+
+// ServeHTTPReceiver 启动 HTTP 事件接收服务（对齐 Node POST /onebot/event：
+// OneBot 实现以 HTTP POST 上报事件）。阻塞直到 ctx 取消。
+func (c *Client) ServeHTTPReceiver(ctx context.Context, listenAddr string, eventHandler func(map[string]any)) error {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/onebot/event", func(writer http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodPost {
+			writer.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var event map[string]any
+		if err := json.NewDecoder(request.Body).Decode(&event); err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		c.mu.Lock()
+		if c.selfID == "" {
+			c.selfID = fmt.Sprintf("%v", event["self_id"])
+		}
+		c.mu.Unlock()
+		if eventHandler != nil {
+			eventHandler(event)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		_, _ = writer.Write([]byte(`{"status":"ok"}`))
+	})
+	server := &http.Server{Addr: listenAddr, Handler: mux, ReadTimeout: 10 * time.Second}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+	c.logger.Printf("OneBot HTTP 上报接收已就绪: %s（POST /onebot/event）", listenAddr)
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		return err
+	}
+	return nil
 }
