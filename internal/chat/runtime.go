@@ -756,6 +756,24 @@ func parseCQString(raw string) []map[string]any {
 
 // renderSegments 把消息段渲染成可读文本（forward 会拉取合并转发内容）。
 func (r *Runtime) renderSegments(segments []map[string]any) string {
+	return r.renderSegmentsAt(segments, 0, map[string]bool{})
+}
+
+// forwardMaxNodes/forwardMaxChars 对齐 Node forward-message.js 的默认预算（每层）。
+const (
+	forwardMaxNodes = 30
+	forwardMaxChars = 2500
+)
+
+func (r *Runtime) forwardMaxDepth() int {
+	depth := int(r.document.Int("chat.forwardMaxDepth", 3))
+	if depth < 1 {
+		depth = 1
+	}
+	return depth
+}
+
+func (r *Runtime) renderSegmentsAt(segments []map[string]any, depth int, visited map[string]bool) string {
 	builder := strings.Builder{}
 	for _, segment := range segments {
 		segmentType := stringValue(segment["type"])
@@ -785,7 +803,7 @@ func (r *Runtime) renderSegments(segments []map[string]any) string {
 		case "reply":
 			builder.WriteString("[引用消息]")
 		case "forward":
-			builder.WriteString(r.renderForward(stringValue(data["id"])))
+			builder.WriteString(r.renderForwardAt(stringValue(data["id"]), depth, visited))
 		default:
 			builder.WriteString("[" + segmentType + "]")
 		}
@@ -804,11 +822,26 @@ func optionalSuffix(value string) string {
 	return ":" + trimmed
 }
 
-// renderForward 拉取并渲染合并转发内容（与 Node 版 transcript 形状一致）。
+// renderForward 拉取并渲染合并转发内容（与 Node 版 transcript 形状一致；支持多层嵌套展开）。
 func (r *Runtime) renderForward(forwardID string) string {
+	return r.renderForwardAt(forwardID, 0, map[string]bool{})
+}
+
+// renderForwardAt 展开合并转发：depth 超过上限或循环引用时退化为占位符，
+// 嵌套子转发继续递归拉取（chat.forwardMaxDepth 控制层数，默认 3）。
+func (r *Runtime) renderForwardAt(forwardID string, depth int, visited map[string]bool) string {
 	if forwardID == "" {
 		return "[合并转发聊天记录|缺少 id]"
 	}
+	if visited[forwardID] {
+		return "[嵌套合并转发聊天记录|循环引用]"
+	}
+	maxDepth := r.forwardMaxDepth()
+	if depth >= maxDepth {
+		return "[嵌套合并转发聊天记录]"
+	}
+	visited[forwardID] = true
+	defer delete(visited, forwardID)
 	payload, err := r.bot.GetForwardMsg(forwardID)
 	if err != nil {
 		return "[合并转发聊天记录|读取失败:" + err.Error() + "]"
@@ -817,16 +850,32 @@ func (r *Runtime) renderForward(forwardID string) string {
 	if len(nodes) == 0 {
 		return "[合并转发聊天记录|内容为空]"
 	}
-	lines := make([]string, 0, len(nodes))
+	shown := nodes
+	truncated := false
+	if len(shown) > forwardMaxNodes {
+		shown = shown[:forwardMaxNodes]
+		truncated = true
+	}
+	lines := make([]string, 0, len(shown))
 	imageCount := 0
-	for index, node := range nodes {
-		text := r.renderSegments(node.segments)
+	totalChars := 0
+	for index, node := range shown {
+		text := strings.TrimSpace(r.renderSegmentsAt(node.segments, depth+1, visited))
 		for _, segment := range node.segments {
 			if stringValue(segment["type"]) == "image" {
 				imageCount += 1
 			}
 		}
-		lines = append(lines, fmt.Sprintf("%d. %s: %s", index+1, node.name, strings.TrimSpace(text)))
+		line := fmt.Sprintf("%d. %s: %s", index+1, node.name, text)
+		if totalChars+len(line) > forwardMaxChars {
+			truncated = true
+			break
+		}
+		lines = append(lines, line)
+		totalChars += len(line)
+	}
+	if truncated {
+		lines = append(lines, fmt.Sprintf("…（共 %d 条，已截断）", len(nodes)))
 	}
 	imageNote := ""
 	if imageCount > 0 {
