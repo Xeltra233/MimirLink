@@ -858,7 +858,7 @@ func (s *Server) handleMemoryClearAll(writer http.ResponseWriter, request *http.
 func (s *Server) handleOnebotReconnect(writer http.ResponseWriter, request *http.Request) {
 	result, err := s.callBotControl("/control/onebot/reconnect", map[string]any{})
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{
@@ -959,7 +959,7 @@ func (s *Server) handleProfileAnalyze(writer http.ResponseWriter, request *http.
 	body := decodeBody(request)
 	result, item, err := s.forwardProfileAction("/control/participant-profile/analyze", body)
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{
@@ -1049,7 +1049,7 @@ func (s *Server) handleTestMention(writer http.ResponseWriter, request *http.Req
 	targetUserID := orDefault(textOf(body["targetUserId"]), textOf(body["userId"]))
 	message := orDefault(textOf(body["message"]), textOf(body["prompt"]))
 	if groupID == "" || targetUserID == "" || message == "" {
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "群号、目标 QQ 与内容都不能为空"})
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "群号、目标 QQ 与内容都不能为空", "message": "群号、目标 QQ 与内容都不能为空"})
 		return
 	}
 	result, err := s.callBotControl("/control/mention", map[string]any{
@@ -1059,7 +1059,7 @@ func (s *Server) handleTestMention(writer http.ResponseWriter, request *http.Req
 		"message":      message,
 	})
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{

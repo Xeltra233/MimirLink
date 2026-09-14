@@ -501,7 +501,7 @@ func (s *Server) handleParticipantProfileDetail(writer http.ResponseWriter, requ
 			"participantName": existing.Title,
 		})
 		if err != nil {
-			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{
@@ -549,7 +549,7 @@ func (s *Server) handleParticipantProfileDetail(writer http.ResponseWriter, requ
 			"groupId":         groupID,
 		})
 		if err != nil {
-			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+			writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{
