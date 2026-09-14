@@ -20,6 +20,7 @@ import (
 	"mimirlink/internal/ai"
 	"mimirlink/internal/characters"
 	"mimirlink/internal/config"
+	"mimirlink/internal/music"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tools"
 )
@@ -116,6 +117,11 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return false
+	}
+
+	// 点歌指令：独立于 LLM 的能力，命中即返回（对齐 Node handleMusicCommand）
+	if r.tryHandleMusicCommand(event, messageType, groupID, userID, text) {
+		return true
 	}
 
 	sessionKey := r.sessionKey(messageType, groupID, userID)
@@ -1323,4 +1329,95 @@ func (r *Runtime) generateParticipantProfile(source *store.ProfileSource, partic
 // messageMetadataUserID 提取消息 metadata.userId（转发到 store 包实现）。
 func messageMetadataUserID(message store.Message) string {
 	return store.MessageUserID(message)
+}
+
+// tryHandleMusicCommand 处理 /music 点歌指令；未启用或非命令时返回 false 交给 LLM。
+func (r *Runtime) tryHandleMusicCommand(event map[string]any, messageType string, groupID string, userID string, plainText string) bool {
+	config := music.NormalizeConfig(r.musicConfigRaw())
+	handler := &music.Handler{
+		Config:     r.musicConfigRaw,
+		AudioDir:   filepath.Join(r.dataDir(), "audio"),
+		FFmpegPath: r.document.String("ffmpegPath"),
+		Warn:       func(message string) { r.logger.Printf("[点歌] %s", message) },
+	}
+	// 未启用且非命令 → 快速返回（Handler 也会拦截，这里避免无谓构造）
+	if !config.Enabled && !strings.HasPrefix(music.StripLeadingMentions(plainText), orDefaultString(config.Command, music.DefaultMusicCommand)) {
+		return false
+	}
+	_ = userID
+	senders := music.Senders{
+		SendText: func(message string) error {
+			return r.dispatch(messageType, groupID, userID, event, message)
+		},
+		SendVoice: func(audioPath string) error {
+			if messageType == "group" {
+				return r.sendRecord(groupID, "", audioPath, true)
+			}
+			return r.sendRecord("", userID, audioPath, false)
+		},
+		SendFile: func(filePath string, fileName string) error {
+			if messageType == "group" {
+				return r.sendFile(groupID, "", filePath, fileName, true)
+			}
+			return r.sendFile("", userID, filePath, fileName, false)
+		},
+	}
+	result := handler.Handle(context.Background(), event, plainText, senders)
+	return result.Handled
+}
+
+func (r *Runtime) musicConfigRaw() map[string]any {
+	raw := map[string]any{}
+	if err := json.Unmarshal(r.document.Raw(), &raw); err != nil {
+		return raw
+	}
+	chat, _ := raw["chat"].(map[string]any)
+	if chat == nil {
+		return raw
+	}
+	musicRaw, _ := chat["music"].(map[string]any)
+	if musicRaw == nil {
+		return raw
+	}
+	return musicRaw
+}
+
+func orDefaultString(value string, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
+}
+
+// sendRecord 通过 OneBot send_group_record / send_private_record 发送语音。
+func (r *Runtime) sendRecord(groupID string, userID string, audioPath string, isGroup bool) error {
+	if onebotClient, ok := r.bot.(interface {
+		Call(action string, params map[string]any) (json.RawMessage, error)
+	}); ok {
+		params := map[string]any{"file": audioPath}
+		if isGroup {
+			params["group_id"] = groupID
+			_, err := onebotClient.Call("send_group_record", params)
+			return err
+		}
+		params["user_id"] = userID
+		_, err := onebotClient.Call("send_private_record", params)
+		return err
+	}
+	return fmt.Errorf("当前 OneBot 适配器不支持发送语音")
+}
+
+// sendFile 通过 OneBot upload_group_file / upload_private_file 发送文件。
+func (r *Runtime) sendFile(groupID string, userID string, filePath string, fileName string, isGroup bool) error {
+	if onebotClient, ok := r.bot.(interface {
+		Call(action string, params map[string]any) (json.RawMessage, error)
+	}); ok {
+		if isGroup {
+			_, err := onebotClient.Call("upload_group_file", map[string]any{"group_id": groupID, "file": filePath, "name": fileName})
+			return err
+		}
+		_, err := onebotClient.Call("upload_private_file", map[string]any{"user_id": userID, "file": filePath, "name": fileName})
+		return err
+	}
+	return fmt.Errorf("当前 OneBot 适配器不支持发送文件")
 }
