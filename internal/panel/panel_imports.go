@@ -3,6 +3,7 @@ package panel
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -363,7 +364,7 @@ func (s *Server) runPromptTraining(rounds int) map[string]any {
 	issueFrequency := map[string]int{}
 
 	for round := 1; round <= rounds; round++ {
-		sample := sampleMessages(history, 6)
+		sample, sampleStart := sampleTrainingRange(history)
 		analysis, err := s.analyzeRound(client, systemPrompt, profile, sample)
 		if err != nil {
 			continue
@@ -376,7 +377,7 @@ func (s *Server) runPromptTraining(rounds int) map[string]any {
 		fixPrompt := textOf(analysis["fixPrompt"])
 		results = append(results, map[string]any{
 			"round": round, "score": score, "issues": issues, "fixPrompt": fixPrompt,
-			"sampleRange": fmt.Sprintf("%d-%d", 0, len(sample)),
+			"sampleRange": fmt.Sprintf("%d-%d", sampleStart, sampleStart+len(sample)),
 		})
 		if score > 0 {
 			scores = append(scores, score)
@@ -443,11 +444,22 @@ func (s *Server) runPromptTraining(rounds int) map[string]any {
 	}
 }
 
-func sampleMessages(history []ai.Message, size int) []ai.Message {
-	if len(history) <= size {
-		return history
+// sampleTrainingRange 随机采样 6-12 条消息作为一轮训练样本，并返回起始下标
+// （对齐 Node prompt-trainer：sampleSize = 6 + floor(random*7)，随机起点）。
+func sampleTrainingRange(history []ai.Message) ([]ai.Message, int) {
+	if len(history) == 0 {
+		return history, 0
 	}
-	return history[len(history)-size:]
+	size := 6 + rand.Intn(7)
+	if len(history) <= size {
+		return history, 0
+	}
+	start := rand.Intn(len(history) - size + 1)
+	end := start + size
+	if end > len(history) {
+		end = len(history)
+	}
+	return history[start:end], start
 }
 
 func buildTrainingSystemPrompt(profile trainingProfile) string {

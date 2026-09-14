@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +37,8 @@ type rangeState struct {
 	embedPercent int
 	embedBatches int
 	embedCurrent int
+	// eloHistory 记录最近 3 轮 ELO 判定（对齐 Node rangeCorpusStore._eloHistory）
+	eloHistory []string
 }
 
 func newRangeState() *rangeState {
@@ -1293,6 +1297,9 @@ func (s *Server) handleRangeOptimizeStep(writer http.ResponseWriter, request *ht
 	if goal == "" {
 		goal = "让角色扮演更自然、更贴合人设"
 	}
+	iterationNumber := intOr(body["iterationNumber"], 1)
+	maxIterations := intOr(body["maxIterations"], 5)
+	noJSONMode := body["noJsonMode"] == true
 	lastUser := textOf(body["lastUserMessage"])
 	lastReply := textOf(body["lastAIResponse"])
 	characterName := orDefault(textOf(body["characterName"]), s.currentCharacterName())
@@ -1309,73 +1316,309 @@ func (s *Server) handleRangeOptimizeStep(writer http.ResponseWriter, request *ht
 		if aiResponse, ok := result["aiResponse"].(map[string]any); ok {
 			lastReply = stringValueOf(aiResponse["text"])
 		}
-		if providerID == "" {
-			providerID = textOf(body["modelProviderId"])
-		}
 	}
 	client := s.buildRangeAIClient(providerID, model)
 	if client == nil {
 		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "无法构建 AI 客户端，请检查 ai.providers 配置"})
 		return
 	}
-	prompt := fmt.Sprintf(`你是写卡优化专家，需要给出可执行的一步优化。
 
-## 优化目标
-%s
+	promptItems := s.optimizePromptSummary(body["currentPromptConfig"])
+	characterSummary := s.optimizeCharacterSummary(body["currentCharacter"], characterName)
+	worldbookSummary := s.optimizeWorldbookSummary(body["currentWorldBook"])
+	corpusSection := s.optimizeCorpusSection(goal, textOf(body["testCorpus"]))
+	lastResultText := "(尚无测试结果)"
+	if lastUser != "" || lastReply != "" {
+		lastResultText = "用户消息: " + lastUser + "\nAI回复: " + lastReply
+	}
 
-## 最近一次测试
-用户消息: %s
-角色回复: %s
-角色卡: %s
+	optimizePrompt := nodeOptimizePrompt(nodeOptimizeInput{
+		Goal: goal, IterationNumber: iterationNumber, MaxIterations: maxIterations,
+		LastResultText: lastResultText, PromptItems: promptItems,
+		Character: characterSummary, Worldbook: worldbookSummary, Corpus: corpusSection,
+		NoJSONMode: noJSONMode,
+	})
 
-请只输出 JSON，不要输出多余文字，结构如下：
-{"elo":{"result":"B_wins|A_wins|draw","reasoning":"判定理由"},
- "evaluation":{"issues":["问题1"],"highlights":["亮点1"]},
- "allChanges":[{"type":"prompt|character|worldbook","identifier":"字段或标识","newContent":"新内容"}],
- "nextTestMessage":"下一轮建议测试消息",
- "changeSummary":"一句话总结"}
-`, goal, lastUser, lastReply, characterName)
+	// 对齐 Node buildRangeAIOverrides：温度 0.4 / 输出上限 4096
+	overrides := map[string]any{"temperature": 0.4, "maxTokens": 4096}
 	ctx, cancel := contextWithTimeout(time.Duration(s.document.Int("ai.timeout", 120)) * time.Second)
 	defer cancel()
-	completion, err := client.Chat(ctx, []ai.Message{{Role: "user", Content: prompt}}, nil)
+	completion, err := client.Chat(ctx, []ai.Message{{Role: "user", Content: optimizePrompt}}, overrides)
 	if err != nil {
 		writeJSON(writer, http.StatusBadGateway, map[string]any{"success": false, "error": "模型请求失败: " + err.Error()})
 		return
 	}
 	parsed := parseJSONObject(completion.Content)
+	decision := "stop"
+	if textOf(parsed["decision"]) == "modify" {
+		decision = "modify"
+	}
 	elo, _ := parsed["elo"].(map[string]any)
 	evaluation, _ := parsed["evaluation"].(map[string]any)
-	changes, _ := parsed["allChanges"].([]any)
-	modifiedCharacter := []any{}
-	modifiedWorldBook := []any{}
-	modifiedPrompts := []any{}
-	for _, item := range changes {
-		change, _ := item.(map[string]any)
-		if change == nil {
-			continue
-		}
-		switch textOf(change["type"]) {
-		case "character":
-			modifiedCharacter = append(modifiedCharacter, change)
-		case "worldbook":
-			modifiedWorldBook = append(modifiedWorldBook, change)
-		default:
-			modifiedPrompts = append(modifiedPrompts, change)
+	eloResult := orDefault(textOf(elo["result"]), "draw")
+	if eloResult != "A_wins" && eloResult != "B_wins" && eloResult != "draw" {
+		eloResult = "draw"
+	}
+
+	// ELO 历史与停轮判定（对齐 Node：B 连胜 2 次停止，最多保留 3 条）
+	history := s.appendELOHistory(eloResult)
+	bWins := 0
+	for _, item := range history {
+		if item == "B_wins" {
+			bWins++
 		}
 	}
+	shouldStop := decision == "stop" || iterationNumber >= maxIterations || bWins >= 2
+
+	// 修改解析（对齐 Node：modifiedPrompts / modifiedCharacter / modifiedWorldBook → allChanges）
+	allChanges := []map[string]any{}
+	promptChanges := []map[string]any{}
+	characterChanges := []map[string]any{}
+	worldbookChanges := []map[string]any{}
+	for _, raw := range asList(parsed["modifiedPrompts"]) {
+		entry, _ := raw.(map[string]any)
+		if entry == nil || textOf(entry["identifier"]) == "" {
+			continue
+		}
+		newContent := textOf(entry["newContent"])
+		if newContent == "" || newContent == textOf(entry["oldContent"]) {
+			continue
+		}
+		change := map[string]any{
+			"type": "prompt", "identifier": textOf(entry["identifier"]),
+			"oldContent": textOf(entry["oldContent"]), "newContent": newContent,
+		}
+		promptChanges = append(promptChanges, change)
+		allChanges = append(allChanges, change)
+	}
+	for _, raw := range asList(parsed["modifiedCharacter"]) {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		field := textOf(entry["field"])
+		newContent := textOf(entry["newContent"])
+		if field == "" || newContent == "" || newContent == textOf(entry["oldContent"]) {
+			continue
+		}
+		change := map[string]any{
+			"type": "character", "identifier": "角色卡." + field,
+			"oldContent": textOf(entry["oldContent"]), "newContent": newContent,
+		}
+		characterChanges = append(characterChanges, change)
+		allChanges = append(allChanges, change)
+	}
+	for _, raw := range asList(parsed["modifiedWorldBook"]) {
+		entry, _ := raw.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		action := textOf(entry["action"])
+		if action == "" {
+			continue
+		}
+		index := intOr(entry["index"], -1)
+		identifier := "世界书"
+		switch {
+		case action == "add":
+			identifier = "世界书(新增)"
+		case index >= 0:
+			identifier = "世界书条目#" + strconv.Itoa(index)
+		}
+		change := map[string]any{
+			"type": "worldbook", "identifier": identifier, "action": action,
+			"newContent": textOf(mapOfAny(entry["entry"])["content"]),
+		}
+		worldbookChanges = append(worldbookChanges, change)
+		allChanges = append(allChanges, change)
+	}
+
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"success":           true,
-		"elo":               elo,
-		"evaluation":        evaluation,
-		"allChanges":        changes,
-		"modifiedPrompts":   modifiedPrompts,
-		"modifiedCharacter": modifiedCharacter,
-		"modifiedWorldBook": modifiedWorldBook,
+		"success": true,
+		"elo": map[string]any{
+			"result": eloResult, "reasoning": textOf(elo["reasoning"]), "history": history, "bWins": bWins,
+		},
+		"evaluation": map[string]any{
+			"issues":     asList(evaluation["issues"]),
+			"highlights": asList(evaluation["highlights"]),
+		},
+		"decision":          decision,
+		"shouldStop":        shouldStop,
+		"allChanges":        allChanges,
+		"modifiedPrompts":   promptChanges,
+		"modifiedCharacter": characterChanges,
+		"modifiedWorldBook": worldbookChanges,
 		"nextTestMessage":   firstText(textOf(parsed["nextTestMessage"]), lastUser),
 		"changeSummary":     textOf(parsed["changeSummary"]),
-		"iterationNumber":   intOr(body["iterationNumber"], 1),
+		"iterationNumber":   iterationNumber,
 		"rawAIResponse":     truncateString(completion.Content, 2000),
 	})
+}
+
+// appendELOHistory 维护 ELO 判定历史（对齐 Node rangeCorpusStore._eloHistory，最多 3 条）。
+func (s *Server) appendELOHistory(result string) []string {
+	s.rangeState.mu.Lock()
+	defer s.rangeState.mu.Unlock()
+	s.rangeState.eloHistory = append(s.rangeState.eloHistory, result)
+	if len(s.rangeState.eloHistory) > 3 {
+		s.rangeState.eloHistory = s.rangeState.eloHistory[len(s.rangeState.eloHistory)-3:]
+	}
+	history := make([]string, len(s.rangeState.eloHistory))
+	copy(history, s.rangeState.eloHistory)
+	return history
+}
+
+// optimizePromptSummary 汇总当前预设提示词（对齐 Node promptsSummary）。
+func (s *Server) optimizePromptSummary(raw any) string {
+	config, _ := raw.(map[string]any)
+	items := []any{}
+	if config != nil {
+		items = asList(config["prompts"])
+	}
+	if len(items) == 0 {
+		items = asList(presetForPanel(s.document)["prompts"])
+	}
+	lines := []string{}
+	for _, item := range items {
+		entry, _ := item.(map[string]any)
+		if entry == nil || entry["enabled"] == false {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("标识: %s | 名称: %s | 角色: %s\n内容: %s",
+			orDefault(textOf(entry["identifier"]), "?"), textOf(entry["name"]),
+			orDefault(textOf(entry["role"]), "system"), truncateString(stringValueOf(entry["content"]), 800)))
+	}
+	return strings.Join(lines, "\n---\n")
+}
+
+// optimizeCharacterSummary 汇总角色卡要点（对齐 Node charSummary 的字段与截断长度）。
+func (s *Server) optimizeCharacterSummary(raw any, characterName string) string {
+	character, _ := raw.(map[string]any)
+	if character == nil {
+		if card, err := s.readCharacterCard(characterName); err == nil {
+			character = card
+		}
+	}
+	if character == nil {
+		return ""
+	}
+	type fieldLimit struct {
+		key   string
+		limit int
+	}
+	for _, item := range []fieldLimit{
+		{"name", 0}, {"description", 600}, {"personality", 400}, {"scenario", 300},
+		{"first_mes", 400}, {"mes_example", 500}, {"system_prompt", 600}, {"post_history_instructions", 400},
+	} {
+		value := strings.TrimSpace(stringValueOf(character[item.key]))
+		if value == "" {
+			continue
+		}
+		if item.limit > 0 {
+			value = truncateString(value, item.limit)
+		}
+		_ = item
+	}
+	lines := []string{}
+	for _, item := range []fieldLimit{
+		{"name", 0}, {"description", 600}, {"personality", 400}, {"scenario", 300},
+		{"first_mes", 400}, {"mes_example", 500}, {"system_prompt", 600}, {"post_history_instructions", 400},
+	} {
+		value := strings.TrimSpace(stringValueOf(character[item.key]))
+		if value == "" {
+			continue
+		}
+		if item.limit > 0 {
+			value = truncateString(value, item.limit)
+		}
+		if item.key == "name" {
+			lines = append(lines, "name: "+value)
+			continue
+		}
+		lines = append(lines, item.key+": "+value)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// optimizeWorldbookSummary 汇总世界书前 20 条（对齐 Node wbSummary）。
+func (s *Server) optimizeWorldbookSummary(raw any) string {
+	book, _ := raw.(map[string]any)
+	if book == nil {
+		if loaded, _, err := readRangeWorldBook(s.dataDir, s.currentWorldbookName()); err == nil && loaded != nil {
+			book = worldBookToMap(loaded)
+		}
+	}
+	if book == nil {
+		return ""
+	}
+	entries := asList(book["entries"])
+	if len(entries) > 20 {
+		entries = entries[:20]
+	}
+	lines := []string{}
+	for index, item := range entries {
+		entry, _ := item.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		keys := strings.Join(toStringSliceOf(entry["key"]), ",")
+		if keys == "" {
+			keys = strings.Join(toStringSliceOf(entry["keys"]), ",")
+		}
+		position := "角色后"
+		if intOr(entry["position"], 1) == 0 {
+			position = "角色前"
+		}
+		lines = append(lines, fmt.Sprintf("条目#%d: key=%s | order=%d | position=%s | constant=%v | sticky=%d\ncontent: %s",
+			index, keys, intOr(entry["order"], 100), position, entry["constant"] == true,
+			intOr(entry["sticky"], 0), truncateString(stringValueOf(entry["content"]), 300)))
+	}
+	return strings.Join(lines, "\n---\n")
+}
+
+// optimizeCorpusSection 采样群聊语料（对齐 Node：有嵌入走语义检索，否则随机取 5 条）。
+func (s *Server) optimizeCorpusSection(goal string, fallback string) string {
+	lines, _, _, embeddings, embedModel, _, embedProviderID := s.rangeCorpusData()
+	if len(lines) == 0 {
+		if strings.TrimSpace(fallback) == "" {
+			return ""
+		}
+		return "\n## 测试语料\n" + truncateString(fallback, 1500)
+	}
+	limit := 5
+	if len(lines) < limit {
+		limit = len(lines)
+	}
+	samples := []string{}
+	if len(embeddings) > 0 {
+		if vector, err := s.embedTexts([]string{goal}, embedProviderID, embedModel); err == nil && len(vector) == 1 {
+			type scored struct {
+				index int
+				score float64
+			}
+			scores := []scored{}
+			for index, candidate := range embeddings {
+				scores = append(scores, scored{index: index, score: cosineSimilarity(vector[0], candidate)})
+			}
+			sort.Slice(scores, func(left int, right int) bool { return scores[left].score > scores[right].score })
+			for _, item := range scores {
+				if len(samples) >= limit {
+					break
+				}
+				if item.index >= 0 && item.index < len(lines) {
+					samples = append(samples, lines[item.index])
+				}
+			}
+		}
+	}
+	if len(samples) == 0 {
+		pool := make([]string, len(lines))
+		copy(pool, lines)
+		rand.Shuffle(len(pool), func(left int, right int) { pool[left], pool[right] = pool[right], pool[left] })
+		samples = pool[:limit]
+	}
+	return fmt.Sprintf("\n## 群聊语料(共%d条,语义匹配%d条)\n%s\n从真实语料风格设计测试消息。",
+		len(lines), limit, strings.Join(samples, "\n"))
 }
 
 // ---------------- agent 对话（AI） ----------------
