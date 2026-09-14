@@ -133,7 +133,7 @@ func TestConfigHotReloadRebuildsAIClient(t *testing.T) {
 		t.Fatalf("建目录失败: %v", err)
 	}
 	raw := []byte(`{
-		"chat": {"sessionMode": "user_persistent", "requireAtInGroup": true, "allowedGroups": ["99001"]},
+		"chat": {"sessionMode": "user_persistent", "requireAtInGroup": true, "allowedGroups": ["99001"], "bufferWindowMs": 0, "replyDelayMs": 0},
 		"preset": {"enabled": true, "prompts": [{"enabled": true, "content": "系统提示", "role": "system"}]},
 		"ai": {"activeProviderId": "p1", "providers": [
 			{"id": "p1", "baseUrl": "` + upstream1.URL + `", "apiKey": "k1", "model": "model-1"}

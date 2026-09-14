@@ -71,6 +71,8 @@ func TestHumanChatControlSegment(t *testing.T) {
 			"requireAtInGroup":       true,
 			"allowedGroups":          []any{"99001"},
 			"model":                  "test-model",
+			"bufferWindowMs":         0,
+			"replyDelayMs":           0,
 			"humanChatControlPrompt": "群聊决策规则：只回复 @ 消息",
 		},
 	}, model)

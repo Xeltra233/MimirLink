@@ -90,6 +90,9 @@ func buildDocument(t *testing.T, overrides map[string]any) (*config.Document, st
 			"requireAtInGroup": true,
 			"allowedGroups":    []any{"99001"},
 			"model":            "test-model",
+			// 单测默认关闭连发聚合与回复延迟，保证断言同步可预期
+			"bufferWindowMs": 0,
+			"replyDelayMs":   0,
 		},
 		"preset": map[string]any{
 			"enabled": true,

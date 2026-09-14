@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"mimirlink/internal/ai"
@@ -76,6 +77,9 @@ type Runtime struct {
 	aggregateReason string
 	// startedAt 供控制接口展示运行时长
 	startedAt time.Time
+	// 连发消息聚合调度（惰性初始化）
+	aggregateMu sync.Mutex
+	aggregator  *aggregateState
 }
 
 // New 创建运行时。
@@ -220,6 +224,58 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	}
 
 	sessionKey := r.sessionKey(messageType, groupID, userID)
+	isAtBotSelf := containsAtSelf(event["message"], selfID)
+
+	// 连发聚合（对齐 Node runtime.js：缓冲窗口内合并为一条输入再交给模型）
+	if enabled, windowMs, _, _ := r.aggregateSettings(); enabled {
+		accepted := r.enqueueAggregated(pendingMessage{
+			event:         event,
+			sessionKey:    sessionKey,
+			text:          text,
+			messageType:   messageType,
+			groupID:       groupID,
+			userID:        userID,
+			isAtBotSelf:   isAtBotSelf,
+			triggerReason: r.triggerReasonFor(messageType, groupID, isAtBotSelf),
+		})
+		if accepted {
+			r.logger.Printf("[调度] 消息进入聚合缓冲（%dms 窗口）[%s]: %s", windowMs, sessionKey, truncateForLog(text, 40))
+			return true
+		}
+	}
+	return r.processIncoming(pendingMessage{
+		event:       event,
+		sessionKey:  sessionKey,
+		text:        text,
+		messageType: messageType,
+		groupID:     groupID,
+		userID:      userID,
+		isAtBotSelf: isAtBotSelf,
+	}, false)
+}
+
+// triggerReasonFor 生成触发原因（对齐 Node routingDecision.triggerReason）。
+func (r *Runtime) triggerReasonFor(messageType string, groupID string, isAtBotSelf bool) string {
+	switch {
+	case messageType == "private":
+		return "private_message"
+	case isAtBotSelf:
+		return "group_at_bot"
+	default:
+		return "group_message"
+	}
+}
+
+// processIncoming 执行单条（或聚合后）消息的完整处理流程。
+func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
+	event := item.event
+	sessionKey := item.sessionKey
+	text := item.text
+	messageType := item.messageType
+	groupID := item.groupID
+	userID := item.userID
+	isAtBotSelf := item.isAtBotSelf
+
 	// 注入风险检测（对齐 Node detectPromptInjectionRisk：只扫描用户输入本身）
 	injectionRisk := DetectPromptInjectionRisk(text)
 	if injectionRisk.Level == "high" {
@@ -241,7 +297,6 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	content := strings.TrimSpace(header + " " + text)
 	// 输入阶段正则（对齐 Node regexProcessor.processInput）
 	content = r.regexProc.process(content, "input", 0)
-	isAtBotSelf := containsAtSelf(event["message"], selfID)
 
 	if err := r.appendMessage(sessionKey, "user", content, map[string]any{
 		"messageType": messageType,
@@ -285,7 +340,7 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 
 	// 群复读检测（对齐 Node group-repeat：命中直发复读文本并跳过 LLM）
 	repeatConfig := NormalizeGroupRepeatConfig(rawMapField(r.document, "chat.groupRepeat"))
-	if repeatResult := r.repeatDetector.ObserveMessage(repeatConfig, event, text, selfID, time.Now()); repeatResult.ShouldRepeat {
+	if repeatResult := r.repeatDetector.ObserveMessage(repeatConfig, event, text, r.bot.SelfID(), time.Now()); repeatResult.ShouldRepeat {
 		r.logger.Printf("[复读] 命中群聊复读直发（%d/%d）：%s", repeatResult.Count, repeatResult.TriggerCount, repeatResult.RepeatText)
 		if err := r.appendMessage(sessionKey, "assistant", repeatResult.RepeatText, map[string]any{
 			"messageType": messageType, "generatedBy": "group_repeat",

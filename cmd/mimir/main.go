@@ -514,6 +514,8 @@ func runBot(rootDir string) error {
 		<-signalChannel
 		logger.Println("收到退出信号，正在停止 Bot…")
 		client.Close()
+		// 先冲刷连发缓冲，避免待处理消息丢失
+		runtime.FlushAggregates()
 		cancel()
 	}()
 
