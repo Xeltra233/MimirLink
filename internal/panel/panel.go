@@ -80,6 +80,7 @@ func NewServer(options Options) (*Server, error) {
 	server.registerExtendedRoutes()
 	server.registerSearchRoutes()
 	server.registerMCPRoutes()
+	server.registerManagedRoutes()
 	server.registerOpsRoutes()
 	server.registerTTSRoutes(tts.NewWithAudioDir(server.AudioDir(), logger))
 	return server, nil

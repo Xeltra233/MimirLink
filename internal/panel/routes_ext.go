@@ -193,6 +193,12 @@ func (s *Server) handleCharacterCurrent(writer http.ResponseWriter, request *htt
 }
 
 func (s *Server) handleCharacterDetail(writer http.ResponseWriter, request *http.Request) {
+	// 子操作分发（update/variable-defaults/download/memory-binding/worldbook-binding/delete）
+	if request.URL.Path != "/api/characters/" && strings.Count(strings.TrimPrefix(request.URL.Path, "/api/characters/"), "/") > 0 ||
+		request.Method == http.MethodDelete {
+		s.handleCharacterManage(writer, request)
+		return
+	}
 	rest := strings.TrimPrefix(request.URL.Path, "/api/characters/")
 	rest = strings.TrimSuffix(rest, "/detail")
 	name, err := safeName(rest)
@@ -258,6 +264,11 @@ func (s *Server) handleWorldbooks(writer http.ResponseWriter, request *http.Requ
 }
 
 func (s *Server) handleWorldbookCurrent(writer http.ResponseWriter, request *http.Request) {
+	// worldbooks/:filename 子操作分发（content/save/download/DELETE）
+	if request.URL.Path != "/api/worldbooks/current" && strings.HasPrefix(request.URL.Path, "/api/worldbooks/") {
+		s.handleWorldbookManage(writer, request)
+		return
+	}
 	name := s.document.String("bindings.global.worldbook")
 	if name == "" {
 		name = s.document.String("chat.defaultWorldbook")
