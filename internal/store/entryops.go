@@ -1,5 +1,7 @@
 package store
 
+import "fmt"
+
 // 本文件补齐面板端按 entry id 读取/删除知识条目与人物档案的能力，
 // 以及人物档案的保存（对齐 Node getKnowledgeEntry / deleteKnowledgeEntry /
 // getParticipantProfileByEntryId / deleteParticipantProfile / saveParticipantProfile）。
@@ -96,4 +98,39 @@ func (d *DB) ListKnowledgeEntryIDs() ([]string, error) {
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// ClearAllData 清空整个记忆库（对齐 Node SessionManager.clearAllData 的语义与返回计数）。
+func (d *DB) ClearAllData() (map[string]int, error) {
+	if d.ReadOnly {
+		return nil, fmt.Errorf("记忆库以只读方式打开，无法清空")
+	}
+	cleared := map[string]int{"sessions": 0, "messages": 0, "summaries": 0, "variables": 0, "namespaces": 0, "profiles": 0, "knowledge": 0}
+	type step struct {
+		key  string
+		sql  string
+		args []any
+	}
+	steps := []step{
+		{"variables", `DELETE FROM memory_entries WHERE entry_type = 'variable'`, nil},
+		{"profiles", `DELETE FROM memory_entries WHERE entry_type = 'participant_profile'`, nil},
+		{"knowledge", `DELETE FROM memory_entries WHERE entry_type = 'knowledge'`, nil},
+		{"knowledge", `DELETE FROM memory_entries WHERE entry_type NOT IN ('variable', 'participant_profile', 'knowledge')`, nil},
+		{"messages", `DELETE FROM messages`, nil},
+		{"summaries", `DELETE FROM summaries`, nil},
+		{"sessions", `DELETE FROM sessions`, nil},
+		{"namespaces", `DELETE FROM memory_namespaces`, nil},
+	}
+	for _, item := range steps {
+		result, err := d.handle.Exec(item.sql, item.args...)
+		if err != nil {
+			return cleared, fmt.Errorf("清空数据失败(%s): %w", item.key, err)
+		}
+		affected, _ := result.RowsAffected()
+		cleared[item.key] += int(affected)
+	}
+	// 关联表（可能不存在于旧库，失败不阻断，与 Node 的 try/catch 一致）
+	_, _ = d.handle.Exec(`DELETE FROM sticky_entries`)
+	_, _ = d.handle.Exec(`DELETE FROM summary_index_entries`)
+	return cleared, nil
 }

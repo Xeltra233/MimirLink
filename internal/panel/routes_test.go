@@ -234,3 +234,28 @@ func TestStatusShape(t *testing.T) {
 		}
 	}
 }
+
+// TestDataClearConfirmContract 守护 /api/data/clear 的 Node 契约：
+// confirm=true 清库；无 confirm 且无 targets 时返回 400（不再假成功）。
+func TestDataClearConfirmContract(t *testing.T) {
+	server, _ := newTestServer(t)
+	// 未确认 → 400
+	if recorder := doRequest(server, http.MethodPost, "/api/data/clear", `{}`); recorder.Code != http.StatusBadRequest {
+		t.Fatalf("缺少 confirm 应返回 400，实际 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	// 确认 → 清库并返回 cleared 计数
+	recorder := doRequest(server, http.MethodPost, "/api/data/clear", `{"confirm":true}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("confirm=true 返回 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	payload := map[string]any{}
+	_ = json.Unmarshal(recorder.Body.Bytes(), &payload)
+	if payload["success"] != true || payload["cleared"] == nil {
+		t.Fatalf("清空响应结构异常: %s", recorder.Body.String())
+	}
+	// targets 扩展仍然可用
+	targets := doRequest(server, http.MethodPost, "/api/data/clear", `{"targets":["logs"]}`)
+	if targets.Code != http.StatusOK {
+		t.Fatalf("targets 清理返回 %d: %s", targets.Code, targets.Body.String())
+	}
+}

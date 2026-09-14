@@ -55,3 +55,41 @@ func TestParticipantProfileLookupAndDelete(t *testing.T) {
 		t.Fatalf("删除人物档案失败: deleted=%v err=%v", deleted, err)
 	}
 }
+
+// TestClearAllData 守护面板「清空所有数据」的语义（对齐 Node clearAllData）：
+// 旧 Go 实现忽略 confirm 且只删文件，接口返回成功但数据仍在（假成功）。
+func TestClearAllData(t *testing.T) {
+	database := newPanelOpsDB(t)
+	options := NamespaceOptions{ScopeType: "global_shared", ScopeKey: "global_memory"}
+	if _, err := database.AddMemoryEntry(options, MemoryEntry{EntryType: "variable", Title: "k", Content: "v"}); err != nil {
+		t.Fatalf("写入变量失败: %v", err)
+	}
+	if _, err := database.UpsertKnowledgeEntry(options, KnowledgeEntry{Title: "知识", Content: "内容", KnowledgeType: "fixed"}); err != nil {
+		t.Fatalf("写入知识失败: %v", err)
+	}
+	if _, err := database.SaveParticipantProfile(options, "", "10001", "人物", "档案内容", nil, nil, ""); err != nil {
+		t.Fatalf("写入档案失败: %v", err)
+	}
+	cleared, err := database.ClearAllData()
+	if err != nil {
+		t.Fatalf("清空失败: %v", err)
+	}
+	if cleared["variables"] < 1 || cleared["knowledge"] < 1 || cleared["profiles"] < 1 || cleared["namespaces"] < 1 {
+		t.Fatalf("清空计数异常: %#v", cleared)
+	}
+	items, err := database.ListVariables(VariableFilters{ScopeType: "global_shared", ScopeKey: "global_memory"})
+	if err != nil || len(items) != 0 {
+		t.Fatalf("变量未清空: %d err=%v", len(items), err)
+	}
+	knowledge, err := database.ListKnowledgeEntriesFiltered(VariableFilters{Limit: 10})
+	if err != nil || len(knowledge) != 0 {
+		t.Fatalf("知识未清空: %d err=%v", len(knowledge), err)
+	}
+	profiles, err := database.ListParticipantProfiles(10, "")
+	if err != nil || len(profiles) != 0 {
+		t.Fatalf("人物档案未清空: %d err=%v", len(profiles), err)
+	}
+	if _, err := database.GetKnowledgeEntry("nonexistent"); err != nil {
+		t.Fatalf("清空后查询异常: %v", err)
+	}
+}

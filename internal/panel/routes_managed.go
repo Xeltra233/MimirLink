@@ -876,8 +876,36 @@ func (s *Server) handleLLMToggle(writer http.ResponseWriter, request *http.Reque
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "enabled": enabled})
 }
 
+// handleDataClear 对齐 Node POST /api/data/clear：
+// body.confirm === true 时清空整个记忆库（会话/消息/变量/档案/知识），
+// 同时保留 Go 侧的 targets:['audio'|'logs'] 文件清理扩展。
+// 旧实现忽略 confirm，前端「清空所有数据」会拿到 success 但什么都没清（假成功）。
 func (s *Server) handleDataClear(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
+	if body["confirm"] == true {
+		database, _, err := s.openActiveMemory()
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		cleared, err := database.ClearAllData()
+		_ = database.Close()
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		s.logger.Printf("已清空记忆库: %v", cleared)
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"success": true,
+			"cleared": cleared,
+			"message": "所有会话、消息、变量、档案、知识库已清空",
+		})
+		return
+	}
+	if _, hasTargets := body["targets"]; !hasTargets {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "需要 confirm: true 确认清空操作"})
+		return
+	}
 	cleared := []string{}
 	if items, ok := body["targets"].([]any); ok {
 		for _, item := range items {
