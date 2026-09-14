@@ -119,6 +119,18 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	}
 
 	sessionKey := r.sessionKey(messageType, groupID, userID)
+	// 注入风险检测（对齐 Node detectPromptInjectionRisk：只扫描用户输入本身）
+	injectionRisk := DetectPromptInjectionRisk(text)
+	if injectionRisk.Level == "high" {
+		r.logger.Printf("[安全] 高风险注入已拦截 [%s] 规则:%s 分数:%d", sessionKey, strings.Join(injectionRisk.MatchedRules, ","), injectionRisk.Score)
+		if err := r.dispatch(messageType, groupID, userID, event, "⚠️ 检测到提示注入攻击，已拦截。"); err != nil {
+			r.logger.Printf("[安全] 拦截提示发送失败: %v", err)
+		}
+		return true
+	}
+	if injectionRisk.Level != "none" {
+		r.logger.Printf("[安全] 疑似注入 (%s) [%s] 规则:%s", injectionRisk.Level, sessionKey, strings.Join(injectionRisk.MatchedRules, ","))
+	}
 	header := r.buildInputHeader(event, messageType, groupID, userID)
 	content := strings.TrimSpace(header + " " + text)
 	// 输入阶段正则（对齐 Node regexProcessor.processInput）
@@ -133,7 +145,10 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		r.logger.Printf("[聊天] 写入用户消息失败: %v", err)
 	}
 
-	messages, worldBookEntries, err := r.buildMessages(sessionKey, content)
+	// 回复前摘要检查（对齐 Node summaryBeforeReply）
+	r.maybeSummarize(sessionKey)
+
+	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk)
 	if err != nil {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
 		return false
@@ -202,7 +217,7 @@ func (r *Runtime) requireAtInGroup() bool {
 
 // ---------------- 提示词与历史 ----------------
 
-func (r *Runtime) buildMessages(sessionKey string, currentContent string) ([]ai.Message, []matchedWorldBookEntry, error) {
+func (r *Runtime) buildMessages(sessionKey string, currentContent string, messageType string, injectionRisk InjectionRisk) ([]ai.Message, []matchedWorldBookEntry, error) {
 	history, err := r.memory.RecentMessagesThread(sessionKey, r.historySize)
 	if err != nil {
 		return nil, nil, err
@@ -215,6 +230,17 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string) ([]ai.
 	messages := []ai.Message{}
 	// 1) 当前时间（对齐 Node current-time 段）
 	messages = append(messages, ai.Message{Role: "system", Content: "【当前时间】" + currentTimeString()})
+	// 1.5) 会话上下文 / 输入护栏 / 人类群聊决策规则（对齐 Node situational-context /
+	//      input-guardrail / human-chat-control-v2 段）
+	if situational := r.buildSituationalContext(sessionKey, history, messageType); situational != "" {
+		messages = append(messages, ai.Message{Role: "system", Content: situational})
+	}
+	if r.guardrailEnabled() {
+		messages = append(messages, ai.Message{Role: "system", Content: BuildInputGuardrail(injectionRisk)})
+	}
+	if prompt := r.humanChatControlPrompt(); prompt != "" {
+		messages = append(messages, ai.Message{Role: "system", Content: prompt})
+	}
 	// 2) 预设四段切分（对齐 Node partitionPromptItems）
 	partition := partitionPromptItems(parsePreset(r.document.Raw()))
 	for _, item := range partition.PreSystem {
@@ -948,4 +974,176 @@ func stringListField(document *config.Document, path string) []string {
 		values = append(values, item.String())
 	}
 	return values
+}
+
+// maybeSummarize 触发会话摘要并把结果写入摘要索引（对齐 Node maybeSummarizeSession +
+// upsertSummaryIndexFromSummary）。AI 摘要失败自动回退规则摘要。
+func (r *Runtime) maybeSummarize(sessionKey string) {
+	if r.memory == nil {
+		return
+	}
+	config := r.summaryConfig()
+	summary, err := r.memory.MaybeSummarizeSession(sessionKey, config, r.summarySummarizer())
+	if err != nil {
+		r.logger.Printf("[摘要] 生成失败: %v", err)
+		return
+	}
+	if summary == nil {
+		return
+	}
+	r.logger.Printf("[摘要] 已生成 %s（来源 %d 条）", summary.ID, summary.SourceCount)
+	if _, err := r.memory.AddSummaryIndexEntry(r.namespaceOptions(sessionKey), store.SummaryEntry{
+		SourceSummaryID: summary.ID,
+		SourceSessionID: summary.SessionID,
+		Outline:         summary.Content,
+		Keywords:        store.BuildKeywordsFromText(summary.Content, 12),
+		Metadata:        map[string]any{"source": "summary"},
+	}); err != nil {
+		r.logger.Printf("[摘要] 写入摘要索引失败: %v", err)
+	}
+}
+
+// summaryConfig 解析 memory.summary 配置。
+func (r *Runtime) summaryConfig() store.SummaryConfig {
+	raw := map[string]any{}
+	if err := json.Unmarshal(r.document.Raw(), &raw); err != nil {
+		return store.SummaryConfig{}
+	}
+	memory, _ := raw["memory"].(map[string]any)
+	if memory == nil {
+		return store.SummaryConfig{}
+	}
+	summary, _ := memory["summary"].(map[string]any)
+	if summary == nil {
+		return store.SummaryConfig{}
+	}
+	return store.NormalizeSummaryConfig(summary)
+}
+
+// summarySummarizer 构造 AI 摘要回调（对齐 Node aiClient.summarize +
+// buildAIOverridesFromProviderSelection 的 memory.summary 供应商选择）。
+func (r *Runtime) summarySummarizer() store.SummarizerFunc {
+	return func(source []store.Message, sessionID string, previous []store.Summary) (string, error) {
+		provider := r.resolveSummaryProvider()
+		client := r.ai
+		if provider != nil {
+			client = ai.New(*provider)
+		}
+		lines := make([]string, 0, len(source))
+		for _, message := range source {
+			lines = append(lines, "["+message.Role+"] "+message.Content)
+		}
+		messages := []ai.Message{
+			{Role: "system", Content: "请将以下对话压缩成简洁的长期记忆摘要。保留人物关系、关键事实、未完成事项、情绪变化和设定，不要编造。输出简体中文纯文本。"},
+			{Role: "user", Content: fmt.Sprintf("会话ID: %s\n\n对话内容:\n%s", sessionID, strings.Join(lines, "\n"))},
+		}
+		result, err := client.Chat(context.Background(), messages, nil)
+		if err != nil {
+			return "", err
+		}
+		return result.Content, nil
+	}
+}
+
+// resolveSummaryProvider 解析摘要专用供应商（对齐 Node buildAIOverridesFromProviderSelection：
+// memory.summary.modelProviderId → chat.modelProviderId → ai.activeProviderId）。
+func (r *Runtime) resolveSummaryProvider() *ai.Provider {
+	document := r.document
+	providerID := strings.TrimSpace(document.String("memory.summary.modelProviderId"))
+	if providerID == "" {
+		providerID = strings.TrimSpace(document.String("chat.modelProviderId"))
+	}
+	if providerID == "" {
+		providerID = strings.TrimSpace(document.String("ai.activeProviderId"))
+	}
+	summaryModel := strings.TrimSpace(document.String("memory.summary.model"))
+	if providerID == "" && summaryModel == "" {
+		return nil
+	}
+	raw := map[string]any{}
+	if err := json.Unmarshal(document.Raw(), &raw); err != nil {
+		return nil
+	}
+	aiSection, _ := raw["ai"].(map[string]any)
+	if aiSection == nil {
+		return nil
+	}
+	providers, _ := aiSection["providers"].([]any)
+	var matched map[string]any
+	for _, item := range providers {
+		entry, _ := item.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		if strings.TrimSpace(stringValue(entry["id"])) == providerID {
+			matched = entry
+			break
+		}
+	}
+	resolved := ai.Provider{}
+	if matched != nil {
+		resolved.BaseURL = strings.TrimSpace(stringValue(matched["baseUrl"]))
+		resolved.APIKey = strings.TrimSpace(stringValue(matched["apiKey"]))
+		resolved.Model = strings.TrimSpace(stringValue(matched["model"]))
+	}
+	if resolved.Model == "" {
+		resolved.Model = summaryModel
+	}
+	if resolved.BaseURL == "" {
+		// 无匹配供应商但显式指定了 providerId：对齐 Node 置空防串 Key
+		return nil
+	}
+	timeoutMs := document.Int("ai.timeout", 60000)
+	if timeoutMs < 1000 {
+		timeoutMs = 60000
+	}
+	resolved.Timeout = time.Duration(timeoutMs) * time.Millisecond
+	return &resolved
+}
+
+// contextFlag 读取 context.<key>（默认 true，对齐 Node contextConfig 的 !== false 语义）。
+func (r *Runtime) contextFlag(key string) bool {
+	if !r.document.Exists("context." + key) {
+		return true
+	}
+	return r.document.Bool("context." + key)
+}
+
+// buildSituationalContext 组装会话上下文段（对齐 Node buildSituationalContext 可用子集：
+// 会话感知 + 参与者 + 最近用户意图；画像/引用上下文依赖运行时状态，Go 版暂缺数据源）。
+func (r *Runtime) buildSituationalContext(sessionKey string, history []store.Message, messageType string) string {
+	if !r.contextFlag("enabled") {
+		return ""
+	}
+	sections := []string{}
+	if r.contextFlag("includeSessionFacts") {
+		facts := []string{"会话ID: " + sessionKey}
+		if messageType != "" {
+			facts = append(facts, "会话类型: "+messageType)
+		}
+		sections = append(sections, "【会话感知】\n"+strings.Join(facts, " | "))
+	}
+	if r.contextFlag("includeRecentUserIntent") {
+		recent := []string{}
+		for index := len(history) - 1; index >= 0 && len(recent) < 3; index -= 1 {
+			if history[index].Role == "user" {
+				recent = append([]string{history[index].Content}, recent...)
+			}
+		}
+	}
+	return strings.Join(sections, "\n\n")
+}
+
+// guardrailEnabled 读取 security.inputGuardrailEnabled（对齐 Node === true 语义，默认关）。
+func (r *Runtime) guardrailEnabled() bool {
+	return r.document.Bool("security.inputGuardrailEnabled")
+}
+
+// humanChatControlPrompt 读取人类群聊决策规则（对齐 Node humanChatControlConfig）。
+func (r *Runtime) humanChatControlPrompt() string {
+	if r.document.Exists("chat.humanChatControlEnabled") && !r.document.Bool("chat.humanChatControlEnabled") {
+		return ""
+	}
+	prompt := strings.TrimSpace(r.document.String("chat.humanChatControlPrompt"))
+	return prompt
 }
