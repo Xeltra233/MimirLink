@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"mimirlink/internal/characters"
-	"mimirlink/internal/store"
 )
 
 // 本文件补齐 goal-36 审计发现的端点缺口与角色卡元信息辅助函数：
@@ -347,7 +346,7 @@ func (s *Server) handleRegexIndex(writer http.ResponseWriter, request *http.Requ
 
 // ---------------- 预设导入记录 ----------------
 
-// handlePresetImportDelete 删除导入记录（Go 版导入直接写 presets 目录，无独立记录表）。
+// handlePresetImportDelete 预设导入记录入口（记录感知删除；旧版按文件名删除会漏掉配置记录）。
 func (s *Server) handlePresetImportDelete(writer http.ResponseWriter, request *http.Request) {
 	rest := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/preset/imports/"), "/")
 	if rest == "batch-delete" && request.Method == http.MethodPost {
@@ -358,70 +357,22 @@ func (s *Server) handlePresetImportDelete(writer http.ResponseWriter, request *h
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 		return
 	}
-	name := safeBase(rest)
-	if name == "" {
+	if rest == "" {
 		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "缺少导入 ID"})
 		return
 	}
-	if err := os.Remove(filepath.Join(s.dataDir, "presets", "preset-"+name+".json")); err != nil {
-		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "导入记录不存在"})
-		return
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "导入记录已删除"})
+	s.handlePresetImportDeleteFull(writer, rest)
 }
 
 // ---------------- 知识条目 ----------------
 
-// handleMemoryKnowledgeImport 批量导入知识条目（对齐 Node /api/memory/knowledge/import）。
+// handleMemoryKnowledgeImport 对齐 Node POST /api/memory/knowledge/import（AI 提炼流水线，文本导入）。
 func (s *Server) handleMemoryKnowledgeImport(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 		return
 	}
-	body := decodeBody(request)
-	entries, _ := body["entries"].([]any)
-	if len(entries) == 0 {
-		// Node 契约：{ text, title, chunkSize } 的分块导入
-		if textOf(body["text"]) != "" {
-			s.handleMemoryKnowledgeImportText(writer, request)
-			return
-		}
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "导入文本不能为空"})
-		return
-	}
-	database, _, err := s.openActiveMemory()
-	if err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
-		return
-	}
-	defer database.Close()
-	options := s.variableScope(body)
-	imported := 0
-	skipped := 0
-	for _, item := range entries {
-		entry, _ := item.(map[string]any)
-		if entry == nil {
-			skipped++
-			continue
-		}
-		record := store.KnowledgeEntry{
-			Title:         firstText(textOf(entry["title"]), textOf(entry["name"])),
-			Content:       textOf(entry["content"]),
-			KnowledgeType: orDefault(textOf(entry["knowledgeType"]), "fixed"),
-			Tags:          stringListOf(entry["tags"]),
-			Metadata:      objectOf(entry["metadata"]),
-		}
-		if record.Content == "" {
-			skipped++
-			continue
-		}
-		if _, err := database.UpsertKnowledgeEntry(options, record); err != nil {
-			skipped++
-			continue
-		}
-		imported++
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "imported": imported, "skipped": skipped, "message": fmt.Sprintf("已导入 %d 条知识", imported)})
+	s.handleKnowledgeImportAI(writer, request)
 }
 
 // handleMemoryKnowledgeDetail 处理 /api/memory/knowledge/:id 的 GET/DELETE。

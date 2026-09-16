@@ -237,6 +237,8 @@ func (d *Document) Save() error { return d.SaveTo(d.path) }
 
 // SaveTo 原子写入指定路径。
 func (d *Document) SaveTo(path string) error {
+	// 与 Node saveConfig → normalizeConfig 一致：保存前同步全局正则层（bindings.global.regexRules ⇄ regex.rules）
+	d.syncLegacyRegexRules()
 	formatted, err := d.Formatted()
 	if err != nil {
 		return err
@@ -273,4 +275,36 @@ func (d *Document) SaveTo(path string) error {
 		}
 	}
 	return nil
+}
+
+// syncLegacyRegexRules 在保存前对齐 Node normalizeConfig 的正则层：
+// bindings.global.regexRules 与 regex.rules 表示同一份全局规则（存在 bindings.global 时以它为准），
+// 只有 regex.rules 时回填 bindings.global。
+func (d *Document) syncLegacyRegexRules() {
+	if d == nil {
+		return
+	}
+	binding := d.Get("bindings.global.regexRules")
+	if !binding.IsArray() {
+		legacy := d.Get("regex.rules")
+		if !legacy.IsArray() {
+			return
+		}
+		var rules []any
+		if err := json.Unmarshal([]byte(legacy.Raw), &rules); err != nil {
+			return
+		}
+		_ = d.Set("bindings.global.regexRules", rules)
+		binding = d.Get("bindings.global.regexRules")
+	}
+	var rules []any
+	if err := json.Unmarshal([]byte(binding.Raw), &rules); err != nil {
+		return
+	}
+	_ = d.Set("regex.rules", rules)
+}
+
+// SyncLegacyRegexRules 供备份/工具链主动执行保存前归一化（与 Save 内部逻辑一致）。
+func SyncLegacyRegexRules(document *Document) {
+	document.syncLegacyRegexRules()
 }

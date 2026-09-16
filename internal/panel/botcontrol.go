@@ -94,6 +94,11 @@ func (s *Server) botStatusSnapshot() map[string]any {
 // onebotStatusPayload 组装面板状态里的 OneBot 段：
 // 优先取 Bot 控制口的真实连接状态，Bot 未运行时回退配置值与提示语。
 func (s *Server) onebotStatusPayload() map[string]any {
+	return s.onebotStatusPayloadFrom(s.botStatusSnapshot())
+}
+
+// onebotStatusPayloadFrom 用已获取的 bot 状态快照组装 OneBot 段（避免重复调用控制口）。
+func (s *Server) onebotStatusPayloadFrom(status map[string]any) map[string]any {
 	payload := map[string]any{
 		"connected": false,
 		"url":       s.document.String("onebot.url"),
@@ -103,7 +108,6 @@ func (s *Server) onebotStatusPayload() map[string]any {
 		"selfId":    "",
 		"nickname":  "",
 	}
-	status := s.botStatusSnapshot()
 	if status == nil {
 		payload["note"] = "Bot 进程未运行（连接状态由 Bot 提供，请用 -bot 启动或在同进程加 -serve 共用）"
 		return payload

@@ -143,6 +143,33 @@ func (s *Server) handleMemoryVariables(writer http.ResponseWriter, request *http
 			message = "变量已创建"
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "item": item, "created": !updated, "message": message})
+	case http.MethodDelete:
+		// 清空指定 scope 下的全部变量（对齐 Node DELETE /api/memory/variables?scopeKey=...）
+		query := request.URL.Query()
+		if strings.TrimSpace(query.Get("scopeKey")) == "" {
+			writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "必须指定 scopeKey"})
+			return
+		}
+		filters := normalizeFilters(query)
+		filters.Limit = 500
+		database, _, err := s.openActiveMemory()
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		defer database.Close()
+		items, err := database.ListVariables(filters)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		deleted := 0
+		for _, item := range items {
+			if ok, err := database.DeleteVariable(item.ID); err == nil && ok {
+				deleted++
+			}
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": fmt.Sprintf("已彻底删除 %d 个变量（含系统变量）", deleted), "deleted": deleted})
 	default:
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 	}
@@ -230,11 +257,18 @@ func (s *Server) handleMemoryKnowledge(writer http.ResponseWriter, request *http
 			return
 		}
 		entry := store.KnowledgeEntry{
+			ID:            textOr(textOf(body["id"]), textOf(body["entryId"])),
 			Title:         textOf(body["title"]),
 			Content:       textOf(body["content"]),
 			KnowledgeType: textOr(body["knowledgeType"], "dynamic"),
 			Tags:          stringListOf(body["tags"]),
 			Metadata:      objectOf(body["metadata"]),
+		}
+		if entry.Metadata == nil {
+			entry.Metadata = map[string]any{}
+		}
+		if note := textOf(body["note"]); note != "" {
+			entry.Metadata["note"] = note
 		}
 		options := s.variableScope(body)
 		if character := textOr(body["characterName"], textOr(body["character"], textOr(body["roleName"], textOr(body["role"], "")))); character != "" && options.CharacterName == "" {
@@ -246,6 +280,25 @@ func (s *Server) handleMemoryKnowledge(writer http.ResponseWriter, request *http
 			return
 		}
 		defer database.Close()
+		// 带 id/entryId 时为更新（对齐 Node payload.entryId → saveKnowledgeEntry 路径），否则新建
+		if entry.ID != "" {
+			updated, err := database.UpdateKnowledgeEntry(entry.ID, entry)
+			if err != nil {
+				statusCode := http.StatusInternalServerError
+				if strings.Contains(err.Error(), "不能为空") {
+					statusCode = http.StatusBadRequest
+				}
+				writeJSON(writer, statusCode, map[string]any{"success": false, "error": err.Error()})
+				return
+			}
+			if !updated {
+				writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "知识条目不存在"})
+				return
+			}
+			item, _ := database.GetKnowledgeEntry(entry.ID)
+			writeJSON(writer, http.StatusOK, map[string]any{"success": true, "item": item, "created": false, "message": "知识条目已更新"})
+			return
+		}
 		id, err := database.UpsertKnowledgeEntry(options, entry)
 		if err != nil {
 			statusCode := http.StatusInternalServerError
@@ -255,7 +308,8 @@ func (s *Server) handleMemoryKnowledge(writer http.ResponseWriter, request *http
 			writeJSON(writer, statusCode, map[string]any{"success": false, "error": err.Error()})
 			return
 		}
-		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "id": id, "message": "知识已创建"})
+		item, _ := database.GetKnowledgeEntry(id)
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "item": item, "created": true, "message": "知识条目已创建"})
 	default:
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 	}

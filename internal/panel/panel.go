@@ -15,11 +15,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"mimirlink/internal/auth"
 	"mimirlink/internal/backup"
 	"mimirlink/internal/config"
+	"mimirlink/internal/logging"
 	"mimirlink/internal/mcp"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tts"
@@ -34,6 +36,9 @@ type Options struct {
 	Document *config.Document
 	Logger   *log.Logger
 	MCP      *mcp.Client
+	// OneBotEvent 非空时，面板在自身端口处理 POST /onebot/event（对齐 Node 单进程；
+	// 由 bot 运行时的 HandleEvent 消费），nil 时返回与 Node「Bot 未就绪」一致的 503。
+	OneBotEvent func(map[string]any) error
 }
 
 // Server 是面板 HTTP 处理器。
@@ -48,6 +53,14 @@ type Server struct {
 	startedAt  time.Time
 	mcpClient  *mcp.Client
 	rangeState *rangeState
+	// 限流器（对齐 Node 全局 300/分钟与登录 10/分钟）
+	globalLimiter *ipRateLimiter
+	loginLimiter  *ipRateLimiter
+	// OneBot HTTP 上报入口（同进程转交 bot 运行时）
+	onebotEvent func(map[string]any) error
+	// 知识导入进度（对齐 Node /api/status 的 knowledgeImportProgress）
+	knowledgeMu       sync.Mutex
+	knowledgeProgress map[string]any
 }
 
 // NewServer 构建面板服务。
@@ -57,18 +70,22 @@ func NewServer(options Options) (*Server, error) {
 	}
 	logger := options.Logger
 	if logger == nil {
-		logger = log.New(os.Stdout, "[panel] ", log.LstdFlags)
+		// 默认日志器：写入最近日志环形缓冲（对齐 Node GET /api/logs 的数据来源）
+		logger = log.New(logging.NewWriter(os.Stdout), "[panel] ", log.LstdFlags)
 	}
 	document := options.Document
 	server := &Server{
-		rootDir:    options.RootDir,
-		document:   document,
-		logger:     logger,
-		publicDir:  resolvePublicDir(document, options.RootDir),
-		mux:        http.NewServeMux(),
-		startedAt:  time.Now(),
-		mcpClient:  options.MCP,
-		rangeState: newRangeState(),
+		rootDir:       options.RootDir,
+		document:      document,
+		globalLimiter: newIPRateLimiter(300, time.Minute),
+		loginLimiter:  newIPRateLimiter(10, time.Minute),
+		onebotEvent:   options.OneBotEvent,
+		logger:        logger,
+		publicDir:     resolvePublicDir(document, options.RootDir),
+		mux:           http.NewServeMux(),
+		startedAt:     time.Now(),
+		mcpClient:     options.MCP,
+		rangeState:    newRangeState(),
 	}
 	server.dataDir = server.DataDir()
 	server.auth = auth.NewManager(auth.Options{
@@ -116,8 +133,8 @@ func resolvePublicDir(document *config.Document, rootDir string) string {
 	return candidates[0]
 }
 
-// Handler 返回可直接挂到 http.Server 的处理器。
-func (s *Server) Handler() http.Handler { return s.mux }
+// Handler 返回可直接挂到 http.Server 的处理器（带安全头与限流中间件）。
+func (s *Server) Handler() http.Handler { return s.middleware(s.mux) }
 
 // DataDir 返回当前生效的数据目录。
 func (s *Server) DataDir() string {
@@ -149,6 +166,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/memory/download", s.requireAuth(s.handleMemoryDownload))
 	s.mux.HandleFunc("/mcp", s.handleMCP)
 	s.mux.HandleFunc("/mcp/", s.handleMCP)
+	s.mux.HandleFunc("/onebot/event", s.handleOneBotEvent)
 	s.mux.HandleFunc("/", s.handleStatic)
 }
 
@@ -250,7 +268,7 @@ func (s *Server) handleLogout(writer http.ResponseWriter, request *http.Request)
 		s.auth.Logout(cookie.Value)
 	}
 	http.SetCookie(writer, &http.Cookie{Name: s.auth.CookieName(), Value: "", Path: "/", MaxAge: -1})
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true})
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "已登出"})
 }
 
 // ---------- 配置 ----------
@@ -279,7 +297,7 @@ func (s *Server) handleConfig(writer http.ResponseWriter, request *http.Request)
 			return
 		}
 		s.logger.Printf("配置已保存（顶层键 %d 个）", len(s.document.Keys()))
-		writeJSON(writer, http.StatusOK, map[string]any{"success": true})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "配置已保存"})
 	default:
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 	}
@@ -368,7 +386,21 @@ func (s *Server) handleRestore(writer http.ResponseWriter, request *http.Request
 		return
 	}
 	s.logger.Printf("恢复完成: replaced=%d added=%d", len(changes.Replaced), len(changes.Added))
+	// 恢复后重新加载内存配置，避免面板用旧配置覆盖已恢复内容（对齐 Node applyRuntimeConfig）
+	if reloadErr := s.reloadDocument(); reloadErr != nil {
+		s.logger.Printf("恢复后重载配置失败: %v", reloadErr)
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "changes": changes})
+}
+
+// reloadDocument 从磁盘重读配置文档（恢复/外部修改后刷新面板内存状态）。
+func (s *Server) reloadDocument() error {
+	path := s.document.Path()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return s.document.Replace(raw)
 }
 
 // ---------- 记忆库（只读） ----------
@@ -640,4 +672,27 @@ func (s *Server) handleStatic(writer http.ResponseWriter, request *http.Request)
 		return
 	}
 	http.ServeFile(writer, request, full)
+}
+
+// handleOneBotEvent 处理 OneBot HTTP 上报（对齐 Node POST /onebot/event）：
+// 面板与 Bot 同进程运行时，直接转交 bot 运行时的 HandleEvent；Bot 不在时返回 503。
+func (s *Server) handleOneBotEvent(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"error": "方法不支持"})
+		return
+	}
+	if s.onebotEvent == nil {
+		writeJSON(writer, http.StatusServiceUnavailable, map[string]any{"error": "OneBot 未就绪或未启用 HTTP 模式"})
+		return
+	}
+	var event map[string]any
+	if err := json.NewDecoder(io.LimitReader(request.Body, 4<<20)).Decode(&event); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"error": "请求体不是合法 JSON"})
+		return
+	}
+	if err := s.onebotEvent(event); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"status": "ok"})
 }

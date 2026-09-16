@@ -1,18 +1,19 @@
 package chat
 
-// 日志文件写入（对齐 Node src/logger.js：logs/<date>.log 追加写入，供
-// 面板 /api/logs 系列路由展示与下载）。
+// 日志文件写入（对齐 Node src/logger.js：logs/mimirlink-<date>.log 追加写入，供
+// 面板 /api/logs 系列路由展示与下载；含过期清理）。
 
 import (
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
 
-// FileLogger 把日志同时写 stdout 与 logs/<date>.log。
+// FileLogger 把日志同时写 stdout 与 logs/mimirlink-<date>.log（对齐 Node 命名）。
 type FileLogger struct {
 	mu          sync.Mutex
 	logDir      string
@@ -20,6 +21,10 @@ type FileLogger struct {
 	file        *os.File
 	multiWriter io.Writer
 	base        *logWriter
+	// 保留策略（对齐 Node cleanupExpiredLogs：按 mtime 删除过期 .log）
+	retentionDays   int
+	cleanupInterval time.Duration
+	cleanupStarted  bool
 }
 
 // logWriter 适配标准 log.Logger 的最小接口由调用方持有——这里直接提供
@@ -58,7 +63,7 @@ func (l *FileLogger) Writer() io.Writer {
 
 // rotate 按日期切换日志文件。
 func (l *FileLogger) rotate(now time.Time) error {
-	name := now.Format("2006-01-02") + ".log"
+	name := "mimirlink-" + now.Format("2006-01-02") + ".log"
 	if l.file != nil && l.current == name {
 		return nil
 	}
@@ -95,4 +100,70 @@ func strings_TrimRightNewline(text string) string {
 		text = text[:len(text)-1]
 	}
 	return text
+}
+
+// SetRetention 配置日志保留天数与清理间隔（对齐 Node Logger.updateConfig：
+// retentionDays<=0 不清理；间隔下限 60s，启动后立即清理一次并周期执行）。
+func (l *FileLogger) SetRetention(retentionDays int, cleanupIntervalMs int) {
+	if l == nil {
+		return
+	}
+	interval := time.Duration(cleanupIntervalMs) * time.Millisecond
+	if interval < time.Minute {
+		interval = time.Hour
+	}
+	if interval > 24*time.Hour {
+		interval = 24 * time.Hour
+	}
+	l.mu.Lock()
+	l.retentionDays = retentionDays
+	l.cleanupInterval = interval
+	started := l.cleanupStarted
+	if !started && retentionDays > 0 {
+		l.cleanupStarted = true
+	}
+	l.mu.Unlock()
+	if started || retentionDays <= 0 {
+		return
+	}
+	l.cleanupExpiredLogs(time.Now())
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for range ticker.C {
+			l.cleanupExpiredLogs(time.Now())
+		}
+	}()
+}
+
+// cleanupExpiredLogs 删除超过保留期的日志文件（跳过当前文件；对齐 Node cleanupExpiredLogs）。
+func (l *FileLogger) cleanupExpiredLogs(now time.Time) (deleted int) {
+	l.mu.Lock()
+	retentionDays := l.retentionDays
+	current := l.current
+	l.mu.Unlock()
+	if retentionDays <= 0 {
+		return 0
+	}
+	cutoff := now.Add(-time.Duration(retentionDays) * 24 * time.Hour)
+	entries, err := os.ReadDir(l.logDir)
+	if err != nil {
+		return 0
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".log") {
+			continue
+		}
+		if entry.Name() == current {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.Remove(filepath.Join(l.logDir, entry.Name())); err == nil {
+			deleted++
+		}
+	}
+	return deleted
 }

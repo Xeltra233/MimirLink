@@ -345,7 +345,7 @@ func (s *Server) handleMCPReconnect(writer http.ResponseWriter, serverID string)
 		return
 	}
 	if err := s.mcpClient.Reconnect(serverID); err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "client": s.clientStatusPayload()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "ok": false, "error": err.Error(), "client": s.clientStatusPayload()})
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "ok": true, "client": s.clientStatusPayload()})

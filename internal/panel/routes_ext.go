@@ -7,6 +7,7 @@ import (
 	"mimirlink/internal/characters"
 	"mimirlink/internal/chat"
 	"mimirlink/internal/config"
+	"mimirlink/internal/logging"
 	"mimirlink/internal/store"
 	"net/http"
 	"net/url"
@@ -33,7 +34,7 @@ func (s *Server) registerExtendedRoutes() {
 	s.mux.HandleFunc("/api/logs/files", s.requireAuth(s.handleLogFiles))
 	s.mux.HandleFunc("/api/logs/content/", s.requireAuth(s.handleLogContent))
 	s.mux.HandleFunc("/api/test/ai", s.requireAuth(s.handleTestAI))
-	s.mux.HandleFunc("/api/ai/probe", s.requireAuth(s.handleTestAI))
+	s.mux.HandleFunc("/api/ai/probe", s.requireAuth(s.handleAIProbe))
 }
 
 // ---------- /api/status ----------
@@ -52,13 +53,24 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 			composition = c
 		}
 		if oldest, newest := database.MessageTimeRange(); oldest > 0 || newest > 0 {
-			oldestMessage, newestMessage = oldest, newest
 		}
 		_ = database.Close()
 	}
 	character := s.currentCharacterName()
 	worldbook := s.currentWorldbookName()
 	sessionMode := fallback(s.document.String("chat.sessionMode"), "user_persistent")
+	// Bot 状态（同进程或跨进程都经控制口）：LLM 开关与最近路由判定对齐 Node 的 /api/status
+	botStatus := s.botStatusSnapshot()
+	llmEnabled := true
+	var lastRouting any
+	if botStatus != nil {
+		if value, ok := botStatus["llmEnabled"].(bool); ok {
+			llmEnabled = value
+		}
+		if value, ok := botStatus["lastRouting"]; ok {
+			lastRouting = value
+		}
+	}
 
 	var memStats runtime.MemStats
 	runtime.ReadMemStats(&memStats)
@@ -71,11 +83,11 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 			"heapTotal": memStats.HeapSys,
 			"external":  memStats.StackInuse,
 		},
-		"llmEnabled":                  true,
+		"llmEnabled":                  llmEnabled,
 		"participantProfileProgress":  nil,
-		"knowledgeImportProgress":     nil,
+		"knowledgeImportProgress":     s.knowledgeProgressSnapshot(),
 		"corpusEmbedProgress":         s.rangeEmbedProgressPayload(),
-		"lastRouting":                 nil,
+		"lastRouting":                 lastRouting,
 		"lastInjectionObservation":    nil,
 		"recentInjectionObservations": []any{},
 		"lastRecall":                  nil,
@@ -85,7 +97,7 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 			"bufferWindowMs":        s.document.Int("chat.bufferWindowMs", 1200),
 			"engine":                "go",
 		},
-		"onebot":        s.onebotStatusPayload(),
+		"onebot":        s.onebotStatusPayloadFrom(botStatus),
 		"character":     fallback(character, "未选择"),
 		"characterFile": characterFileOf(character),
 		"worldbook":     fallback(worldbook, "未加载"),
@@ -404,7 +416,18 @@ func (s *Server) handleWorldbookCurrent(writer http.ResponseWriter, request *htt
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "世界书解析失败: " + err.Error()})
 			return
 		}
-		writeJSON(writer, http.StatusOK, payload)
+		// 对齐 Node getCurrentWorldBook：返回 { name（去 .json 的文件名）, entries（条目数） }
+		entryCount := 0
+		switch entries := payload["entries"].(type) {
+		case []any:
+			entryCount = len(entries)
+		case map[string]any:
+			entryCount = len(entries)
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"name":    strings.TrimSuffix(filepath.Base(safe), ".json"),
+			"entries": entryCount,
+		})
 		return
 	}
 	writeJSON(writer, http.StatusNotFound, map[string]any{"error": "世界书不存在: " + name})
@@ -466,22 +489,7 @@ func (s *Server) handleSessionDetail(writer http.ResponseWriter, request *http.R
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 			return
 		}
-		payload := make([]map[string]any, 0, len(messages))
-		for _, message := range messages {
-			metadata := map[string]any{}
-			if message.MetadataJSON != "" {
-				_ = json.Unmarshal([]byte(message.MetadataJSON), &metadata)
-			}
-			payload = append(payload, map[string]any{
-				"id":        message.ID,
-				"role":      message.Role,
-				"content":   message.Content,
-				"metadata":  metadata,
-				"timestamp": message.Timestamp,
-				"dateIso":   message.DateISO,
-			})
-		}
-		writeJSON(writer, http.StatusOK, payload)
+		writeJSON(writer, http.StatusOK, sessionHistoryPayload(messages))
 		return
 	}
 
@@ -510,17 +518,54 @@ func (s *Server) handleSessionDetail(writer http.ResponseWriter, request *http.R
 	}
 	for _, session := range sessions {
 		if session.ID == id {
+			// 对齐 Node getSession：detail 附带 messages/summaries/stickyEntries
+			historyLimit := int(s.document.Int("chat.historyLimit", 30))
+			if historyLimit <= 0 {
+				historyLimit = 30
+			}
+			history, _ := database.RecentMessagesThread(id, historyLimit)
+			summaries, _ := database.ListSummaries(id)
+			sticky, _ := database.ListStickyEntries(id)
+			summaryPayload := make([]map[string]any, 0, len(summaries))
+			for _, item := range summaries {
+				summaryPayload = append(summaryPayload, map[string]any{
+					"id": item.ID, "content": item.Content, "sourceCount": item.SourceCount,
+					"createdAt": item.CreatedAt, "date": item.DateISO,
+				})
+			}
 			writeJSON(writer, http.StatusOK, map[string]any{
-				"id":           session.ID,
-				"messageCount": session.MessageCount,
-				"summaryCount": session.SummaryCount,
-				"createdAt":    session.CreatedAt,
-				"lastActive":   session.LastActive,
+				"id":            session.ID,
+				"messageCount":  session.MessageCount,
+				"summaryCount":  session.SummaryCount,
+				"createdAt":     session.CreatedAt,
+				"lastActive":    session.LastActive,
+				"messages":      sessionHistoryPayload(history),
+				"summaries":     summaryPayload,
+				"stickyEntries": sticky,
 			})
 			return
 		}
 	}
 	writeJSON(writer, http.StatusNotFound, map[string]any{"error": "会话不存在"})
+}
+
+// sessionHistoryPayload 输出 Node getHistory 的行形状（role/content/timestamp/date/metadata）。
+func sessionHistoryPayload(messages []store.Message) []map[string]any {
+	payload := make([]map[string]any, 0, len(messages))
+	for _, message := range messages {
+		metadata := map[string]any{}
+		if message.MetadataJSON != "" {
+			_ = json.Unmarshal([]byte(message.MetadataJSON), &metadata)
+		}
+		payload = append(payload, map[string]any{
+			"role":      message.Role,
+			"content":   message.Content,
+			"timestamp": message.Timestamp,
+			"date":      message.DateISO,
+			"metadata":  metadata,
+		})
+	}
+	return payload
 }
 
 // ---------- 正则 ----------
@@ -672,42 +717,9 @@ func (s *Server) handleLogContent(writer http.ResponseWriter, request *http.Requ
 	_, _ = writer.Write(raw)
 }
 
-// handleRecentLogs 对齐 Node GET /api/logs：返回最近日志（取最新日志文件尾部）。
+// handleRecentLogs 对齐 Node GET /api/logs：返回最近日志条目 [{timestamp, level, message, data}]。
 func (s *Server) handleRecentLogs(writer http.ResponseWriter, request *http.Request) {
-	entries, err := os.ReadDir(s.logDir())
-	if err != nil {
-		writeJSON(writer, http.StatusOK, []any{})
-		return
-	}
-	latest := ""
-	var latestTime time.Time
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".log") {
-			continue
-		}
-		info, err := entry.Info()
-		if err != nil {
-			continue
-		}
-		if latest == "" || info.ModTime().After(latestTime) {
-			latest = entry.Name()
-			latestTime = info.ModTime()
-		}
-	}
-	if latest == "" {
-		writeJSON(writer, http.StatusOK, []any{})
-		return
-	}
-	raw, err := os.ReadFile(filepath.Join(s.logDir(), latest))
-	if err != nil {
-		writeJSON(writer, http.StatusOK, []any{})
-		return
-	}
-	lines := strings.Split(string(raw), "\n")
-	if len(lines) > 100 {
-		lines = lines[len(lines)-100:]
-	}
-	writeJSON(writer, http.StatusOK, lines)
+	writeJSON(writer, http.StatusOK, logging.Recent(100))
 }
 
 func (s *Server) logDir() string {
@@ -722,29 +734,70 @@ func (s *Server) logDir() string {
 
 // ---------- AI 连通性测试 ----------
 
+// testAllowlistGroup 判断群号是否在 chat.allowedGroups（对齐 Node isConfiguredAllowlistGroup）。
+func (s *Server) testAllowlistGroup(groupID string) bool {
+	groupID = strings.TrimSpace(groupID)
+	if groupID == "" {
+		return false
+	}
+	for _, value := range s.document.Get("chat.allowedGroups").Array() {
+		if strings.TrimSpace(value.String()) == groupID {
+			return true
+		}
+	}
+	return false
+}
+
+// handleTestAI 对齐 Node POST /api/test/ai：白名单群校验 + 带工具上下文的模型测试（由 Bot 进程执行）。
 func (s *Server) handleTestAI(writer http.ResponseWriter, request *http.Request) {
 	if request.Method != http.MethodPost {
 		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "仅支持 POST"})
 		return
 	}
-	provider, err := ai.ResolveProvider(s.document)
-	if err != nil {
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": err.Error()})
+	body := decodeBody(request)
+	message := firstText(textOf(body["message"]), textOf(body["prompt"]))
+	groupID := textOf(body["groupId"])
+	if strings.TrimSpace(message) == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "message 不能为空"})
 		return
 	}
-	prompt := "你好，请只回复：收到"
-	if request.Body != nil {
-		var payload struct {
-			Prompt string `json:"prompt"`
-		}
-		if err := json.NewDecoder(request.Body).Decode(&payload); err == nil && strings.TrimSpace(payload.Prompt) != "" {
-			prompt = payload.Prompt
-		}
+	if !s.testAllowlistGroup(groupID) {
+		writeJSON(writer, http.StatusForbidden, map[string]any{"success": false, "error": "测试功能只能在设置里的群聊白名单中执行，请填写已配置的白名单群号"})
+		return
+	}
+	result, err := s.callBotControl("/control/test-ai", map[string]any{
+		"message":      message,
+		"groupId":      groupID,
+		"targetUserId": textOf(body["targetUserId"]),
+		"targetName":   textOf(body["targetName"]),
+	})
+	if err != nil {
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":          true,
+		"response":         result["response"],
+		"reasoningContent": result["reasoningContent"],
+		"toolsEnabled":     result["toolsEnabled"],
+	})
+}
+
+// handleAIProbe 按请求体草稿探测供应商连通性（前端「测试连接」按钮，/api/ai/probe）。
+func (s *Server) handleAIProbe(writer http.ResponseWriter, request *http.Request) {
+	if request.Method != http.MethodPost {
+		writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "仅支持 POST"})
+		return
+	}
+	body := decodeBody(request)
+	provider := s.resolveProviderDraft(body)
+	if provider.BaseURL == "" {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请先填写供应商 URL"})
+		return
 	}
 	client := ai.New(provider)
 	startedAt := time.Now()
-	messages := []ai.Message{{Role: "user", Content: prompt}}
-	result, err := client.Chat(request.Context(), messages, nil)
+	result, err := client.Chat(request.Context(), []ai.Message{{Role: "user", Content: "hi"}}, nil)
 	elapsed := time.Since(startedAt).Milliseconds()
 	if err != nil {
 		writeJSON(writer, http.StatusOK, map[string]any{
@@ -763,6 +816,62 @@ func (s *Server) handleTestAI(writer http.ResponseWriter, request *http.Request)
 		"model":     provider.Model,
 		"elapsedMs": elapsed,
 	})
+}
+
+// resolveProviderDraft 对齐 Node resolveAIProviderRequestConfig：请求体草稿优先，空值回退已保存配置；
+// 未知 providerId 不回退全局配置，避免把一个供应商的 Key 串给另一个供应商。
+func (s *Server) resolveProviderDraft(body map[string]any) ai.Provider {
+	providerID := strings.TrimSpace(textOf(body["providerId"]))
+	var raw map[string]any
+	_ = json.Unmarshal(s.document.Raw(), &raw)
+	aiSection, _ := raw["ai"].(map[string]any)
+	providers := []any{}
+	if aiSection != nil {
+		providers, _ = aiSection["providers"].([]any)
+	}
+	var matched map[string]any
+	for _, item := range providers {
+		entry, _ := item.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		if providerID != "" && strings.TrimSpace(textOf(entry["id"])) == providerID {
+			matched = entry
+			break
+		}
+	}
+	canUseGlobalFallback := providerID == "" || (len(providers) == 0 && providerID == "default")
+	saved := matched
+	if saved == nil && canUseGlobalFallback {
+		saved = aiSection
+	}
+	resolved := ai.Provider{ID: providerID}
+	if saved != nil {
+		resolved.BaseURL = strings.TrimSpace(textOf(saved["baseUrl"]))
+		resolved.APIKey = strings.TrimSpace(textOf(saved["apiKey"]))
+		resolved.Model = firstText(textOf(saved["model"]), textOf(saved["defaultModel"]))
+	}
+	if baseURL, ok := body["baseUrl"]; ok {
+		resolved.BaseURL = strings.TrimSpace(textOf(baseURL))
+	}
+	if apiKey, ok := body["apiKey"].(string); ok {
+		trimmed := strings.TrimSpace(apiKey)
+		if trimmed != "" && trimmed != "******" {
+			resolved.APIKey = trimmed
+		}
+	}
+	if model := strings.TrimSpace(textOf(body["model"])); model != "" {
+		resolved.Model = model
+	}
+	if resolved.Model == "" {
+		resolved.Model = strings.TrimSpace(textOf(aiSection["model"]))
+	}
+	timeoutMs := s.document.Int("ai.timeout", 60000)
+	if timeoutMs < 1000 {
+		timeoutMs = 60000
+	}
+	resolved.Timeout = time.Duration(timeoutMs) * time.Millisecond
+	return resolved
 }
 
 // openActiveMemory 打开当前生效的记忆库（与 Node getActiveMemoryInfo 的解析顺序一致）。

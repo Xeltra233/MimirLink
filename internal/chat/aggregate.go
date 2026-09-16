@@ -28,6 +28,10 @@ type pendingMessage struct {
 	userID        string
 	isAtBotSelf   bool
 	triggerReason string
+	// replyInfo 为预解析的引用消息信息（路由判定已拉取，避免处理时重复请求）
+	replyInfo replyInfo
+	// observationOnly 表示未触发回复、仅需观察群复读的消息（对齐 Node group_repeat_watch）
+	observationOnly bool
 }
 
 // aggregateBuffer 是单会话的聚合缓冲。
@@ -152,7 +156,15 @@ func (r *Runtime) runAggregatedBatch(sessionKey string, items []pendingMessage) 
 		time.Sleep(time.Duration(replyDelayMs) * time.Millisecond)
 	}
 
+	// 对齐 Node processBatch：优先取最后一条「触发回复」的消息作为主消息，
+	// 批内全是复读观察（observationOnly）时退化为最后一条。
 	primary := items[len(items)-1]
+	for index := len(items) - 1; index >= 0; index-- {
+		if !items[index].observationOnly {
+			primary = items[index]
+			break
+		}
+	}
 	texts := make([]string, 0, len(items))
 	for _, item := range items {
 		if trimmed := strings.TrimSpace(item.text); trimmed != "" {

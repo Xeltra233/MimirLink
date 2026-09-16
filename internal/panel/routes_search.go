@@ -2,11 +2,17 @@ package panel
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/tidwall/gjson"
+
+	"mimirlink/internal/characters"
 	"mimirlink/internal/store"
 )
 
@@ -135,13 +141,11 @@ func (s *Server) handleGlobalSearch(writer http.ResponseWriter, request *http.Re
 	}
 	defer database.Close()
 
-	// 知识库（fuzzy 过滤 title/content，对齐 Node includesSearchText）
+	// 知识库（store 的 Search 已覆盖 title/content/tags/metadata/scope/角色/预设，不再按 title/content 二次过滤，
+	// 否则仅靠命名空间字段命中的条目会被误删——对齐 Node listKnowledgeEntries 的搜索字段集）
 	if knowledge, err := database.ListKnowledgeEntriesFiltered(store.VariableFilters{Search: q, Limit: limit * 3}); err == nil {
 		items := []searchResult{}
 		for _, item := range knowledge {
-			if !fuzzyMatch(item.Title, q) && !fuzzyMatch(item.Content, q) {
-				continue
-			}
 			score := 20
 			if fuzzyMatch(item.Title, q) {
 				score = 30
@@ -159,13 +163,10 @@ func (s *Server) handleGlobalSearch(writer http.ResponseWriter, request *http.Re
 		pushGroup("knowledge", "知识库", items)
 	}
 
-	// 变量
+	// 变量（同理：store Search 已覆盖 key/内容/tags/metadata/scope，保留 SQL 命中结果）
 	if variables, err := database.ListVariables(store.VariableFilters{Search: q, Limit: limit * 3}); err == nil {
 		items := []searchResult{}
 		for _, item := range variables {
-			if !fuzzyMatch(item.Key, q) && !fuzzyMatch(item.Title, q) && !fuzzyMatch(item.RawValue, q) {
-				continue
-			}
 			score := 20
 			if fuzzyMatch(item.Key, q) || fuzzyMatch(item.Title, q) {
 				score = 30
@@ -200,8 +201,92 @@ func (s *Server) handleGlobalSearch(writer http.ResponseWriter, request *http.Re
 		pushGroup("message", "聊天记录", items)
 	}
 
+	// 角色卡（对齐 Node searchStaticEntries(characterManager.listCharacters())）
+	characterItems := []searchResult{}
+	for _, card := range characters.List(s.dataDir) {
+		base := strings.TrimSuffix(card.Filename, ".png")
+		items := []string{base, "角色卡", base + ".png"}
+		matched := false
+		for _, value := range items {
+			if fuzzyMatch(value, q) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			continue
+		}
+		characterItems = append(characterItems, searchResult{
+			Title: base, Subtitle: "角色卡", Preview: base + ".png", PanelID: "characters",
+			EntryID: base + ".png", Score: 15,
+			Action: map[string]any{"kind": "character", "filename": base + ".png"},
+		})
+	}
+	pushGroup("character", "角色卡", characterItems)
+
+	// 世界书（对齐 Node worldBookManager.listWorldBooks())
+	worldbookItems := []searchResult{}
+	if entries, err := os.ReadDir(filepath.Join(s.dataDir, "worlds")); err == nil {
+		for _, entry := range entries {
+			if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+				continue
+			}
+			filename := entry.Name()
+			title := strings.TrimSuffix(filename, ".json")
+			if !fuzzyMatch(title, q) && !fuzzyMatch("世界书", q) && !fuzzyMatch(filename, q) {
+				continue
+			}
+			worldbookItems = append(worldbookItems, searchResult{
+				Title: title, Subtitle: "世界书", Preview: filename, PanelID: "worldbooks",
+				EntryID: filename, Score: 15,
+				Action: map[string]any{"kind": "worldbook", "filename": filename},
+			})
+		}
+	}
+	pushGroup("worldbook", "世界书", worldbookItems)
+
+	// 正则规则（对齐 Node searchStaticEntries(bindings.global.regexRules)）
+	regexItems := []searchResult{}
+	for index, raw := range regexValueList(s.document.Get("bindings.global.regexRules")) {
+		rule, _ := raw.(map[string]any)
+		if rule == nil {
+			continue
+		}
+		title := orDefault(textOf(rule["name"]), fmt.Sprintf("规则 %d", index+1))
+		subtitle := orDefault(textOf(rule["stage"]), "正则规则")
+		preview := strings.TrimSpace(textOf(rule["pattern"]) + " → " + textOf(rule["replacement"]))
+		if !fuzzyMatch(title, q) && !fuzzyMatch(subtitle, q) && !fuzzyMatch(preview, q) {
+			continue
+		}
+		regexItems = append(regexItems, searchResult{
+			Title: title, Subtitle: subtitle, Preview: strings.Trim(preview, " →"), PanelID: "regex",
+			EntryID: fmt.Sprintf("%d", index), Score: 12,
+			Action: map[string]any{"kind": "regex", "index": index},
+		})
+	}
+	pushGroup("regex", "正则规则", regexItems)
+
+	// 面板入口（对齐 Node 静态入口表）
+	panelItems := []searchResult{}
+	panelEntries := [][3]string{
+		{"配置", "系统配置、OneBot、聊天、AI、记忆、预设", "config"},
+		{"语音合成", "TTS、音色、速度、音量、测试语音", "tts"},
+		{"实时日志", "日志、错误、请求、运行状态", "logs"},
+		{"任务中心", "人物档案任务、知识导入任务、进度", "tasks"},
+	}
+	for _, entry := range panelEntries {
+		if !fuzzyMatch(entry[0], q) && !fuzzyMatch(entry[1], q) {
+			continue
+		}
+		panelItems = append(panelItems, searchResult{
+			Title: entry[0], Subtitle: "面板入口", Preview: entry[1], PanelID: entry[2], Score: 8,
+			Action: map[string]any{"kind": "panel", "panelId": entry[2]},
+		})
+	}
+	pushGroup("panel", "面板入口", panelItems)
+
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"success": true, "query": q, "groups": groups, "results": all, "recentEligible": false,
+		"success": true, "query": q, "groups": groups, "results": all, "count": len(all), "recentEligible": true,
 	})
 }
 
@@ -250,4 +335,20 @@ func formatTimestampCN(timestamp int64) string {
 		return "聊天记录"
 	}
 	return time.Unix(timestamp, 0).Format("2006/1/2 15:04:05")
+}
+
+// regexValueList 把 gjson 数组转成 []any（正则规则条目；供全局搜索按 Node 形状映射）。
+func regexValueList(result gjson.Result) []any {
+	if !result.IsArray() {
+		return nil
+	}
+	items := make([]any, 0, len(result.Array()))
+	for _, item := range result.Array() {
+		var value any
+		if err := json.Unmarshal([]byte(item.Raw), &value); err != nil {
+			continue
+		}
+		items = append(items, value)
+	}
+	return items
 }

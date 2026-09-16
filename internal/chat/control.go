@@ -10,6 +10,7 @@ import (
 	"mimirlink/internal/ai"
 	"mimirlink/internal/botctl"
 	"mimirlink/internal/store"
+	"mimirlink/internal/tools"
 )
 
 // 本文件实现 bot 侧控制动作（面板通过 botctl 通道调用）。
@@ -19,16 +20,17 @@ import (
 // ControlStatus 返回 bot 运行状态，供面板显示连接情况。
 func (r *Runtime) ControlStatus() map[string]any {
 	status := map[string]any{
-		"llmEnabled": r.llmEnabled(),
-		"selfId":     "",
-		"nickname":   "",
-		"connected":  false,
-		"url":        r.document.String("onebot.url"),
-		"onebotUrl":  r.document.String("onebot.url"),
-		"mode":       orDefaultText(r.document.String("onebot.mode"), "ws"),
-		"tokenMode":  orDefaultText(r.document.String("onebot.tokenMode"), "header"),
-		"hasToken":   strings.TrimSpace(r.document.String("onebot.accessToken")) != "",
-		"uptimeMs":   time.Since(r.startedAt).Milliseconds(),
+		"llmEnabled":  r.llmEnabled(),
+		"selfId":      "",
+		"nickname":    "",
+		"connected":   false,
+		"url":         r.document.String("onebot.url"),
+		"onebotUrl":   r.document.String("onebot.url"),
+		"mode":        orDefaultText(r.document.String("onebot.mode"), "ws"),
+		"tokenMode":   orDefaultText(r.document.String("onebot.tokenMode"), "header"),
+		"hasToken":    strings.TrimSpace(r.document.String("onebot.accessToken")) != "",
+		"uptimeMs":    time.Since(r.startedAt).Milliseconds(),
+		"lastRouting": r.LastRoutingSnapshot(),
 	}
 	if r.bot != nil {
 		status["selfId"] = r.bot.SelfID()
@@ -261,4 +263,39 @@ func firstNonEmptyJSONString(raw []byte, keys ...string) string {
 		}
 	}
 	return ""
+}
+
+// TestAI 执行一次带工具上下文的测试对话（对齐 Node POST /api/test/ai：
+// 工具说明 system + 用户消息 → chatWithTools → 返回可见回复与可用工具名）。
+func (r *Runtime) TestAI(request botctl.TestAIRequest) (map[string]any, error) {
+	message := strings.TrimSpace(request.Message)
+	if message == "" {
+		return nil, fmt.Errorf("message 不能为空")
+	}
+	if r.ai == nil {
+		return nil, fmt.Errorf("AI 未就绪")
+	}
+	messages := []ai.Message{}
+	toolNames := []string{}
+	if r.tools != nil {
+		if hints := r.tools.ToolHints(); len(hints) > 0 {
+			messages = append(messages, ai.Message{Role: "system", Content: "【工具使用说明】\n" + strings.Join(hints, "\n\n")})
+		}
+		toolNames = r.tools.Names()
+	}
+	messages = append(messages, ai.Message{Role: "user", Content: message})
+	scope := tools.CallScope{
+		GroupID:      strings.TrimSpace(request.GroupID),
+		TargetUserID: strings.TrimSpace(request.TargetUserID),
+		TargetName:   strings.TrimSpace(request.TargetName),
+	}
+	reply, err := r.chatWithTools(context.Background(), messages, scope)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"response":         reply,
+		"reasoningContent": nil,
+		"toolsEnabled":     toolNames,
+	}, nil
 }

@@ -1,6 +1,11 @@
 package store
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"time"
+)
 
 // 本文件补齐面板端按 entry id 读取/删除知识条目与人物档案的能力，
 // 以及人物档案的保存（对齐 Node getKnowledgeEntry / deleteKnowledgeEntry /
@@ -34,6 +39,51 @@ func (d *DB) GetKnowledgeEntry(entryID string) (*KnowledgeEntry, error) {
 func (d *DB) DeleteKnowledgeEntry(entryID string) (bool, error) {
 	result, err := d.handle.Exec(
 		`DELETE FROM memory_entries WHERE id = ? AND entry_type IN ('knowledge_fixed', 'knowledge_dynamic')`, entryID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected > 0, err
+}
+
+// UpdateKnowledgeEntry 按 entry id 更新知识条目（对齐 Node saveKnowledgeEntry 的更新路径）。
+func (d *DB) UpdateKnowledgeEntry(entryID string, entry KnowledgeEntry) (bool, error) {
+	if d.ReadOnly {
+		return false, fmt.Errorf("记忆库以只读方式打开，无法写入")
+	}
+	title := strings.TrimSpace(entry.Title)
+	if title == "" {
+		return false, fmt.Errorf("知识标题不能为空")
+	}
+	content := strings.TrimSpace(entry.Content)
+	if content == "" {
+		return false, fmt.Errorf("知识内容不能为空")
+	}
+	knowledgeType := "dynamic"
+	if entry.KnowledgeType == "fixed" {
+		knowledgeType = "fixed"
+	}
+	metadata := entry.Metadata
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	metadata["knowledgeType"] = knowledgeType
+	if _, ok := metadata["source"]; !ok {
+		metadata["source"] = "admin"
+	}
+	if _, ok := metadata["updatedBy"]; !ok {
+		metadata["updatedBy"] = "admin-panel"
+	}
+	tags := entry.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	tagsJSON, _ := json.Marshal(tags)
+	metadataJSON, _ := json.Marshal(metadata)
+	result, err := d.handle.Exec(
+		`UPDATE memory_entries SET title = ?, content = ?, tags_json = ?, metadata_json = ?, updated_at = ?
+		 WHERE id = ? AND entry_type IN ('knowledge_fixed', 'knowledge_dynamic')`,
+		title, content, string(tagsJSON), string(metadataJSON), time.Now().UnixMilli(), entryID)
 	if err != nil {
 		return false, err
 	}

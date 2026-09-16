@@ -2289,6 +2289,11 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 }
                 // corpus 根文件
                 if (categories.has('corpus')) {
+                    // 靶场快照目录（导出包含 range-snapshots，恢复也要还原，否则快照丢失）
+                    const snapshotsSrc = path.join(backupDataDir, 'range-snapshots');
+                    if (fsSync.existsSync(snapshotsSrc)) {
+                        mergeDirSync(snapshotsSrc, path.join(currentDataDir, 'range-snapshots'), new Set(), changes);
+                    }
                     for (const f of ['range-corpus.json','range-corpus-embeddings.json','range-prefs.json']) {
                         const src = path.join(backupDataDir, f);
                         const dst = path.join(currentDataDir, f);

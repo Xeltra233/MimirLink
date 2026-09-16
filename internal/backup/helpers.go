@@ -317,10 +317,19 @@ func buildRegexSnapshotFromRaw(raw []byte) map[string]any {
 	if err != nil {
 		return nil
 	}
+	// 对齐 Node buildRegexBackupSnapshot：先执行 normalizeConfig 的全局正则层同步，
+	// 保证 regex.rules 与 bindings.global.regexRules 一致后再导出快照。
+	config.SyncLegacyRegexRules(document)
+	// 对齐 Node buildRegexBackupSnapshot：所有字段固定存在，缺失用 null/[]（键顺序与默认值与 Node 一致）
 	snapshot := map[string]any{
-		"version":    1,
-		"exportedAt": time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
-		"characters": map[string]any{},
+		"version":                1,
+		"exportedAt":             time.Now().UTC().Format("2006-01-02T15:04:05.000Z"),
+		"regex":                  nil,
+		"presetRegexRules":       nil,
+		"globalRegexRules":       nil,
+		"globalPresetRegexRules": nil,
+		"importsRegexFiles":      []any{},
+		"characters":             map[string]any{},
 	}
 	if document.Exists("regex") {
 		snapshot["regex"] = json.RawMessage(document.Get("regex").Raw)
@@ -336,7 +345,7 @@ func buildRegexSnapshotFromRaw(raw []byte) map[string]any {
 	}
 	characters := map[string]any{}
 	document.Get("bindings.characters").ForEach(func(name, binding gjson.Result) bool {
-		entry := map[string]any{}
+		entry := map[string]any{"regexRules": nil, "presetRegexRules": nil, "importedFromCardRegexRules": nil}
 		if binding.Get("regexRules").Exists() {
 			entry["regexRules"] = json.RawMessage(binding.Get("regexRules").Raw)
 		}

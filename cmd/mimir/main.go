@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -30,9 +31,11 @@ import (
 	"mimirlink/internal/chat"
 	"mimirlink/internal/config"
 	"mimirlink/internal/datacheck"
+	"mimirlink/internal/logging"
 	"mimirlink/internal/mcp"
 	"mimirlink/internal/onebot"
 	"mimirlink/internal/panel"
+	"mimirlink/internal/preset"
 	"mimirlink/internal/search"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tools"
@@ -106,10 +109,21 @@ func main() {
 
 	// 面板 + Bot 同进程启动（对齐 Node src/index.js 的单进程形态；容器 CMD 即 -bot -serve）。
 	// 二者各自独立初始化，任一失败即退出，便于容器平台感知异常。
+	if *serve || *botMode {
+		// 启动前整理预设状态（对齐 Node：stripLegacyPresetMetadata + syncPresetFiles）
+		syncPresetStateAtStartup(absoluteRoot)
+	}
 	if *serve && *botMode {
+		// 共享日志器：bot 与面板写入同一份日志文件（对齐 Node 单进程形态）
+		var sharedLogger *log.Logger
+		if sharedDocument, err := config.Load(resolveConfigPath(absoluteRoot)); err == nil {
+			sharedLogger = createSharedLogger(absoluteRoot, sharedDocument)
+		}
+		// 面板端口同时承接 OneBot HTTP 上报（对齐 Node POST /onebot/event）
+		relay := &eventRelay{}
 		failures := make(chan error, 2)
-		go func() { failures <- runBot(absoluteRoot) }()
-		go func() { failures <- servePanel(absoluteRoot, *port) }()
+		go func() { failures <- runBot(absoluteRoot, relay, sharedLogger) }()
+		go func() { failures <- servePanel(absoluteRoot, *port, relay.dispatch, sharedLogger) }()
 		if err := <-failures; err != nil {
 			fail("运行失败: %v", err)
 		}
@@ -117,17 +131,18 @@ func main() {
 	}
 
 	if *botMode {
-		if err := runBot(absoluteRoot); err != nil {
+		if err := runBot(absoluteRoot, nil, nil); err != nil {
 			fail("Bot 运行失败: %v", err)
 		}
 		return
 	}
 
 	if *serve {
-		if err := servePanel(absoluteRoot, *port); err != nil {
+		if err := servePanel(absoluteRoot, *port, nil, nil); err != nil {
 			fail("面板服务失败: %v", err)
 		}
 		return
+
 	}
 
 	if *roundtrip != "" {
@@ -230,10 +245,14 @@ func main() {
 	fmt.Print(report.Summary())
 }
 
-func servePanel(rootDir string, portOverride int) error {
+func servePanel(rootDir string, portOverride int, onebotEvent func(map[string]any) error, logger *log.Logger) error {
 	document, err := config.Load(resolveConfigPath(rootDir))
 	if err != nil {
 		return err
+	}
+	panelLogger := logger
+	if panelLogger == nil {
+		panelLogger = log.New(logging.NewWriter(os.Stdout), "", log.LstdFlags)
 	}
 	port := portOverride
 	if port == 0 {
@@ -259,10 +278,11 @@ func servePanel(rootDir string, portOverride int) error {
 		}
 	}
 	server, err := panel.NewServer(panel.Options{
-		RootDir:  rootDir,
-		Document: document,
-		Logger:   log.New(os.Stdout, "", log.LstdFlags),
-		MCP:      panelMCP,
+		RootDir:     rootDir,
+		Document:    document,
+		Logger:      panelLogger,
+		MCP:         panelMCP,
+		OneBotEvent: onebotEvent,
 	})
 	if err != nil {
 		return err
@@ -407,7 +427,7 @@ func runSearchProbe(rootDir string, query string, limit int, fetchURL string) {
 	}
 }
 
-func runBot(rootDir string) error {
+func runBot(rootDir string, relay *eventRelay, logger *log.Logger) error {
 	document, err := config.Load(resolveConfigPath(rootDir))
 	if err != nil {
 		return err
@@ -447,10 +467,17 @@ func runBot(rootDir string) error {
 	stdoutLogger := log.New(os.Stdout, "", log.LstdFlags)
 	// 日志文件（对齐 Node logger.js：logs/<date>.log，面板 /api/logs 展示）
 	fileLogger := chat.NewFileLogger(filepath.Join(rootDir, "logs"), time.Now())
-	logger := stdoutLogger
 	if fileLogger != nil {
-		logger = log.New(io.MultiWriter(os.Stdout, fileLogger.Writer()), "", log.LstdFlags)
+		fileLogger.SetRetention(int(document.Int("server.logRetentionDays", 14)), int(document.Int("server.logCleanupIntervalMs", 3600000)))
 	}
+	resolvedLogger := logger
+	if resolvedLogger == nil {
+		resolvedLogger = log.New(logging.NewWriter(stdoutLogger.Writer()), "", log.LstdFlags)
+		if fileLogger != nil {
+			resolvedLogger = log.New(logging.NewWriter(io.MultiWriter(os.Stdout, fileLogger.Writer())), "", log.LstdFlags)
+		}
+	}
+	logger = resolvedLogger
 	logger.Printf("模型: %s @ %s (provider=%s)", provider.Model, provider.BaseURL, provider.ID)
 
 	client := onebot.New(onebot.Options{
@@ -507,6 +534,17 @@ func runBot(rootDir string) error {
 		}()
 		runtime.HandleEvent(event)
 	})
+	if relay != nil {
+		// 同进程面板的 POST /onebot/event 直接转交运行时（对齐 Node 单进程形态）
+		relay.set(func(event map[string]any) {
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					logger.Printf("[聊天] 处理上报事件异常: %v", recovered)
+				}
+			}()
+			runtime.HandleEvent(event)
+		})
+	}
 
 	// 本地控制接口：面板（另一进程）据此触发「主动 @ 测试 / 立即增量分析 /
 	// 刷新用户名 / OneBot 重连」，这些动作必须由持有连接与 AI 客户端的 bot 执行
@@ -567,6 +605,10 @@ func (a botControlAdapter) RefreshParticipantName(request botctl.ProfileRequest)
 	return a.runtime.RefreshParticipantName(request)
 }
 
+func (a botControlAdapter) TestAI(request botctl.TestAIRequest) (map[string]any, error) {
+	return a.runtime.TestAI(request)
+}
+
 func splitCategories(raw string) []string {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
@@ -594,4 +636,68 @@ func truncateText(text string, limit int) string {
 		return text
 	}
 	return string(runes[:limit]) + "…"
+}
+
+// syncPresetStateAtStartup 在启动时整理预设状态（对齐 Node src/index.js 启动段）：
+// 先清理旧版 ST 水印，再把 data/presets/*.json 同步进 config.imports.presetFiles 并把非磁盘记录落盘。
+func syncPresetStateAtStartup(rootDir string) {
+	document, err := config.Load(resolveConfigPath(rootDir))
+	if err != nil {
+		return
+	}
+	dataDir := document.String("chat.dataDir")
+	if dataDir == "" {
+		dataDir = filepath.Join(rootDir, "data")
+	} else if !filepath.IsAbs(dataDir) {
+		dataDir = filepath.Join(rootDir, dataDir)
+	}
+	if cleaned := preset.StripLegacyMetadata(document); cleaned > 0 {
+		fmt.Printf("预设: 已清理 %d 条旧版水印\n", cleaned)
+	}
+	imported, written, skipped := preset.SyncFiles(document, preset.Options{
+		DataDir:            dataDir,
+		ImportLoosePresets: true,
+		ImportPosition:     "append",
+	})
+	if len(imported) > 0 || len(written) > 0 {
+		fmt.Printf("预设: 导入 %d 条 / 落盘 %d 条（跳过 %d）\n", len(imported), len(written), len(skipped))
+	}
+}
+
+// eventRelay 让同进程面板把 /onebot/event 上报转交给 bot 运行时处理
+// （对齐 Node 单进程里 bot.handleHttpEvent 的行为）。
+type eventRelay struct {
+	mu      sync.Mutex
+	handler func(map[string]any)
+}
+
+func (r *eventRelay) set(handler func(map[string]any)) {
+	r.mu.Lock()
+	r.handler = handler
+	r.mu.Unlock()
+}
+
+func (r *eventRelay) dispatch(event map[string]any) error {
+	r.mu.Lock()
+	handler := r.handler
+	r.mu.Unlock()
+	if handler == nil {
+		return fmt.Errorf("OneBot 未就绪或未启用 HTTP 模式")
+	}
+	handler(event)
+	return nil
+}
+
+// createSharedLogger 创建 bot 与面板共用的日志器（stdout + logs/mimirlink-<date>.log，含保留清理）。
+func createSharedLogger(rootDir string, document *config.Document) *log.Logger {
+	fileLogger := chat.NewFileLogger(filepath.Join(rootDir, "logs"), time.Now())
+	if fileLogger == nil {
+		// 无文件日志时也要进入最近日志环形缓冲（对齐 Node GET /api/logs 的数据来源）
+		return log.New(logging.NewWriter(os.Stdout), "", log.LstdFlags)
+	}
+	fileLogger.SetRetention(
+		int(document.Int("server.logRetentionDays", 14)),
+		int(document.Int("server.logCleanupIntervalMs", 3600000)),
+	)
+	return log.New(logging.NewWriter(io.MultiWriter(os.Stdout, fileLogger.Writer())), "", log.LstdFlags)
 }

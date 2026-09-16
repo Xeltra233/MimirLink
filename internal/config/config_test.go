@@ -168,3 +168,43 @@ func TestDeletePath(t *testing.T) {
 		t.Fatalf("其他字段被误删")
 	}
 }
+
+// 保存时对齐 Node normalizeConfig：regex.rules 与 bindings.global.regexRules 保持同一份全局规则。
+func TestSaveSyncsGlobalRegexLayers(t *testing.T) {
+	// 只有 bindings.global.regexRules：回填 regex.rules
+	path := writeFixture(t, `{"regex":{"enabled":true,"rules":[]},"bindings":{"global":{"regexRules":[{"name":"r1"}]}}}`)
+	document, err := Load(path)
+	if err != nil {
+		t.Fatalf("加载失败: %v", err)
+	}
+	if err := document.Save(); err != nil {
+		t.Fatalf("保存失败: %v", err)
+	}
+	reloaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("重新加载失败: %v", err)
+	}
+	if got := len(reloaded.Get("regex.rules").Array()); got != 1 {
+		t.Fatalf("regex.rules 未同步 bindings.global.regexRules: %d", got)
+	}
+
+	// 只有 regex.rules：回填 bindings.global.regexRules
+	path2 := writeFixture(t, `{"regex":{"enabled":true,"rules":[{"name":"legacy"}]}}`)
+	document2, err := Load(path2)
+	if err != nil {
+		t.Fatalf("加载失败: %v", err)
+	}
+	if err := document2.Save(); err != nil {
+		t.Fatalf("保存失败: %v", err)
+	}
+	reloaded2, err := Load(path2)
+	if err != nil {
+		t.Fatalf("重新加载失败: %v", err)
+	}
+	if got := len(reloaded2.Get("bindings.global.regexRules").Array()); got != 1 {
+		t.Fatalf("bindings.global.regexRules 未回填 regex.rules: %d", got)
+	}
+	if got := len(reloaded2.Get("regex.rules").Array()); got != 1 {
+		t.Fatalf("regex.rules 被破坏: %d", got)
+	}
+}

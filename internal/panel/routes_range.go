@@ -332,23 +332,8 @@ func (s *Server) handleRangeCorpusImport(writer http.ResponseWriter, request *ht
 		limitValue = request.FormValue("limit")
 		includeSelf = request.FormValue("includeSelf") == "true"
 	} else {
-		body := decodeBody(request)
-		text := firstText(textOf(body["text"]), textOf(body["corpus"]))
-		if text == "" {
-			writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请提供要导入的语料"})
-			return
-		}
-		lines := []string{}
-		for _, line := range strings.Split(text, "\n") {
-			if trimmed := strings.TrimSpace(line); trimmed != "" {
-				lines = append(lines, trimmed)
-			}
-		}
-		s.saveRangeCorpus(lines, map[string]any{
-			"fileName": "inline", "groupName": "", "totalMessages": len(lines),
-			"extracted": len(lines), "speakerCount": 0,
-		})
-		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "corpus": strings.Join(lines, "\n"), "stats": map[string]any{"extracted": len(lines)}})
+		// 对齐 Node：仅接受 multipart 文件上传（JSON 请求体直接拒绝）
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请上传JSON文件"})
 		return
 	}
 

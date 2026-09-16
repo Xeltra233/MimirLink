@@ -7,13 +7,13 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"mimirlink/internal/ai"
 	"mimirlink/internal/characters"
 	"mimirlink/internal/chat"
-	"mimirlink/internal/store"
 )
 
 // 本文件补齐 goal-36 审计发现的剩余 Node 契约对齐：
@@ -22,6 +22,100 @@ import (
 //   - POST /api/preset/train|tune：真实 AI 训练/优化（移植 src/prompt-trainer.js 与路由逻辑）
 //   - POST /api/memory/knowledge/import：支持 Node 的「文本分块导入」契约
 //   - POST /api/worldbooks/extract-from-character：支持 Node 的 { filename } 契约
+// ---------- 导入记录共用工具（对齐 Node routes.js 的 stableStringify / 记录 ID 语义） ----------
+
+// importRecordID 生成导入记录 ID（对齐 Node `${type}-${Date.now()}-${random6}`）。
+func importRecordID(kind string) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	random := make([]byte, 6)
+	for index := range random {
+		random[index] = charset[rand.Intn(len(charset))]
+	}
+	return fmt.Sprintf("%s-%d-%s", kind, time.Now().UnixMilli(), string(random))
+}
+
+// stableJSON 键排序递归序列化（对齐 Node stableStringify，用于快照等价比较与规则去重）。
+func stableJSON(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return "null"
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			parts = append(parts, stableJSON(item))
+		}
+		return "[" + strings.Join(parts, ",") + "]"
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, key := range keys {
+			encodedKey, _ := json.Marshal(key)
+			parts = append(parts, string(encodedKey)+":"+stableJSON(typed[key]))
+		}
+		return "{" + strings.Join(parts, ",") + "}"
+	default:
+		encoded, err := json.Marshal(value)
+		if err != nil {
+			return "null"
+		}
+		return string(encoded)
+	}
+}
+
+// snapshotsEqual 对齐 Node areSnapshotsEqual。
+func snapshotsEqual(left, right any) bool { return stableJSON(left) == stableJSON(right) }
+
+// cloneSnapshot JSON 往返克隆（对齐 Node cloneImportSnapshot）。
+func cloneSnapshot(value any) any {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var cloned any
+	if err := json.Unmarshal(encoded, &cloned); err != nil {
+		return nil
+	}
+	return cloned
+}
+
+// removeMatchingRulesBySnapshot 移除与导入快照完全相同的规则，返回移除数量（对齐 Node removeMatchingRules）。
+func removeMatchingRulesBySnapshot(targetRules []any, importedRules []any) int {
+	if len(targetRules) == 0 || len(importedRules) == 0 {
+		return 0
+	}
+	signatures := map[string]bool{}
+	for _, rule := range importedRules {
+		signatures[stableJSON(rule)] = true
+	}
+	kept := []any{}
+	for _, rule := range targetRules {
+		if signatures[stableJSON(rule)] {
+			continue
+		}
+		kept = append(kept, rule)
+	}
+	removed := len(targetRules) - len(kept)
+	copy(targetRules, kept)
+	return removed
+}
+
+// removePresetImportDiskFile 删除磁盘上的导入记录文件（对齐 Node deletePresetImportDiskFile：presets/<id>.json）。
+func (s *Server) removePresetImportDiskFile(recordID string) {
+	normalized := strings.TrimSpace(recordID)
+	if normalized == "" || strings.ContainsAny(normalized, "/\\") {
+		return
+	}
+	presetsDir := filepath.Join(s.dataDir, "presets")
+	target := filepath.Join(presetsDir, normalized+".json")
+	if !strings.HasPrefix(target, presetsDir+string(os.PathSeparator)) {
+		return
+	}
+	_ = os.Remove(target)
+}
 
 // presetImportRecord 是一条预设导入记录（对齐 Node config.imports.presetFiles 记录形状）。
 type presetImportRecord struct {
@@ -99,7 +193,7 @@ func stripPresetToPrompts(imported map[string]any) map[string]any {
 	return result
 }
 
-// handlePresetImportFull 是 /api/preset/import 的完整实现（覆盖旧版精简实现）。
+// handlePresetImportFull 是 /api/preset/import 的完整实现（对齐 Node：记录字段/关联正则/磁盘文件）。
 func (s *Server) handlePresetImportFull(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
 	preset := stripPresetToPrompts(body)
@@ -111,31 +205,46 @@ func (s *Server) handlePresetImportFull(writer http.ResponseWriter, request *htt
 	if raw := s.document.Get("preset"); raw.Exists() {
 		_ = json.Unmarshal([]byte(raw.Raw), &previous)
 	}
+	// importedFields 对齐 Node：Object.keys(preset).filter(key => preset[key] !== '' && preset[key] !== false)
 	importedFields := []string{}
 	for key, value := range preset {
 		switch typed := value.(type) {
 		case string:
-			if typed != "" {
-				importedFields = append(importedFields, key)
+			if typed == "" {
+				continue
 			}
 		case bool:
-			if typed {
-				importedFields = append(importedFields, key)
-			}
-		case []any:
-			if len(typed) > 0 {
-				importedFields = append(importedFields, key)
-			}
-		case map[string]any:
-			if len(typed) > 0 {
-				importedFields = append(importedFields, key)
+			if !typed {
+				continue
 			}
 		}
+		importedFields = append(importedFields, key)
 	}
+	sort.Strings(importedFields)
 
 	// 关联正则（角色卡/预设附带的 regex_scripts / regexRules）
 	importedRules := chat.NormalizeImportedRules(body)
 	originalRules := chat.NormalizeImportedRules(map[string]any{"rules": previous["regexRules"]})
+	recordID := importRecordID("preset")
+
+	// 关联正则独立记录（Node：linkedRegexImportRecord，目标层 preset）
+	linkedRegexID := ""
+	if len(importedRules) > 0 {
+		linkedRegexID = importRecordID("regex")
+		linked := map[string]any{
+			"id": linkedRegexID, "type": "regex", "sourceType": "preset",
+			"presetImportId": recordID,
+			"filename":       sourceFilename + " / 预设关联正则",
+			"targetLayer":    "preset",
+			"createdAt":      time.Now().UTC().Format(time.RFC3339),
+			"importedRules":  toAnyList(importedRules),
+			"previousRules":  cloneSnapshot(previous["regexRules"]),
+		}
+		regexRecords := s.regexImportRecords()
+		regexRecords = append([]map[string]any{linked}, regexRecords...)
+		_ = s.document.Set("imports.regexFiles", toAnyList(regexRecords))
+	}
+
 	merged := map[string]any{}
 	for key, value := range previous {
 		merged[key] = value
@@ -143,30 +252,36 @@ func (s *Server) handlePresetImportFull(writer http.ResponseWriter, request *htt
 	for key, value := range preset {
 		merged[key] = value
 	}
-	if len(importedRules) > 0 {
-		merged["regexRules"] = toAnyList(importedRules)
-	}
+	merged["regexRules"] = toAnyList(importedRules) // Node 语义：总是覆盖（即使为空）
 	if err := s.document.Set("preset", merged); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
 
+	// previousPreset 只保留 importedFields 对应键（对齐 Node Object.fromEntries(importedFields.map(...))）
+	previousSnapshot := map[string]any{}
+	for _, key := range importedFields {
+		previousSnapshot[key] = cloneSnapshot(previous[key])
+	}
 	record := map[string]any{
-		"id": fmt.Sprintf("preset_%d", time.Now().UnixMilli()), "type": "preset",
-		"filename": sourceFilename, "presetName": presetName,
-		"createdAt":      time.Now().UTC().Format(time.RFC3339),
-		"importedFields": importedFields,
-		"previousPreset": previous,
+		"id": recordID, "type": "preset",
+		"filename": sourceFilename, "presetName": nilIfEmpty(presetName),
+		"createdAt":           time.Now().UTC().Format(time.RFC3339),
+		"importedFields":      importedFields,
+		"importedPreset":      cloneSnapshot(preset),
+		"importedRegexRules":  toAnyList(importedRules),
+		"linkedRegexImportId": nilIfEmpty(linkedRegexID),
+		"previousRegexRules":  cloneSnapshot(previous["regexRules"]),
+		"previousPreset":      previousSnapshot,
 	}
 	records := s.presetImportRecords()
 	records = append([]map[string]any{record}, records...)
 	_ = s.document.Set("imports.presetFiles", toAnyList(records))
 
-	// 落盘预设文件（与 Node 的 presets 目录行为一致）
-	if presetName != "" {
-		encoded, _ := json.MarshalIndent(preset, "", "  ")
-		_ = os.MkdirAll(filepath.Join(s.dataDir, "presets"), 0o755)
-		_ = os.WriteFile(filepath.Join(s.dataDir, "presets", "preset-"+safeBase(presetName)+".json"), encoded, 0o644)
+	// 落盘导入记录文件（Node：presets/<recordId>.json，备份分类直接拍）
+	if err := os.MkdirAll(filepath.Join(s.dataDir, "presets"), 0o755); err == nil {
+		encoded, _ := json.MarshalIndent(record, "", "  ")
+		_ = os.WriteFile(filepath.Join(s.dataDir, "presets", recordID+".json"), encoded, 0o644)
 	}
 	if err := s.document.Save(); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
@@ -174,9 +289,13 @@ func (s *Server) handlePresetImportFull(writer http.ResponseWriter, request *htt
 	}
 
 	prompts, _ := preset["prompts"].([]any)
+	message := "预设已导入"
+	if len(importedRules) > 0 {
+		message = fmt.Sprintf("预设已导入，并同步导入 %d 条正则", len(importedRules))
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{
 		"success": true,
-		"preset":  preset,
+		"preset":  merged,
 		"diagnostics": map[string]any{
 			"promptCount": len(prompts), "importedFields": importedFields,
 		},
@@ -185,43 +304,101 @@ func (s *Server) handlePresetImportFull(writer http.ResponseWriter, request *htt
 		},
 		"importedRegexCount": len(importedRules),
 		"importedFields":     importedFields,
-		"importRecord": map[string]any{
-			"id": record["id"], "type": "preset", "filename": sourceFilename,
-			"presetName": presetName, "createdAt": record["createdAt"],
-			"importedFields": importedFields,
-		},
-		"message": "预设已导入",
+		"importRecord":       summarizePresetRecord(record),
+		"message":            message,
 	})
+}
+
+// deleteTrackedPresetImport 删除一条预设导入记录并回退其影响（对齐 Node deleteTrackedPresetImport）。
+func (s *Server) deleteTrackedPresetImport(recordID string) (found bool, removedCount int, restoredFields []string, record map[string]any) {
+	records := s.presetImportRecords()
+	index := -1
+	for position, item := range records {
+		if textOf(item["id"]) == recordID {
+			index = position
+			break
+		}
+	}
+	if index < 0 {
+		return false, 0, nil, nil
+	}
+	record = records[index]
+	remaining := append(append([]map[string]any{}, records[:index]...), records[index+1:]...)
+	_ = s.document.Set("imports.presetFiles", toAnyList(remaining))
+
+	// 关联正则记录随之删除（Node：record.linkedRegexImportId）
+	if linkedID := textOf(record["linkedRegexImportId"]); linkedID != "" {
+		kept := []map[string]any{}
+		for _, item := range s.regexImportRecords() {
+			if textOf(item["id"]) != linkedID {
+				kept = append(kept, item)
+			}
+		}
+		_ = s.document.Set("imports.regexFiles", toAnyList(kept))
+	}
+
+	// 磁盘预设记录（非导入应用内容）直接移除，不回退 preset
+	if textOf(record["sourceType"]) == "disk-preset" || record["fileBackedOnly"] == true {
+		return true, 0, []string{}, record
+	}
+
+	current := map[string]any{}
+	if raw := s.document.Get("preset"); raw.Exists() {
+		_ = json.Unmarshal([]byte(raw.Raw), &current)
+	}
+	importedPreset, _ := record["importedPreset"].(map[string]any)
+	previousPreset, _ := record["previousPreset"].(map[string]any)
+	restoredFields = []string{}
+	for key := range importedPreset {
+		if key == "regexRules" {
+			continue // 对齐 Node getPresetFieldsFromSnapshot
+		}
+		// 仅当当前值仍等于导入值时才回退（避免覆盖用户后续修改）
+		if !snapshotsEqual(current[key], importedPreset[key]) {
+			continue
+		}
+		if previousValue, ok := previousPreset[key]; ok && previousValue != nil {
+			current[key] = cloneSnapshot(previousValue)
+		} else {
+			delete(current, key)
+		}
+		restoredFields = append(restoredFields, key)
+	}
+	sort.Strings(restoredFields)
+
+	currentRules, _ := current["regexRules"].([]any)
+	importedRules, _ := record["importedRegexRules"].([]any)
+	previousRules, hasPrevious := record["previousRegexRules"]
+	if snapshotsEqual(currentRules, importedRules) {
+		removedCount = len(importedRules)
+		if hasPrevious && previousRules != nil {
+			current["regexRules"] = cloneSnapshot(previousRules)
+		} else {
+			delete(current, "regexRules")
+		}
+	} else {
+		removedCount = removeMatchingRulesBySnapshot(currentRules, importedRules)
+		current["regexRules"] = currentRules
+	}
+	_ = s.document.Set("preset", current)
+	return true, removedCount, restoredFields, record
 }
 
 // handlePresetImportDeleteFull 删除单条预设导入记录（对齐 Node DELETE /api/preset/imports/:id）。
 func (s *Server) handlePresetImportDeleteFull(writer http.ResponseWriter, rest string) {
-	records := s.presetImportRecords()
-	var target map[string]any
-	remaining := []map[string]any{}
-	for _, record := range records {
-		if textOf(record["id"]) == rest {
-			target = record
-			continue
-		}
-		remaining = append(remaining, record)
-	}
-	if target == nil {
-		writeJSON(writer, 404, map[string]any{"success": false, "error": "导入记录不存在"})
+	found, removedCount, restoredFields, _ := s.deleteTrackedPresetImport(rest)
+	if !found {
+		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "导入记录不存在"})
 		return
 	}
-	removedCount := 0
-	if previous, ok := target["previousPreset"].(map[string]any); ok && len(previous) > 0 {
-		_ = s.document.Set("preset", previous)
-		if rules, ok := previous["regexRules"].([]any); ok {
-			removedCount = len(rules)
-		}
+	if err := s.document.Save(); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+		return
 	}
-	_ = s.document.Set("imports.presetFiles", toAnyList(remaining))
-	_ = s.document.Save()
-	writeJSON(writer, 200, map[string]any{
-		"success": true, "removedCount": removedCount, "restoredFields": []string{},
-		"message": fmt.Sprintf("已删除预设导入文件，并恢复 %d 个字段，移除 %d 条关联正则", 0, removedCount),
+	s.removePresetImportDiskFile(rest)
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success": true, "removedCount": removedCount, "restoredFields": restoredFields,
+		"message": fmt.Sprintf("已删除预设导入文件，并恢复 %d 个字段，移除 %d 条关联正则", len(restoredFields), removedCount),
 	})
 }
 
@@ -243,39 +420,35 @@ func (s *Server) handlePresetImportBatchDelete(writer http.ResponseWriter, reque
 		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请提供要删除的预设导入记录 ID"})
 		return
 	}
-	records := s.presetImportRecords()
-	index := map[string]map[string]any{}
-	for _, record := range records {
-		index[textOf(record["id"])] = record
-	}
 	deletedIDs := []string{}
 	notFoundIDs := []string{}
+	failed := []map[string]any{}
 	removedCount := 0
-	keep := []map[string]any{}
-	for _, record := range records {
-		if !seen[textOf(record["id"])] {
-			keep = append(keep, record)
-		}
-	}
+	restoredFields := []string{}
+	restoredSeen := map[string]bool{}
 	for _, id := range ids {
-		record, ok := index[id]
-		if !ok {
+		found, removed, restored, _ := s.deleteTrackedPresetImport(id)
+		if !found {
 			notFoundIDs = append(notFoundIDs, id)
 			continue
 		}
 		deletedIDs = append(deletedIDs, id)
-		if rules, ok := record["regexRules"].([]any); ok {
-			removedCount += len(rules)
+		removedCount += removed
+		for _, field := range restored {
+			if !restoredSeen[field] {
+				restoredSeen[field] = true
+				restoredFields = append(restoredFields, field)
+			}
 		}
-		if presetName := textOf(record["presetName"]); presetName != "" {
-			_ = os.Remove(filepath.Join(s.dataDir, "presets", "preset-"+safeBase(presetName)+".json"))
-		}
+		s.removePresetImportDiskFile(id)
 	}
-	_ = s.document.Set("imports.presetFiles", toAnyList(keep))
-	_ = s.document.Save()
+	if err := s.document.Save(); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"success": len(notFoundIDs) == 0, "deletedIds": deletedIDs, "notFoundIds": notFoundIDs,
-		"failed": []any{}, "removedCount": removedCount, "restoredFields": []string{},
+		"success": len(failed) == 0, "deletedIds": deletedIDs, "notFoundIds": notFoundIDs,
+		"failed": failed, "removedCount": removedCount, "restoredFields": restoredFields,
 		"message": fmt.Sprintf("已删除 %d 个预设导入文件", len(deletedIDs)),
 	})
 }
@@ -655,107 +828,6 @@ func (s *Server) handlePresetTune(writer http.ResponseWriter, request *http.Requ
 }
 
 // ---------------- 知识文本导入 ----------------
-
-// chunkKnowledgeText 按 chunkSize 切块（对齐 Node 的分块导入语义：按段落聚合到目标长度）。
-func chunkKnowledgeText(text string, chunkSize int) []string {
-	if chunkSize < 200 {
-		chunkSize = 200
-	}
-	if chunkSize > 4000 {
-		chunkSize = 4000
-	}
-	paragraphs := strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n")
-	chunks := []string{}
-	current := strings.Builder{}
-	flush := func() {
-		chunk := strings.TrimSpace(current.String())
-		if chunk != "" {
-			chunks = append(chunks, chunk)
-		}
-		current.Reset()
-	}
-	for _, paragraph := range paragraphs {
-		trimmed := strings.TrimSpace(paragraph)
-		if trimmed == "" {
-			continue
-		}
-		if current.Len() > 0 && current.Len()+len(trimmed)+1 > chunkSize {
-			flush()
-		}
-		if current.Len() > 0 {
-			current.WriteString("\n")
-		}
-		current.WriteString(trimmed)
-		if len([]rune(trimmed)) > chunkSize {
-			flush()
-		}
-	}
-	flush()
-	return chunks
-}
-
-// handleMemoryKnowledgeImportText 支持 Node 的「文本分块导入」契约。
-func (s *Server) handleMemoryKnowledgeImportText(writer http.ResponseWriter, request *http.Request) {
-	body := decodeBody(request)
-	text := textOf(body["text"])
-	if text == "" {
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "导入文本不能为空"})
-		return
-	}
-	title := firstText(textOf(body["title"]), "小说导入")
-	knowledgeType := "fixed"
-	if textOf(body["knowledgeType"]) == "dynamic" {
-		knowledgeType = "dynamic"
-	}
-	chunkSize := intOr(body["chunkSize"], 1200)
-	chunks := chunkKnowledgeText(text, chunkSize)
-	if len(chunks) == 0 {
-		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "导入文本不能为空"})
-		return
-	}
-	options := s.variableScope(body)
-	database, _, err := s.openActiveMemory()
-	if err != nil {
-		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
-		return
-	}
-	defer database.Close()
-	metadata := objectOf(body["metadata"])
-	if metadata == nil {
-		metadata = map[string]any{}
-	}
-	metadata["note"] = textOf(body["note"])
-	metadata["updatedBy"] = "admin-panel"
-	metadata["source"] = orDefault(textOf(metadata["source"]), "novel-import")
-	metadata["importTitle"] = title
-	metadata["knowledgeType"] = knowledgeType
-	tags := stringListOf(body["tags"])
-	items := []map[string]any{}
-	for index, chunk := range chunks {
-		record := store.KnowledgeEntry{
-			Title:         fmt.Sprintf("%s（%d/%d）", title, index+1, len(chunks)),
-			Content:       chunk,
-			KnowledgeType: knowledgeType,
-			Tags:          tags,
-			Metadata:      metadata,
-		}
-		id, err := database.UpsertKnowledgeEntry(options, record)
-		if err != nil {
-			continue
-		}
-		item, _ := database.GetKnowledgeEntry(id)
-		if item != nil {
-			encoded, _ := json.Marshal(item)
-			entry := map[string]any{}
-			_ = json.Unmarshal(encoded, &entry)
-			items = append(items, entry)
-		}
-	}
-	writeJSON(writer, http.StatusOK, map[string]any{
-		"success": true, "importedCount": len(items), "totalChunks": len(chunks),
-		"items": items, "message": fmt.Sprintf("已导入 %d 条知识", len(items)),
-	})
-}
 
 // ---------------- 世界书提取（Node 契约：filename） ----------------
 

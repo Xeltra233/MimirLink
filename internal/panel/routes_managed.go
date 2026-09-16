@@ -307,14 +307,19 @@ func (s *Server) handleCharacterManage(writer http.ResponseWriter, request *http
 			writeJSON(writer, http.StatusMethodNotAllowed, map[string]any{"success": false, "error": "方法不支持"})
 		}
 	case strings.HasSuffix(rest, "/download"):
-		name := safeBase(strings.TrimSuffix(rest, "/download"))
-		path := filepath.Join(s.dataDir, "characters", name+".png")
+		// 对齐 Node GET /api/characters/:filename/download：按原样文件名查找（含扩展名，不自动补 .png）
+		filename := strings.Trim(strings.TrimSuffix(rest, "/download"), "/")
+		if filename == "" || strings.ContainsAny(filename, "/\\") {
+			writeJSON(writer, http.StatusNotFound, map[string]any{"error": "文件不存在"})
+			return
+		}
+		path := filepath.Join(s.dataDir, "characters", filename)
 		if _, err := os.Stat(path); err != nil {
-			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "角色文件不存在"})
+			writeJSON(writer, http.StatusNotFound, map[string]any{"error": "文件不存在"})
 			return
 		}
 		writer.Header().Set("Content-Type", "image/png")
-		writer.Header().Set("Content-Disposition", "attachment; filename=\""+name+".png\"")
+		writer.Header().Set("Content-Disposition", "attachment; filename=\""+filename+"\"")
 		raw, err := os.ReadFile(path)
 		if err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
@@ -441,15 +446,45 @@ func (s *Server) handleWorldbookUpload(writer http.ResponseWriter, request *http
 
 func (s *Server) handleWorldbookBatchDelete(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
-	deleted := 0
+	// 对齐 Node POST /api/worldbooks/batch-delete：deleted/notFound/failed 都是文件名数组
+	filenames := []string{}
+	seen := map[string]bool{}
 	if items, ok := body["filenames"].([]any); ok {
 		for _, item := range items {
-			if err := os.Remove(filepath.Join(s.dataDir, "worlds", safeBase(textOf(item))+".json")); err == nil {
-				deleted++
+			name := strings.TrimSpace(textOf(item))
+			if name == "" || seen[name] {
+				continue
 			}
+			seen[name] = true
+			filenames = append(filenames, name)
 		}
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "deleted": deleted})
+	if len(filenames) == 0 {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请提供要删除的世界书文件名"})
+		return
+	}
+	deleted := []string{}
+	notFound := []string{}
+	failed := []any{}
+	for _, filename := range filenames {
+		path := filepath.Join(s.dataDir, "worlds", safeBase(filename)+".json")
+		if _, err := os.Stat(path); err != nil {
+			notFound = append(notFound, filename)
+			continue
+		}
+		if err := os.Remove(path); err != nil {
+			failed = append(failed, map[string]any{"filename": filename, "error": err.Error()})
+			continue
+		}
+		deleted = append(deleted, filename)
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"success":  len(failed) == 0,
+		"deleted":  deleted,
+		"notFound": notFound,
+		"failed":   failed,
+		"message":  fmt.Sprintf("已删除 %d 个世界书", len(deleted)),
+	})
 }
 
 func (s *Server) handleWorldbookTest(writer http.ResponseWriter, request *http.Request) {
@@ -674,7 +709,20 @@ func (s *Server) handleRegexImport(writer http.ResponseWriter, request *http.Req
 			"id": record["id"], "type": "regex", "filename": record["filename"],
 			"targetLayer": layer, "createdAt": record["createdAt"], "importedCount": len(nextRules),
 		},
+		"message": "已导入 " + fmt.Sprintf("%d", len(nextRules)) + " 条规则到" + regexLayerLabel(layer),
 	})
+}
+
+// regexLayerLabel 层名中文（对齐 Node 导入提示文案）。
+func regexLayerLabel(layer string) string {
+	switch layer {
+	case "preset":
+		return "预设层"
+	case "character":
+		return "角色层"
+	default:
+		return "全局层"
+	}
 }
 
 // ruleFingerprint 是规则去重键（对齐 Node 的 name|pattern|replacement）。
@@ -1050,6 +1098,14 @@ func (s *Server) handleTestMention(writer http.ResponseWriter, request *http.Req
 	message := orDefault(textOf(body["message"]), textOf(body["prompt"]))
 	if groupID == "" || targetUserID == "" || message == "" {
 		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "群号、目标 QQ 与内容都不能为空", "message": "群号、目标 QQ 与内容都不能为空"})
+		return
+	}
+	if targetUserID == "all" {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "不支持向 @全体成员 主动发送消息", "message": "不支持向 @全体成员 主动发送消息"})
+		return
+	}
+	if !s.testAllowlistGroup(groupID) {
+		writeJSON(writer, http.StatusForbidden, map[string]any{"success": false, "error": "测试功能只能在设置里的群聊白名单中执行，请填写已配置的白名单群号"})
 		return
 	}
 	result, err := s.callBotControl("/control/mention", map[string]any{

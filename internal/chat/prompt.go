@@ -311,16 +311,19 @@ func newRegexProcessor(rawJSON []byte) *regexProcessor {
 	_ = json.Unmarshal(rawJSON, &document)
 	regexConfig, _ := document["regex"].(map[string]any)
 
-	globalRules := parseRuleList(orValue(orValue(orValue(regexConfig["globalRules"], regexConfig["rules"]), nil), nil))
 	presetBound := parseRuleList(regexConfig["presetRules"])
 	characterRules := parseRuleList(regexConfig["characterRules"])
 
-	// 角色绑定层：bindings.<character>.regexRules 与 bindings.global.regexRules
+	// 角色绑定层：bindings.<character>.regexRules 与 bindings.global.regexRules；
+	// 全局层以 bindings.global.regexRules 为准（对齐 Node normalizeConfig 后 regex.rules 与它同源），
+	// bindings.global 缺失时才回退 regex 段。
 	bindings, _ := document["bindings"].(map[string]any)
+	globalRules := []regexRule{}
 	if globalBinding, ok := bindings["global"].(map[string]any); ok {
-		if len(globalRules) == 0 {
-			globalRules = parseRuleList(globalBinding["regexRules"])
-		}
+		globalRules = parseRuleList(globalBinding["regexRules"])
+	}
+	if len(globalRules) == 0 {
+		globalRules = parseRuleList(orValue(orValue(orValue(regexConfig["globalRules"], regexConfig["rules"]), nil), nil))
 	}
 	if len(characterRules) == 0 {
 		characterName := ""

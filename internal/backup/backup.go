@@ -26,6 +26,7 @@ import (
 
 	"mimirlink/internal/config"
 	"mimirlink/internal/mask"
+	"mimirlink/internal/preset"
 )
 
 // Categories 是合法的备份分类（与 Node 版 BACKUP_CATEGORIES 一致）。
@@ -107,6 +108,16 @@ func (o Options) dataDir() string {
 	return filepath.Join(o.RootDir, "data")
 }
 
+// configPath 解析实际配置文件路径：优先 <root>/config/config.json（挂载目录部署），
+// 回退 <root>/config.json（对齐 Node loadConfig 与 cmd/mimir resolveConfigPath）。
+func (o Options) configPath() string {
+	dirConfigPath := filepath.Join(o.RootDir, "config", "config.json")
+	if info, err := os.Stat(dirConfigPath); err == nil && !info.IsDir() {
+		return dirConfigPath
+	}
+	return filepath.Join(o.RootDir, "config.json")
+}
+
 func (o Options) selected() map[string]bool {
 	selected := map[string]bool{}
 	if len(o.Categories) == 0 {
@@ -156,7 +167,7 @@ func Export(options Options, writer io.Writer) error {
 	}
 	defer os.RemoveAll(tempDir)
 
-	document, err := config.Load(filepath.Join(options.RootDir, "config.json"))
+	document, err := config.Load(options.configPath())
 	if err != nil {
 		return err
 	}
@@ -348,7 +359,7 @@ func Restore(options Options, archivePath string) (*Changes, error) {
 		return nil, err
 	}
 
-	document, err := config.Load(filepath.Join(options.RootDir, "config.json"))
+	document, err := config.Load(options.configPath())
 	if err != nil {
 		return nil, err
 	}
@@ -435,6 +446,13 @@ func Restore(options Options, archivePath string) (*Changes, error) {
 
 		// corpus 根文件
 		if selected["corpus"] {
+			// 靶场快照目录（导出包含 range-snapshots，恢复也要还原，否则快照丢失）
+			snapshotSource := filepath.Join(backupDataDir, "range-snapshots")
+			if exists(snapshotSource) {
+				if err := mergeDir(snapshotSource, filepath.Join(dataDir, "range-snapshots"), changes); err != nil {
+					return nil, err
+				}
+			}
 			for _, name := range []string{"range-corpus.json", "range-corpus-embeddings.json", "range-prefs.json"} {
 				source := filepath.Join(backupDataDir, name)
 				if !exists(source) {
@@ -444,6 +462,31 @@ func Restore(options Options, archivePath string) (*Changes, error) {
 					return nil, err
 				}
 				changes.replaced("data/" + name)
+			}
+		}
+		// 预设导入记录重建（对齐 Node：恢复后按备份内的预设文件同步 config.imports.presetFiles）
+		if selected["presets"] {
+			restoredPresetIDs := []string{}
+			if entries, err := os.ReadDir(filepath.Join(backupDataDir, "presets")); err == nil {
+				for _, entry := range entries {
+					if entry.IsDir() || !strings.HasSuffix(strings.ToLower(entry.Name()), ".json") {
+						continue
+					}
+					id := strings.TrimSuffix(entry.Name(), filepath.Ext(entry.Name()))
+					if id != "" {
+						restoredPresetIDs = append(restoredPresetIDs, id)
+					}
+				}
+				sort.Strings(restoredPresetIDs)
+			}
+			if len(restoredPresetIDs) > 0 {
+				imported, _, _ := preset.SyncFiles(document, preset.Options{
+					DataDir: dataDir, ImportPosition: "append", DiskFileIDs: restoredPresetIDs,
+				})
+				if len(imported) > 0 {
+					configDirty = true
+					changes.replaced(fmt.Sprintf("预设导入记录 (%d 条)", len(imported)))
+				}
 			}
 		}
 	}

@@ -26,7 +26,7 @@ func newTestServer(t *testing.T) (*Server, string) {
 	}
 	raw := []byte(`{
 		"auth": {"enabled": false},
-		"chat": {"dataDir": "` + filepath.ToSlash(dataDir) + `", "defaultCharacter": "测试角色"},
+		"chat": {"dataDir": "` + filepath.ToSlash(dataDir) + `", "defaultCharacter": "测试角色", "allowedGroups": ["99001"]},
 		"server": {"port": 8139},
 		"memory": {"storage": {"path": "` + strings.ReplaceAll(filepath.Join(dataDir, "chats", "memory.sqlite"), `\`, `\\`) + `"}}
 	}`)

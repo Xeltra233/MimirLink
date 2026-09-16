@@ -80,6 +80,12 @@ type Runtime struct {
 	// 连发消息聚合调度（惰性初始化）
 	aggregateMu sync.Mutex
 	aggregator  *aggregateState
+	// 最近一次路由判定（面板状态展示 / 控制接口），对齐 Node lastRoutingSnapshot
+	routingMu   sync.RWMutex
+	lastRouting map[string]any
+	// 戳一戳通知冷却（对齐 Node _lastPokeResponse 15 秒）
+	pokeMu     sync.Mutex
+	lastPokeAt time.Time
 }
 
 // New 创建运行时。
@@ -165,6 +171,13 @@ func (r *Runtime) refreshAIClient() {
 func (r *Runtime) HandleEvent(event map[string]any) bool {
 	r.refreshDerivedState()
 	eventType := stringField(event, "post_type")
+	if eventType == "notice" {
+		// 戳一戳通知（对齐 Node handlePokeEvent：只回应戳 bot 的事件）
+		if stringField(event, "notice_type") == "notify" && stringField(event, "sub_type") == "poke" {
+			return r.handlePokeNotice(event)
+		}
+		return false
+	}
 	if eventType != "message" {
 		return false
 	}
@@ -178,15 +191,6 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	}
 	messageType := stringField(event, "message_type")
 	groupID := idField(event, "group_id")
-	if messageType == "group" {
-		if !r.groupAllowed(groupID) {
-			r.logger.Printf("[聊天] 群 %s 不在白名单，跳过", groupID)
-			return false
-		}
-		if r.requireAtInGroup() && !containsAtSelf(event["message"], selfID) {
-			return false
-		}
-	}
 
 	// 消息幂等去重（对齐 Node runtime.js 的去重职责：同一 message_id 只处理一次）
 	if messageID := idField(event, "message_id"); messageID != "" {
@@ -212,64 +216,91 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 		return false
 	}
 
-	// 管理员戳一戳命令（对齐 Node executeAdminPokeCommand：命中即返回，早于 LLM）
-	if r.maybeHandleAdminPokeCommand(event, messageType, groupID, userID, text) {
+	// /llm：管理员切换 LLM 总开关（对齐 Node handleMessage 的首个命令分支）
+	if r.handleLLMCommand(event, messageType, groupID, userID, text) {
 		return true
 	}
 
-	// 点歌指令：独立于 LLM 的能力，命中即返回（对齐 Node handleMusicCommand）
+	// 点歌指令：独立于 LLM 的能力，命中即返回（对齐 Node handleMusicCommand，内部含访问控制）
 	if r.tryHandleMusicCommand(event, messageType, groupID, userID, text) {
 		return true
 	}
 
 	// LLM 开关（对齐 Node：`if (!llmEnabled) return;` —— 关闭时不处理任何消息，
-	// 也不写入历史；音乐等独立能力在此之前已处理）
+	// 也不写入历史；/llm 与点歌等独立能力在此之前已处理）
 	if !r.llmEnabled() {
 		r.logger.Printf("[聊天] LLM 已关闭（runtime.llmEnabled=false），忽略消息 [%s]", messageType)
 		return false
 	}
 
-	sessionKey := r.sessionKey(messageType, groupID, userID)
+	// 管理员命令：人物档案手动分析 → 戳一戳 → 主动 @（对齐 Node handleMessage 顺序）
+	if r.maybeHandleParticipantProfileManualCommand(event, messageType, groupID, userID, text) {
+		return true
+	}
+	if r.maybeHandleAdminPokeCommand(event, messageType, groupID, userID, text) {
+		return true
+	}
+	if r.maybeHandleAdminMentionCommand(event, messageType, groupID, userID, text) {
+		return true
+	}
+
+	// 触发路由（对齐 Node buildRoutingDecision：触发模式/关键词/前缀/@/回复触发 + 访问控制）
 	isAtBotSelf := containsAtSelf(event["message"], selfID)
+	info := r.buildReplyInfo(event, segments)
+	sessionKey := r.sessionKey(messageType, groupID, userID)
+	decision := r.buildRoutingDecision(event, text, isAtBotSelf, info)
+	repeatWatch := r.shouldObserveGroupRepeat(event, text)
+	if !decision.ShouldRespond && !repeatWatch {
+		r.recordRoutingSnapshot(event, sessionKey, decision, info, info.ToBotSet && info.ToBot)
+		r.logger.Printf("[路由] 消息未触发回复 [%s] skip=%s", sessionKey, decision.SkipReason)
+		return false
+	}
+	if decision.ShouldRespond {
+		r.recordRoutingSnapshot(event, sessionKey, decision, info, info.ToBotSet && info.ToBot)
+		// 表情回应：收到消息后自动加表情表示已收到（对齐 Node sendEmojiReactionForEvent）
+		r.sendEmojiReactionForEvent(event)
+	}
+	triggerReason := decision.TriggerReason
+	if !decision.ShouldRespond {
+		triggerReason = "group_repeat_watch"
+	}
 
 	// 连发聚合（对齐 Node runtime.js：缓冲窗口内合并为一条输入再交给模型）
+	item := pendingMessage{
+		event:           event,
+		sessionKey:      sessionKey,
+		text:            text,
+		messageType:     messageType,
+		groupID:         groupID,
+		userID:          userID,
+		isAtBotSelf:     isAtBotSelf,
+		triggerReason:   triggerReason,
+		replyInfo:       info,
+		observationOnly: !decision.ShouldRespond,
+	}
 	if enabled, windowMs, _, _ := r.aggregateSettings(); enabled {
-		accepted := r.enqueueAggregated(pendingMessage{
-			event:         event,
-			sessionKey:    sessionKey,
-			text:          text,
-			messageType:   messageType,
-			groupID:       groupID,
-			userID:        userID,
-			isAtBotSelf:   isAtBotSelf,
-			triggerReason: r.triggerReasonFor(messageType, groupID, isAtBotSelf),
-		})
+		accepted := r.enqueueAggregated(item)
 		if accepted {
 			r.logger.Printf("[调度] 消息进入聚合缓冲（%dms 窗口）[%s]: %s", windowMs, sessionKey, truncateForLog(text, 40))
 			return true
 		}
 	}
-	return r.processIncoming(pendingMessage{
-		event:       event,
-		sessionKey:  sessionKey,
-		text:        text,
-		messageType: messageType,
-		groupID:     groupID,
-		userID:      userID,
-		isAtBotSelf: isAtBotSelf,
-	}, false)
+	return r.processIncoming(item, false)
 }
 
-// triggerReasonFor 生成触发原因（对齐 Node routingDecision.triggerReason）。
-func (r *Runtime) triggerReasonFor(messageType string, groupID string, isAtBotSelf bool) string {
-	switch {
-	case messageType == "private":
-		return "private_message"
-	case isAtBotSelf:
-		return "group_at_bot"
-	default:
-		return "group_message"
+// shouldObserveGroupRepeat 判断是否为「仅观察复读」消息（对齐 Node shouldObserveGroupRepeatMessage）。
+func (r *Runtime) shouldObserveGroupRepeat(event map[string]any, text string) bool {
+	config := NormalizeGroupRepeatConfig(rawMapField(r.document, "chat.groupRepeat"))
+	if !config.Enabled {
+		return false
 	}
+	if stringField(event, "message_type") != "group" {
+		return false
+	}
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	return r.isAllowed(event)
 }
 
 // processIncoming 执行单条（或聚合后）消息的完整处理流程。
@@ -281,6 +312,11 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	groupID := item.groupID
 	userID := item.userID
 	isAtBotSelf := item.isAtBotSelf
+
+	// 仅观察群复读的消息（对齐 Node group_repeat_watch：不触发 LLM、不写入上下文）
+	if item.observationOnly {
+		return r.maybeSendGroupRepeat(item)
+	}
 
 	// 注入风险检测（对齐 Node detectPromptInjectionRisk：只扫描用户输入本身）
 	injectionRisk := DetectPromptInjectionRisk(text)
@@ -295,7 +331,10 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		r.logger.Printf("[安全] 疑似注入 (%s) [%s] 规则:%s", injectionRisk.Level, sessionKey, strings.Join(injectionRisk.MatchedRules, ","))
 	}
 	// 引用消息解析（对齐 Node buildReplyInfo：snippet 前置 + 事件头扩展字段）
-	replyInfo := r.buildReplyInfo(event, messageSegments(event["message"]))
+	replyInfo := item.replyInfo
+	if replyInfo.FetchStatus == "" {
+		replyInfo = r.buildReplyInfo(event, messageSegments(event["message"]))
+	}
 	if replyInfo.Snippet != "" {
 		text = applyReplySnippet(text, replyInfo)
 	}
@@ -345,17 +384,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	r.maybeSummarize(sessionKey)
 
 	// 群复读检测（对齐 Node group-repeat：命中直发复读文本并跳过 LLM）
-	repeatConfig := NormalizeGroupRepeatConfig(rawMapField(r.document, "chat.groupRepeat"))
-	if repeatResult := r.repeatDetector.ObserveMessage(repeatConfig, event, text, r.bot.SelfID(), time.Now()); repeatResult.ShouldRepeat {
-		r.logger.Printf("[复读] 命中群聊复读直发（%d/%d）：%s", repeatResult.Count, repeatResult.TriggerCount, repeatResult.RepeatText)
-		if err := r.appendMessage(sessionKey, "assistant", repeatResult.RepeatText, map[string]any{
-			"messageType": messageType, "generatedBy": "group_repeat", "groupId": groupID, "userId": userID,
-		}); err != nil {
-			r.logger.Printf("[复读] 写入复读消息失败: %v", err)
-		}
-		if err := r.bot.SendGroupMessage(groupID, []map[string]any{{"type": "text", "data": map[string]any{"text": repeatResult.RepeatText}}}); err != nil {
-			r.logger.Printf("[复读] 发送复读失败: %v", err)
-		}
+	if r.maybeSendGroupRepeat(item) {
 		return true
 	}
 	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
@@ -441,30 +470,28 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	return true
 }
 
-// ---------------- 触发规则 ----------------
+// ---------------- 触发规则 / 群复读 ----------------
 
-func (r *Runtime) groupAllowed(groupID string) bool {
-	allowed := stringListField(r.document, "chat.allowedGroups")
-	if len(allowed) == 0 {
-		blocked := stringListField(r.document, "chat.blockedGroups")
-		for _, item := range blocked {
-			if item == groupID {
-				return false
-			}
-		}
-		return true
+// maybeSendGroupRepeat 观测群复读；命中则写入并真实发送，返回是否已发送
+// （对齐 Node group-repeat 直发路径，服务普通消息与 group_repeat_watch 两种入口）。
+func (r *Runtime) maybeSendGroupRepeat(item pendingMessage) bool {
+	// 戳一戳等 notice 事件不参与复读观察（对齐 Node isPokeInteraction 排除）
+	if stringField(item.event, "post_type") == "notice" {
+		return false
 	}
-	for _, item := range allowed {
-		if item == groupID {
-			return true
-		}
+	repeatConfig := NormalizeGroupRepeatConfig(rawMapField(r.document, "chat.groupRepeat"))
+	repeatResult := r.repeatDetector.ObserveMessage(repeatConfig, item.event, item.text, r.bot.SelfID(), time.Now())
+	if !repeatResult.ShouldRepeat {
+		return false
 	}
-	return false
-}
-
-func (r *Runtime) requireAtInGroup() bool {
-	if r.document.Exists("chat.requireAtInGroup") {
-		return r.document.Bool("chat.requireAtInGroup")
+	r.logger.Printf("[复读] 命中群聊复读直发（%d/%d）：%s", repeatResult.Count, repeatResult.TriggerCount, repeatResult.RepeatText)
+	if err := r.appendMessage(item.sessionKey, "assistant", repeatResult.RepeatText, map[string]any{
+		"messageType": item.messageType, "generatedBy": "group_repeat", "groupId": item.groupID, "userId": item.userID,
+	}); err != nil {
+		r.logger.Printf("[复读] 写入复读消息失败: %v", err)
+	}
+	if err := r.bot.SendGroupMessage(item.groupID, []map[string]any{{"type": "text", "data": map[string]any{"text": repeatResult.RepeatText}}}); err != nil {
+		r.logger.Printf("[复读] 发送复读失败: %v", err)
 	}
 	return true
 }
@@ -1685,7 +1712,11 @@ func messageMetadataUserID(message store.Message) string {
 }
 
 // tryHandleMusicCommand 处理 /music 点歌指令；未启用或非命令时返回 false 交给 LLM。
+// 访问控制与表情回应对齐 Node handleMusicCommand：isAllowed 不过不放行，命令被接受时回应表情。
 func (r *Runtime) tryHandleMusicCommand(event map[string]any, messageType string, groupID string, userID string, plainText string) bool {
+	if !r.isAllowed(event) {
+		return false
+	}
 	config := music.NormalizeConfig(r.musicConfigRaw())
 	handler := &music.Handler{
 		Config:     r.musicConfigRaw,
@@ -1716,6 +1747,9 @@ func (r *Runtime) tryHandleMusicCommand(event map[string]any, messageType string
 		},
 	}
 	result := handler.Handle(context.Background(), event, plainText, senders)
+	if result.Handled {
+		r.sendEmojiReactionForEvent(event)
+	}
 	return result.Handled
 }
 

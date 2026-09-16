@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -271,5 +272,109 @@ func TestExtractRejectsPathTraversal(t *testing.T) {
 
 	if err := Extract(archive, t.TempDir()); err == nil {
 		t.Fatalf("路径穿越归档应被拒绝")
+	}
+}
+
+// 恢复到新目录后靶场快照目录必须一起还原（导出包含 range-snapshots，恢复不能丢）
+func TestRestoreRestoresRangeSnapshots(t *testing.T) {
+	source := buildFixtureRoot(t)
+	dataDir := filepath.Join(source, "data")
+	if err := os.MkdirAll(filepath.Join(dataDir, "range-snapshots"), 0o755); err != nil {
+		t.Fatalf("创建快照目录失败: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "range-snapshots", "snap1.json"), []byte(`{"id":"snap1"}`), 0o644); err != nil {
+		t.Fatalf("写入快照失败: %v", err)
+	}
+
+	archive := filepath.Join(t.TempDir(), "backup.tar.gz")
+	file, err := os.Create(archive)
+	if err != nil {
+		t.Fatalf("创建归档失败: %v", err)
+	}
+	if err := Export(Options{RootDir: source}, file); err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	_ = file.Close()
+
+	target := buildFixtureRoot(t)
+	// 目标端预先存在旧快照，确认被备份内容覆盖
+	oldSnapshot := filepath.Join(target, "data", "range-snapshots", "snap1.json")
+	if err := os.MkdirAll(filepath.Dir(oldSnapshot), 0o755); err != nil {
+		t.Fatalf("创建目标快照目录失败: %v", err)
+	}
+	if err := os.WriteFile(oldSnapshot, []byte(`{"id":"old"}`), 0o644); err != nil {
+		t.Fatalf("写入旧快照失败: %v", err)
+	}
+
+	if _, err := Restore(Options{RootDir: target, Categories: []string{"all"}}, archive); err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+	restored, err := os.ReadFile(oldSnapshot)
+	if err != nil {
+		t.Fatalf("恢复后读取快照失败: %v", err)
+	}
+	if string(restored) != `{"id":"snap1"}` {
+		t.Fatalf("快照未被还原: %s", restored)
+	}
+}
+
+// 全局正则规则必须进入 regex 快照（对齐 Node normalizeConfig 的 regex.rules  bindings.global 同步），
+// 且 characters/regex 的字段形状固定存在（缺失为 null），避免跨版本恢复缺键。
+func TestExportRegexSnapshotSyncsGlobalRulesAndKeepsShape(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(filepath.Join(dataDir, "chats"), 0o755); err != nil {
+		t.Fatalf("创建目录失败: %v", err)
+	}
+	configJSON := `{
+  "chat": { "dataDir": ` + quote(dataDir) + ` },
+  "regex": { "enabled": true, "usePresetRules": true, "rules": [] },
+  "bindings": {
+    "global": { "regexRules": [{ "name": "全局规则", "pattern": "a", "replacement": "b", "enabled": true }] },
+    "characters": { "角色A": { "regexRules": [] } }
+  }
+}`
+	if err := os.WriteFile(filepath.Join(root, "config.json"), []byte(configJSON), 0o644); err != nil {
+		t.Fatalf("写入配置失败: %v", err)
+	}
+
+	archive := filepath.Join(t.TempDir(), "backup.tar.gz")
+	file, err := os.Create(archive)
+	if err != nil {
+		t.Fatalf("创建归档失败: %v", err)
+	}
+	if err := Export(Options{RootDir: root}, file); err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	_ = file.Close()
+
+	extracted := t.TempDir()
+	if err := Extract(archive, extracted); err != nil {
+		t.Fatalf("解包失败: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(extracted, "data", "_regex_rules_snapshot.json"))
+	if err != nil {
+		t.Fatalf("读取快照失败: %v", err)
+	}
+	var snapshot map[string]any
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		t.Fatalf("解析快照失败: %v", err)
+	}
+	regexSection, _ := snapshot["regex"].(map[string]any)
+	rules, _ := regexSection["rules"].([]any)
+	if len(rules) != 1 {
+		t.Fatalf("regex.rules 未同步 bindings.global.regexRules: %v", regexSection["rules"])
+	}
+	for _, key := range []string{"regex", "presetRegexRules", "globalRegexRules", "globalPresetRegexRules", "importsRegexFiles", "characters"} {
+		if _, ok := snapshot[key]; !ok {
+			t.Fatalf("快照缺少固定字段 %s: %v", key, snapshot)
+		}
+	}
+	characters, _ := snapshot["characters"].(map[string]any)
+	entry, _ := characters["角色A"].(map[string]any)
+	for _, key := range []string{"regexRules", "presetRegexRules", "importedFromCardRegexRules"} {
+		if _, ok := entry[key]; !ok {
+			t.Fatalf("角色快照缺少固定字段 %s: %v", key, entry)
+		}
 	}
 }

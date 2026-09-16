@@ -37,6 +37,8 @@ type Handler interface {
 	AnalyzeParticipantProfile(request ProfileRequest) (map[string]any, error)
 	// RefreshParticipantName 通过 OneBot 拉取昵称并回写档案。
 	RefreshParticipantName(request ProfileRequest) (map[string]any, error)
+	// TestAI 执行一次带工具上下文的测试对话（对齐 Node POST /api/test/ai）。
+	TestAI(request TestAIRequest) (map[string]any, error)
 }
 
 // MentionRequest 是主动 @ 测试的请求。
@@ -47,7 +49,14 @@ type MentionRequest struct {
 	Message      string `json:"message"`
 }
 
-// ProfileRequest 是人物档案相关请求。
+// TestAIRequest 是 AI 测试对话请求（对齐 Node /api/test/ai 的 body）。
+type TestAIRequest struct {
+	Message      string `json:"message"`
+	GroupID      string `json:"groupId"`
+	TargetUserID string `json:"targetUserId"`
+	TargetName   string `json:"targetName"`
+}
+
 type ProfileRequest struct {
 	EntryID       string `json:"entryId"`
 	ParticipantID string `json:"participantId"`
@@ -116,6 +125,7 @@ func Start(handler Handler, dataDir string, logger *log.Logger) (*Server, error)
 	mux.HandleFunc("/control/mention", instance.handle(instance.handleMention))
 	mux.HandleFunc("/control/participant-profile/analyze", instance.handle(instance.handleAnalyze))
 	mux.HandleFunc("/control/participant-profile/refresh-name", instance.handle(instance.handleRefreshName))
+	mux.HandleFunc("/control/test-ai", instance.handle(instance.handleTestAI))
 	instance.server = &http.Server{Handler: mux}
 	if err := instance.writeControlFile(); err != nil {
 		_ = listener.Close()
@@ -242,6 +252,22 @@ func (s *Server) handleRefreshName(writer http.ResponseWriter, request *http.Req
 		return
 	}
 	result, err := s.handler.RefreshParticipantName(payload)
+	if err != nil {
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	result["success"] = true
+	writeJSON(writer, http.StatusOK, result)
+}
+
+// handleTestAI 执行带工具上下文的测试对话（对齐 Node /api/test/ai 的 chatWithTools 语义）。
+func (s *Server) handleTestAI(writer http.ResponseWriter, request *http.Request) {
+	var payload TestAIRequest
+	if err := json.NewDecoder(request.Body).Decode(&payload); err != nil {
+		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "请求体不是合法 JSON"})
+		return
+	}
+	result, err := s.handler.TestAI(payload)
 	if err != nil {
 		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
 		return
