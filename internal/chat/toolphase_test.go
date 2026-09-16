@@ -113,7 +113,7 @@ func TestBuildToolPhaseMessages(t *testing.T) {
 		{Role: "user", Content: "帮我查一下"},
 		{Role: "assistant", Content: "预填开头"},
 	}
-	phase := BuildToolPhaseMessages(messages, []string{"【工具使用总则】\n- 规则"}, "")
+	phase := BuildToolPhaseMessages(messages, []string{"【工具使用总则】\n- 规则"}, "", "")
 	if len(phase) != 2 {
 		t.Fatalf("应保留 2 条（说明+用户），实际 %d", len(phase))
 	}
@@ -127,7 +127,7 @@ func TestBuildToolPhaseMessages(t *testing.T) {
 		t.Fatalf("不应带人设或预填: %s", flattenMessages(phase))
 	}
 	// 无说明时只留对话段
-	plain := BuildToolPhaseMessages(messages, nil, "")
+	plain := BuildToolPhaseMessages(messages, nil, "", "")
 	if len(plain) != 1 || plain[0].Role != "user" {
 		t.Fatalf("无说明时应只剩用户段: %v", plain)
 	}
@@ -188,7 +188,7 @@ func TestGenerateReplyTwoPhase(t *testing.T) {
 		{Role: "system", Content: "你是测试角色，回答要简短。"},
 		{Role: "user", Content: "帮我提醒他交作业"},
 	}
-	reply, finalMessages, err := runtime.generateReply(context.Background(), messages, scope)
+	reply, finalMessages, err := runtime.generateReply(context.Background(), messages, scope, "group:99001")
 	if err != nil {
 		t.Fatalf("两阶段执行失败: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestGenerateReplyFallback(t *testing.T) {
 		{Role: "system", Content: "你是测试角色，回答要简短。"},
 		{Role: "user", Content: "帮我提醒他交作业"},
 	}
-	reply, _, err := runtime.generateReply(context.Background(), messages, scope)
+	reply, _, err := runtime.generateReply(context.Background(), messages, scope, "group:99001")
 	if err != nil {
 		t.Fatalf("回退后不应报错: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestBuildToolPhaseScene(t *testing.T) {
 		{Role: "assistant", Content: "早"},
 		{Role: "user", Content: "[群聊|QQ:222|昵称:阿乙|群号:99001|群名:测试群|时间:2026/9/16 17:21:24|eventType:message|isAtBot:false] 犬皇在吗"},
 		{Role: "user", Content: "[群聊|QQ:111|昵称:阿甲|群号:99001|群名:测试群|时间:2026/9/16 17:22:24|eventType:message|isAtBot:true] 帮我@一下"},
-	}, "测试角色")
+	}, "测试角色", "group:99001")
 	for _, expected := range []string{
 		"【当前场景】",
 		"你正在以角色「测试角色」参与这次对话",
@@ -312,14 +312,14 @@ func TestBuildToolPhaseScene(t *testing.T) {
 func TestBuildToolPhaseScenePrivateAndEmpty(t *testing.T) {
 	scene := BuildToolPhaseScene([]ai.Message{
 		{Role: "user", Content: "[私聊|QQ:333|昵称:阿丙|群号:N/A|群名:N/A|时间:x] 你好"},
-	}, "")
+	}, "", "private:333")
 	if !strings.Contains(scene, "当前会话: 私聊 QQ:333") || !strings.Contains(scene, "当前发言人: 阿丙(333)") {
 		t.Fatalf("私聊场景不符: %s", scene)
 	}
-	if scene := BuildToolPhaseScene([]ai.Message{{Role: "user", Content: "你好"}}, ""); scene != "" {
+	if scene := BuildToolPhaseScene([]ai.Message{{Role: "user", Content: "你好"}}, "", ""); scene != "" {
 		t.Fatalf("无信息时应为空: %s", scene)
 	}
-	if scene := BuildToolPhaseScene(nil, ""); scene != "" {
+	if scene := BuildToolPhaseScene(nil, "", ""); scene != "" {
 		t.Fatalf("空消息应为空: %s", scene)
 	}
 }
@@ -329,7 +329,7 @@ func TestBuildToolPhaseMessagesWithScene(t *testing.T) {
 	phase := BuildToolPhaseMessages([]ai.Message{
 		{Role: "system", Content: "人设卡"},
 		{Role: "user", Content: "[群聊|QQ:111|昵称:阿甲|群号:99001|群名:测试群|时间:x] 帮我@一下"},
-	}, []string{"【工具使用总则】"}, "测试角色")
+	}, []string{"【工具使用总则】"}, "测试角色", "group:99001")
 	if len(phase) != 3 {
 		t.Fatalf("应为 场景卡+工具说明+用户 三条，实际 %d", len(phase))
 	}
@@ -346,8 +346,38 @@ func TestBuildToolPhaseScenePrefersRealGroupName(t *testing.T) {
 	scene := BuildToolPhaseScene([]ai.Message{
 		{Role: "user", Content: "[群聊|QQ:111|昵称:阿甲|群号:99001|群名:真名群|时间:x] 早上好"},
 		{Role: "user", Content: "[群聊|QQ:222|昵称:阿乙|群号:99001|群名:N/A|时间:x] 在吗"},
-	}, "")
+	}, "", "group:99001")
 	if !strings.Contains(scene, "当前会话: 群聊「真名群」(99001)") {
 		t.Fatalf("应优先使用历史真群名: %s", scene)
+	}
+}
+
+// TestBuildToolPhaseScenePrivate：私聊不出“近期发言人”，只保留当前发言人。
+func TestBuildToolPhaseScenePrivate(t *testing.T) {
+	scene := BuildToolPhaseScene([]ai.Message{
+		{Role: "user", Content: "[私聊|QQ:333|昵称:阿丙|群号:N/A|群名:N/A|时间:x] 早上好"},
+		{Role: "user", Content: "[私聊|QQ:333|昵称:阿丙|群号:N/A|群名:N/A|时间:x] 在吗"},
+	}, "", "private:333")
+	if strings.Contains(scene, "近期发言人") {
+		t.Fatalf("私聊不应出现近期发言人: %s", scene)
+	}
+	if !strings.Contains(scene, "当前发言人: 阿丙(333)") {
+		t.Fatalf("私聊应保留当前发言人: %s", scene)
+	}
+}
+
+// TestBuildToolPhaseSceneFiltersOtherChats：其他群/其他人私聊的消息不进入场景卡。
+func TestBuildToolPhaseSceneFiltersOtherChats(t *testing.T) {
+	scene := BuildToolPhaseScene([]ai.Message{
+		{Role: "user", Content: "[群聊|QQ:111|昵称:甲|群号:99001|群名:本群|时间:x] 你好"},
+		{Role: "user", Content: "[群聊|QQ:222|昵称:乙|群号:88888|群名:别群|时间:x] 路过"},
+		{Role: "user", Content: "[私聊|QQ:333|昵称:丙|群号:N/A|群名:N/A|时间:x] 私聊消息"},
+		{Role: "user", Content: "[群聊|QQ:444|昵称:丁|群号:99001|群名:本群|时间:x] 在吗"},
+	}, "", "group:99001")
+	if strings.Contains(scene, "乙") || strings.Contains(scene, "丙") {
+		t.Fatalf("其他聊天的人不应出现: %s", scene)
+	}
+	if !strings.Contains(scene, "甲(111)") || !strings.Contains(scene, "丁(444)") {
+		t.Fatalf("本群成员应保留: %s", scene)
 	}
 }

@@ -296,3 +296,24 @@ test('buildToolPhaseScene 群名优先取历史里的真名', () => {
     ], '');
     assert.match(scene, /当前会话: 群聊「真名群」\(99001\)/);
 });
+
+test('buildToolPhaseScene 私聊不出近期发言人', () => {
+    const scene = buildToolPhaseScene([
+        { role: 'user', content: '[私聊|QQ:333|昵称:阿丙|群号:N/A|群名:N/A|时间:x] 早上好' },
+        { role: 'user', content: '[私聊|QQ:333|昵称:阿丙|群号:N/A|群名:N/A|时间:x] 在吗' }
+    ], '', 'private:333');
+    assert.doesNotMatch(scene, /近期发言人/);
+    assert.match(scene, /当前发言人: 阿丙\(333\)/);
+});
+
+test('buildToolPhaseScene 按当前聊天范围过滤其他群/私聊', () => {
+    const scene = buildToolPhaseScene([
+        { role: 'user', content: '[群聊|QQ:111|昵称:甲|群号:99001|群名:本群|时间:x] 你好' },
+        { role: 'user', content: '[群聊|QQ:222|昵称:乙|群号:88888|群名:别群|时间:x] 路过' },
+        { role: 'user', content: '[私聊|QQ:333|昵称:丙|群号:N/A|群名:N/A|时间:x] 私聊消息' },
+        { role: 'user', content: '[群聊|QQ:444|昵称:丁|群号:99001|群名:本群|时间:x] 在吗' }
+    ], '', 'group:99001');
+    assert.doesNotMatch(scene, /乙|丙/);
+    assert.match(scene, /甲\(111\)/);
+    assert.match(scene, /丁\(444\)/);
+});

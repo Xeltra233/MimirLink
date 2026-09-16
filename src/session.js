@@ -8,6 +8,7 @@ import path from 'path';
 import { DatabaseSync } from 'node:sqlite';
 
 import { getParticipantProfileConfig } from './participant-profile-config.js';
+import { chatScopePullLimit, filterMessagesForChat } from './chat-scope.js';
 
 function ensureDir(dirPath) {
     if (!fs.existsSync(dirPath)) {
@@ -1323,11 +1324,16 @@ export class SessionManager {
         }
     }
 
-    getContext(sessionId, limit = null) {
+    getContext(sessionId, limit = null, scopeKey = '') {
         this.ensureSession(sessionId);
+        const effectiveLimit = limit ?? this.maxHistoryLength;
+        let recentMessages = this.getHistory(sessionId, scopeKey ? chatScopePullLimit(effectiveLimit) : effectiveLimit);
+        if (scopeKey) {
+            recentMessages = filterMessagesForChat(recentMessages, scopeKey).slice(-effectiveLimit);
+        }
         return {
             sessionId,
-            recentMessages: this.getHistory(sessionId, limit),
+            recentMessages,
             summaries: this.getSummaries(sessionId),
             stickyKeys: this.getStickyEntryKeys(sessionId)
         };

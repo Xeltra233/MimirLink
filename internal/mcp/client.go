@@ -835,20 +835,20 @@ func containsString(items []string, target string) bool {
 
 // ServerStatus 是单个服务器的运行状态（面板展示用）。
 type ServerStatus struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Enabled   bool           `json:"enabled"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
 	// State 对齐 Node：connected / connecting / error / disabled
-	State     string         `json:"state"`
-	Transport string         `json:"transport"`
-	Command   string         `json:"command,omitempty"`
-	URL       string         `json:"url,omitempty"`
-	Connected bool           `json:"connected"`
-	RetryCount int           `json:"retryCount"`
-	ToolCount int            `json:"toolCount"`
-	LastError string         `json:"lastError,omitempty"`
-	Tools     []ToolSummary  `json:"tools"`
-	Config    map[string]any `json:"config,omitempty"`
+	State      string         `json:"state"`
+	Transport  string         `json:"transport"`
+	Command    string         `json:"command,omitempty"`
+	URL        string         `json:"url,omitempty"`
+	Connected  bool           `json:"connected"`
+	RetryCount int            `json:"retryCount"`
+	ToolCount  int            `json:"toolCount"`
+	LastError  string         `json:"lastError,omitempty"`
+	Tools      []ToolSummary  `json:"tools"`
+	Config     map[string]any `json:"config,omitempty"`
 }
 
 // ToolSummary 是面板展示的工具摘要（对齐 Node getStatus 的 tools 形状）。
@@ -948,6 +948,7 @@ func (c *Client) StatusPayload() map[string]any {
 		"servers":        c.Status(),
 	}
 }
+
 // Reconnect 重连单个服务器（断开旧连接后按当前配置重新握手）。
 func (c *Client) Reconnect(serverID string) error {
 	c.mu.Lock()

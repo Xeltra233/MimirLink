@@ -3063,7 +3063,11 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 userMessage: req.body.userMessage || '',
                 context: req.body.context || { recentMessages: [], summaries: [] },
                 stickyKeys: new Set(req.body.stickyKeys || []),
-                runtimeContext: req.body.runtimeContext || {}
+                runtimeContext: req.body.runtimeContext || {},
+                // 两阶段场景卡按当前聊天范围过滤（私聊不出近期发言人）
+                messageType: req.body.messageType,
+                groupId: req.body.groupId,
+                userId: req.body.userId
             }, {
                 config,
                 characterManager,
@@ -4826,7 +4830,8 @@ export function setupRoutes(app, config, saveConfig, managers) {
             worldbook: worldBookManager.getCurrentWorldBook()?.name || '未加载',
             sessions: sessionManager.listSessions().length,
             globalMemory: sessionManager.getStats(),
-            runtime: runtime?.getStats?.() || null,
+            // 运行时标识（面板显示 Go 版 / Node 版）
+            runtime: { ...(runtime?.getStats?.() || {}), engine: 'node' },
             activeMemory: getActiveMemoryInfo(),
             participantProfileProgress: typeof getParticipantProfileProgress === 'function' ? getParticipantProfileProgress() : null,
             knowledgeImportProgress: typeof getKnowledgeImportProgress === 'function' ? getKnowledgeImportProgress() : null,

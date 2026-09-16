@@ -32,6 +32,7 @@ import fs from 'fs';
 
 import { OneBotClient, buildMentionMessage } from './onebot.js';
 import { buildAIToolContext, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt, buildToolPhaseResultMessage, buildToolPhaseMessages } from './tools.js';
+import { chatScopeKey } from './chat-scope.js';
 import { McpClientManager, normalizeMcpClientConfig } from './mcp-client.js';
 import { normalizeWebSearchConfig } from './search/index.js';
 import { findForwardSegments, fetchForwardTranscripts } from './forward-message.js';
@@ -1399,7 +1400,7 @@ async function generateContextualMentionReply({
     const sessionId = memoryScope.sessionKey;
     const structuredText = buildStructuredMessage(event, promptText);
     const processedInput = regexProcessor.processInput(structuredText);
-    const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
+    const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30, chatScopeKey({ messageType: event.message_type, groupId: event.group_id, userId: event.user_id }));
     const stickyKeys = sessionManager.getStickyEntryKeys(sessionId);
     const runtimeContext = {
         sessionId,
@@ -3185,7 +3186,7 @@ async function processBatch(batch) {
                 });
             }
 
-            const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
+            const context = sessionManager.getContext(sessionId, config.chat.historyLimit || 30, chatScopeKey({ messageType: event.message_type, groupId: event.group_id, userId: event.user_id }));
             const stickyKeys = sessionManager.getStickyEntryKeys(sessionId);
             const adminUser = isAdminUser(config, event.user_id);
             let processedInput = regexProcessor.processInput(mergedStructuredText);
@@ -3375,7 +3376,7 @@ async function processBatch(batch) {
             if (summaryBeforeReply) {
                 sessionManager.upsertSummaryIndexFromSummary(runtimeContext.recallNamespace, summaryBeforeReply, sessionId);
             }
-            const currentContext = sessionManager.getContext(sessionId, config.chat.historyLimit || 30);
+            const currentContext = sessionManager.getContext(sessionId, config.chat.historyLimit || 30, chatScopeKey({ messageType: event.message_type, groupId: event.group_id, userId: event.user_id }));
             currentContext.recentMessages = currentContext.recentMessages.filter((message) => {
                 return message.metadata?.id !== userRecord.id;
             });
@@ -3511,7 +3512,7 @@ async function processBatch(batch) {
             let replyToolContext = toolContext;
             let toolPhaseOutcome = null;
             if (toolPhaseEnabled && hasAvailableTools) {
-                const toolPhaseMessages = buildToolPhaseMessages(messages, toolContext.toolHints, { characterName: runtimeContext?.recallNamespace?.characterName || '' });
+                const toolPhaseMessages = buildToolPhaseMessages(messages, toolContext.toolHints, { characterName: runtimeContext?.recallNamespace?.characterName || '', chatScope: chatScopeKey({ messageType: event.message_type, groupId: event.group_id, userId: event.user_id }) });
                 const toolPhaseStartedAt = Date.now();
                 try {
                     toolPhaseOutcome = await aiClient.chatToolPhase(toolPhaseMessages, toolContext, chatAIOverrides);
@@ -3713,7 +3714,9 @@ ${varStatus || '(无)'}
 
             sessionManager.addMessage(sessionId, 'assistant', processedReply, {
                 replyTo: event.user_id,
-                messageType: event.message_type
+                messageType: event.message_type,
+                groupId: event.group_id,
+                userId: event.user_id
             });
             logger.info('[执行] assistant 回复已写入会话', {
                 sessionId,

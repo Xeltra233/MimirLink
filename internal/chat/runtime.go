@@ -90,7 +90,13 @@ func New(options Options) *Runtime {
 	}
 	historySize := options.HistorySize
 	if historySize <= 0 {
-		historySize = 20
+		// 对齐 Node：config.chat.historyLimit || 30
+		historySize = 30
+		if options.Document != nil {
+			if value := int(options.Document.Int("chat.historyLimit", 30)); value > 0 {
+				historySize = value
+			}
+		}
 	}
 	return &Runtime{
 		startedAt:      time.Now(),
@@ -325,7 +331,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		if (imageInput.Mode == "caption" || imageInput.Mode == "placeholder") && imageInput.CaptionText != "" {
 			// 转述文本并入本轮输入（Node 再经 sanitizeForInjection；Go 的输入正则已覆盖等价清理）
 			content = content + "\\n\\n" + imageInput.CaptionText
-			r.appendMessage(sessionKey, "user", imageInput.CaptionText, map[string]any{"imageCaption": true})
+			r.appendMessage(sessionKey, "user", imageInput.CaptionText, map[string]any{"imageCaption": true, "groupId": groupID, "userId": userID})
 		}
 		for _, warning := range imageInput.Warnings {
 			r.logger.Printf("[图片] %s", warning)
@@ -343,7 +349,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	if repeatResult := r.repeatDetector.ObserveMessage(repeatConfig, event, text, r.bot.SelfID(), time.Now()); repeatResult.ShouldRepeat {
 		r.logger.Printf("[复读] 命中群聊复读直发（%d/%d）：%s", repeatResult.Count, repeatResult.TriggerCount, repeatResult.RepeatText)
 		if err := r.appendMessage(sessionKey, "assistant", repeatResult.RepeatText, map[string]any{
-			"messageType": messageType, "generatedBy": "group_repeat",
+			"messageType": messageType, "generatedBy": "group_repeat", "groupId": groupID, "userId": userID,
 		}); err != nil {
 			r.logger.Printf("[复读] 写入复读消息失败: %v", err)
 		}
@@ -354,7 +360,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	}
 	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
 	r.focusSegment = r.currentMessageFocusSegment(event, text, messageType, isAtBotSelf, replyInfo)
-	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk)
+	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk, groupID, userID)
 	if err != nil {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
 		return false
@@ -380,7 +386,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	scope := r.toolCallScope(sessionKey, messageType, content, injectionRisk, groupID, userID, speakerNameFromEvent(event))
 
 	startedAt := time.Now()
-	reply, messages, err := r.generateReply(context.Background(), messages, scope)
+	reply, messages, err := r.generateReply(context.Background(), messages, scope, ChatScopeKey(messageType, groupID, userID))
 	reply = strings.TrimSpace(reply)
 	if err != nil {
 		r.logger.Printf("[聊天] AI 调用失败: %v", err)
@@ -419,7 +425,9 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		reply = retried
 	}
 
-	if err := r.appendMessage(sessionKey, "assistant", reply, map[string]any{"messageType": messageType}); err != nil {
+	if err := r.appendMessage(sessionKey, "assistant", reply, map[string]any{
+		"messageType": messageType, "groupId": groupID, "userId": userID,
+	}); err != nil {
 		r.logger.Printf("[聊天] 写入回复失败: %v", err)
 	}
 
@@ -463,10 +471,16 @@ func (r *Runtime) requireAtInGroup() bool {
 
 // ---------------- 提示词与历史 ----------------
 
-func (r *Runtime) buildMessages(sessionKey string, currentContent string, messageType string, injectionRisk InjectionRisk) ([]ai.Message, []matchedWorldBookEntry, error) {
-	history, err := r.memory.RecentMessagesThread(sessionKey, r.historySize)
+func (r *Runtime) buildMessages(sessionKey string, currentContent string, messageType string, injectionRisk InjectionRisk, groupID string, userID string) ([]ai.Message, []matchedWorldBookEntry, error) {
+	// 聊天范围过滤：共享会话下只取当前群聊/私聊的最近消息（对齐 Node getContext 的 scopeKey）
+	scopeKey := ChatScopeKey(messageType, groupID, userID)
+	raw, err := r.memory.RecentMessagesThread(sessionKey, ChatScopePullLimit(r.historySize))
 	if err != nil {
 		return nil, nil, err
+	}
+	history := FilterMessagesForChat(raw, scopeKey)
+	if len(history) > r.historySize {
+		history = history[len(history)-r.historySize:]
 	}
 	// 历史里最后一条通常是刚落库的当前消息：剥离后作为最后一条用户消息单独追加
 	if len(history) > 0 && strings.TrimSpace(history[len(history)-1].Content) == strings.TrimSpace(currentContent) {

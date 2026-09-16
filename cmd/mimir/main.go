@@ -104,6 +104,18 @@ func main() {
 		return
 	}
 
+	// 面板 + Bot 同进程启动（对齐 Node src/index.js 的单进程形态；容器 CMD 即 -bot -serve）。
+	// 二者各自独立初始化，任一失败即退出，便于容器平台感知异常。
+	if *serve && *botMode {
+		failures := make(chan error, 2)
+		go func() { failures <- runBot(absoluteRoot) }()
+		go func() { failures <- servePanel(absoluteRoot, *port) }()
+		if err := <-failures; err != nil {
+			fail("运行失败: %v", err)
+		}
+		return
+	}
+
 	if *botMode {
 		if err := runBot(absoluteRoot); err != nil {
 			fail("Bot 运行失败: %v", err)

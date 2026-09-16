@@ -1,5 +1,6 @@
 import { resolveChatRuntimeInputs } from './source-resolver.js';
 import { buildAIToolContext, buildToolPhaseMessages } from '../tools.js';
+import { chatScopeKey } from '../chat-scope.js';
 
 export async function buildChatRuntimePreview(input = {}, services = {}) {
     const normalizedContext = input.context || { recentMessages: [], summaries: [] };
@@ -37,7 +38,7 @@ export async function buildChatRuntimePreview(input = {}, services = {}) {
             hasTools: hasAvailableTools,
             toolNames: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean),
             toolHints: toolContext.toolHints,
-            messages: hasAvailableTools ? buildToolPhaseMessages(built.messages, toolContext.toolHints, { characterName: resolved.character?.name || input.characterName || '' }) : []
+            messages: hasAvailableTools ? buildToolPhaseMessages(built.messages, toolContext.toolHints, { characterName: resolved.character?.name || input.characterName || '', chatScope: chatScopeKey({ messageType: input.messageType, groupId: input.groupId, userId: input.userId }) }) : []
         }
         : { enabled: false, hasTools: hasAvailableTools, toolNames: [], toolHints: [], messages: [] };
 

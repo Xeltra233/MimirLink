@@ -496,6 +496,8 @@ function buildToolHints(config = {}) {
     return [buildWebToolHint(config), buildMentionToolHint(config)].filter(Boolean);
 }
 
+import { headerChatScope, isPrivateChatScope } from './chat-scope.js';
+
 // 消息头解析：与 buildStructuredMessage 的头部格式一致（群聊/私聊|QQ|昵称|群号|群名）
 const TOOL_PHASE_HEADER_PATTERN = /\[(群聊|私聊)\|QQ:([^|\]]*)\|昵称:([^|\]]*)\|群号:([^|\]]*)\|群名:([^|\]]*)/;
 
@@ -519,7 +521,7 @@ function toolPhaseMessageText(message) {
  * 只从现有消息头提取角色名/会话/发言人/近期发言人名单，解决“只给聊天记录不给背景”导致的指代与 @ 找人发懵；
  * 不加载人设、世界书、记忆正文，保持工具阶段轻量。
  */
-export function buildToolPhaseScene(fullMessages, characterName = '', maxParticipants = 10) {
+export function buildToolPhaseScene(fullMessages, characterName = '', chatScope = '', maxParticipants = 10) {
     const order = [];
     const names = new Map();
     const groupNames = new Map();
@@ -527,13 +529,21 @@ export function buildToolPhaseScene(fullMessages, characterName = '', maxPartici
     let currentSpeaker = '';
     let lastGroupId = '';
     for (const message of Array.isArray(fullMessages) ? fullMessages : []) {
-        const match = toolPhaseMessageText(message).match(TOOL_PHASE_HEADER_PATTERN);
+        const text = toolPhaseMessageText(message);
+        const match = text.match(TOOL_PHASE_HEADER_PATTERN);
         if (!match) {
             continue;
         }
         const [, chatLabel, qq, nickname, groupId, groupName] = match;
         if (!qq) {
             continue;
+        }
+        // 只统计当前聊天范围的消息（共享会话下历史可能含其他群/其他人私聊）
+        if (chatScope) {
+            const scope = headerChatScope(text);
+            if (scope && scope !== chatScope) {
+                continue;
+            }
         }
         const existing = order.indexOf(qq);
         if (existing >= 0) {
@@ -569,7 +579,8 @@ export function buildToolPhaseScene(fullMessages, characterName = '', maxPartici
         lines.push(`- 当前发言人: ${currentSpeaker}`);
     }
     const recent = order.slice(-Math.max(1, maxParticipants)).map((qq) => `${names.get(qq)}(${qq})`);
-    if (recent.length >= 2) {
+    // 私聊没有“近期发言人”概念，只保留当前发言人
+    if (!isPrivateChatScope(chatScope) && recent.length >= 2) {
         lines.push(`- 近期发言人: ${recent.join('、')}`);
     }
     if (lines.length === 1) {
@@ -585,7 +596,7 @@ export function buildToolPhaseScene(fullMessages, characterName = '', maxPartici
  */
 export function buildToolPhaseMessages(fullMessages, toolHints, options = {}) {
     const messages = [];
-    const scene = buildToolPhaseScene(fullMessages, options.characterName || '');
+    const scene = buildToolPhaseScene(fullMessages, options.characterName || '', options.chatScope || '');
     if (scene) {
         messages.push({ role: 'system', content: scene, meta: { source: 'tool_scene' } });
     }

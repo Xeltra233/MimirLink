@@ -64,9 +64,9 @@ func (r *Runtime) toolPhaseMaxResultChars() int {
 
 // BuildToolPhaseMessages 构造工具阶段消息（对齐 Node buildToolPhaseMessages）：
 // 全部 system 段（人设/世界书/记忆）去掉，只保留工具说明；末尾 assistant 预填只服务正式回复，一并去掉。
-func BuildToolPhaseMessages(messages []ai.Message, hints []string, characterName string) []ai.Message {
+func BuildToolPhaseMessages(messages []ai.Message, hints []string, characterName string, chatScope string) []ai.Message {
 	result := []ai.Message{}
-	if scene := BuildToolPhaseScene(messages, characterName); scene != "" {
+	if scene := BuildToolPhaseScene(messages, characterName, chatScope); scene != "" {
 		result = append(result, ai.Message{Role: "system", Content: scene})
 	}
 	if len(hints) > 0 {
@@ -197,7 +197,7 @@ func summarizeToolArguments(raw string) string {
 
 // generateMentionForTool 生成主动 @ 正文并真实发送（对齐 Node generateContextualMentionReply + processMentionOutputText）：
 // 复用完整人设 prompt（buildMessages）+ 提及任务追加到当前用户消息 → 模型生成 → 输出正则 → [at,text] 发送。
-func (r *Runtime) generateMentionForTool(ctx context.Context, sessionKey string, messageType string, content string, injectionRisk InjectionRisk, groupID string, targetUserID string, targetName string, promptText string) (string, error) {
+func (r *Runtime) generateMentionForTool(ctx context.Context, sessionKey string, messageType string, content string, injectionRisk InjectionRisk, groupID string, speakerUserID string, targetUserID string, targetName string, promptText string) (string, error) {
 	if r.ai == nil {
 		return "", fmt.Errorf("AI 未就绪")
 	}
@@ -211,7 +211,7 @@ func (r *Runtime) generateMentionForTool(ctx context.Context, sessionKey string,
 		return "", fmt.Errorf("主动 @ 的要求不能为空")
 	}
 
-	messages, _, err := r.buildMessages(sessionKey, content, messageType, injectionRisk)
+	messages, _, err := r.buildMessages(sessionKey, content, messageType, injectionRisk, groupID, speakerUserID)
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +273,7 @@ func appendMentionTaskToMessages(messages []ai.Message, task string) []ai.Messag
 
 // generateReply 执行正式回复（两阶段优先，失败/关闭时回退单阶段）；
 // 返回最终使用的消息序列（含工具结果段），供后续重试链路复用。
-func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scope tools.CallScope) (string, []ai.Message, error) {
+func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scope tools.CallScope, chatScope string) (string, []ai.Message, error) {
 	hints := []string{}
 	hasTools := false
 	if r.tools != nil {
@@ -282,7 +282,7 @@ func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scop
 	}
 
 	if r.toolPhaseEnabled() && hasTools {
-		phaseMessages := BuildToolPhaseMessages(messages, hints, r.characterName())
+		phaseMessages := BuildToolPhaseMessages(messages, hints, r.characterName(), chatScope)
 		startedAt := time.Now()
 		outcome, err := r.chatToolPhase(ctx, phaseMessages, scope)
 		if err == nil {
@@ -317,7 +317,7 @@ func (r *Runtime) toolCallScope(sessionKey string, messageType string, content s
 		TargetName:   speakerName,
 	}
 	scope.MentionGenerator = func(ctx context.Context, targetGroupID string, targetUserID string, targetName string, promptText string) (string, error) {
-		return r.generateMentionForTool(ctx, sessionKey, messageType, content, injectionRisk, targetGroupID, targetUserID, targetName, promptText)
+		return r.generateMentionForTool(ctx, sessionKey, messageType, content, injectionRisk, targetGroupID, userID, targetUserID, targetName, promptText)
 	}
 	return scope
 }
@@ -364,7 +364,7 @@ func toolPhaseMessageText(message ai.Message) string {
 // BuildToolPhaseScene 构造工具阶段的轻量场景卡（对齐 Node buildToolPhaseScene）：
 // 只从消息头提取角色名/会话/发言人/近期发言人名单，解决“只给聊天记录不给背景”导致的指代与 @ 找人发懵；
 // 不加载人设、世界书、记忆正文，保持工具阶段轻量。
-func BuildToolPhaseScene(messages []ai.Message, characterName string) string {
+func BuildToolPhaseScene(messages []ai.Message, characterName string, chatScope string) string {
 	const maxParticipants = 10
 	order := []string{}
 	names := map[string]string{}
@@ -373,13 +373,20 @@ func BuildToolPhaseScene(messages []ai.Message, characterName string) string {
 	currentSpeaker := ""
 	lastGroupID := ""
 	for _, message := range messages {
-		match := toolPhaseHeaderPattern.FindStringSubmatch(toolPhaseMessageText(message))
+		text := toolPhaseMessageText(message)
+		match := toolPhaseHeaderPattern.FindStringSubmatch(text)
 		if match == nil {
 			continue
 		}
 		chatLabel, qq, nickname, groupID, groupName := match[1], match[2], match[3], match[4], match[5]
 		if qq == "" {
 			continue
+		}
+		// 只统计当前聊天范围的消息（共享会话下历史可能含其他群/其他人私聊）
+		if chatScope != "" {
+			if scope := HeaderChatScope(text); scope != "" && scope != chatScope {
+				continue
+			}
 		}
 		for index, item := range order {
 			if item == qq {
@@ -426,7 +433,8 @@ func BuildToolPhaseScene(messages []ai.Message, characterName string) string {
 	if len(order) > maxParticipants {
 		order = order[len(order)-maxParticipants:]
 	}
-	if len(order) >= 2 {
+	// 私聊没有“近期发言人”概念，只保留当前发言人
+	if !ChatScopeIsPrivate(chatScope) && len(order) >= 2 {
 		recent := make([]string, 0, len(order))
 		for _, qq := range order {
 			recent = append(recent, fmt.Sprintf("%s(%s)", names[qq], qq))

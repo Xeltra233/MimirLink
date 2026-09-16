@@ -1226,13 +1226,16 @@ func (s *Server) handlePromptPreview(writer http.ResponseWriter, request *http.R
 		"runtimeComposition": composition,
 		"messageTrace":       chat.BuildMessageTrace(messages, segments),
 		"messages":           messages,
-		"twoPhase":           s.twoPhasePreview(messages),
-		"contextConfig":      contextConfigSnapshot(s.document),
+		"twoPhase": s.twoPhasePreview(messages,
+			orDefault(strings.TrimSpace(textOf(body["messageType"])), "group"),
+			strings.TrimSpace(textOf(body["groupId"])),
+			strings.TrimSpace(textOf(body["userId"]))),
+		"contextConfig": contextConfigSnapshot(s.document),
 	})
 }
 
 // twoPhasePreview 组装两阶段预览（对齐 Node chat-preview 的 twoPhase 字段）。
-func (s *Server) twoPhasePreview(messages []ai.Message) map[string]any {
+func (s *Server) twoPhasePreview(messages []ai.Message, messageType string, groupID string, userID string) map[string]any {
 	enabled := true
 	if s.document.Exists("chat.toolPhase.enabled") {
 		enabled = s.document.Bool("chat.toolPhase.enabled")
@@ -1244,7 +1247,7 @@ func (s *Server) twoPhasePreview(messages []ai.Message) map[string]any {
 		"hasTools":  len(toolNames) > 0,
 		"toolNames": toolNames,
 		"toolHints": hints,
-		"messages":  chat.BuildToolPhaseMessages(messages, hints, s.currentCharacterName()),
+		"messages":  chat.BuildToolPhaseMessages(messages, hints, s.currentCharacterName(), chat.ChatScopeKey(messageType, groupID, userID)),
 	}
 }
 

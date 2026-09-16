@@ -7477,6 +7477,16 @@
             white-space: nowrap !important;
         }
 
+        header .app-badge-engine[data-engine="go"] {
+            background: color-mix(in srgb, #00add8 18%, transparent) !important;
+            color: #00add8 !important;
+            border-color: color-mix(in srgb, #00add8 36%, transparent) !important;
+        }
+        header .app-badge-engine[data-engine="node"] {
+            background: color-mix(in srgb, #539e43 18%, transparent) !important;
+            color: #539e43 !important;
+            border-color: color-mix(in srgb, #539e43 36%, transparent) !important;
+        }
         header .app-badge {
             display: inline-flex !important;
             align-items: center !important;
@@ -10954,6 +10964,7 @@
             <h1 class="app-brand">
                 🧠 MimirLink
                 <span class="app-badge">Lifecycle Runtime</span>
+                <span class="app-badge app-badge-engine" id="runtime-engine-tag" hidden></span>
             </h1>
             <div class="status-bar">
                 <div class="status-group status-group-runtime">
@@ -16376,6 +16387,19 @@
                 const data = await res.json();
                 dashboardStatusSnapshot = data;
                 const refreshedAt = Date.now();
+
+                // 运行时标签（Go 版 / Node 版）：由后端 /api/status 的 runtime.engine 上报
+                const engineTag = document.getElementById('runtime-engine-tag');
+                if (engineTag) {
+                    const engine = String(data.runtime?.engine || '').toLowerCase();
+                    if (engine === 'go' || engine === 'node') {
+                        engineTag.textContent = engine === 'go' ? 'Go 版' : 'Node 版';
+                        engineTag.dataset.engine = engine;
+                        engineTag.hidden = false;
+                    } else {
+                        engineTag.hidden = true;
+                    }
+                }
 
                 const onebot = data.onebot || {};
                 const connected = onebot.connected === true;
