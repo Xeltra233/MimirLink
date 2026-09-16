@@ -376,8 +376,11 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		r.logger.Printf("[聊天] 更新粘性条目失败: %v", err)
 	}
 
+	// 工具执行上下文（对齐 Node buildAIToolContext：当前群/发言人默认值 + 主动 @ 生成器）
+	scope := r.toolCallScope(sessionKey, messageType, content, injectionRisk, groupID, userID, speakerNameFromEvent(event))
+
 	startedAt := time.Now()
-	reply, err := r.chatWithTools(context.Background(), messages)
+	reply, messages, err := r.generateReply(context.Background(), messages, scope)
 	reply = strings.TrimSpace(reply)
 	if err != nil {
 		r.logger.Printf("[聊天] AI 调用失败: %v", err)
@@ -412,7 +415,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	}
 
 	// 链式泄露检测与重试（对齐 Node detectChainLeak + chat.chainLeakRetry）
-	if retried, didRetry := r.retryOnChainLeak(context.Background(), messages, reply, content); didRetry {
+	if retried, didRetry := r.retryOnChainLeak(context.Background(), messages, reply, content, scope); didRetry {
 		reply = retried
 	}
 
@@ -426,14 +429,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		return false
 	}
 	// 回复后异步人物档案构建（对齐 Node maybeBuildParticipantProfile 的 auto 触发）
-	speakerName := ""
-	if sender, ok := event["sender"].(map[string]any); ok {
-		speakerName = stringValue(sender["nickname"])
-		if card := stringValue(sender["card"]); card != "" {
-			speakerName = card
-		}
-	}
-	r.maybeBuildParticipantProfile(sessionKey, userID, speakerName, messageType, groupID)
+	r.maybeBuildParticipantProfile(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
 	return true
 }
 
@@ -692,7 +688,7 @@ func (r *Runtime) maxToolRounds() int {
 const hardToolRoundCeiling = 50
 
 // chatWithTools 执行对话并按需进入工具调用循环。
-func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message) (string, error) {
+func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message, scope tools.CallScope) (string, error) {
 	if r.tools == nil {
 		result, err := r.ai.Chat(ctx, messages, nil)
 		if err != nil {
@@ -747,7 +743,7 @@ func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message) (str
 			if callID == "" {
 				callID = tools.RandomIdentifier()
 			}
-			output := r.tools.Execute(ctx, call)
+			output := r.tools.Execute(ctx, call, scope)
 			conversation = append(conversation, ai.Message{
 				Role:       "tool",
 				ToolCallID: callID,

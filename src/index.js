@@ -31,7 +31,7 @@ import { dirname, join } from 'path';
 import fs from 'fs';
 
 import { OneBotClient, buildMentionMessage } from './onebot.js';
-import { buildAIToolContext, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt } from './tools.js';
+import { buildAIToolContext, appendMentionTaskToPromptMessages, generateMentionTextFromPrompt, buildToolPhaseResultMessage, buildToolPhaseMessages } from './tools.js';
 import { McpClientManager, normalizeMcpClientConfig } from './mcp-client.js';
 import { normalizeWebSearchConfig } from './search/index.js';
 import { findForwardSegments, fetchForwardTranscripts } from './forward-message.js';
@@ -3498,15 +3498,66 @@ async function processBatch(batch) {
                 },
                 mcpClient
             });
-            if (Array.isArray(toolContext.toolHints) && toolContext.toolHints.length > 0) {
+            const chatAIOverrides = buildChatAIOverrides(config);
+            const chatAISelection = getChatAISelectionSnapshot(config);
+
+            // 两阶段提示词（工具阶段 / 正式回复）：
+            // - 工具阶段：只带功能内置提示词（工具说明）与轻量上下文，先把工具调用做完，避开人设等重提示词干扰；
+            // - 正式回复阶段：加载人设/预设/世界书/记忆等提示词，注入工具结果，不再下发工具与工具说明。
+            // 关闭开关或本轮没有可用工具时回退单阶段（与旧行为一致）。
+            const toolPhaseConfig = config.chat?.toolPhase || {};
+            const toolPhaseEnabled = toolPhaseConfig.enabled !== false;
+            const hasAvailableTools = Array.isArray(toolContext.tools) && toolContext.tools.length > 0;
+            let replyToolContext = toolContext;
+            let toolPhaseOutcome = null;
+            if (toolPhaseEnabled && hasAvailableTools) {
+                const toolPhaseMessages = buildToolPhaseMessages(messages, toolContext.toolHints, { characterName: runtimeContext?.recallNamespace?.characterName || '' });
+                const toolPhaseStartedAt = Date.now();
+                try {
+                    toolPhaseOutcome = await aiClient.chatToolPhase(toolPhaseMessages, toolContext, chatAIOverrides);
+                    logger.info('[执行] 工具阶段完成', {
+                        sessionId,
+                        durationMs: Date.now() - toolPhaseStartedAt,
+                        rounds: toolPhaseOutcome.rounds,
+                        toolCallCount: toolPhaseOutcome.toolCallCount,
+                        reachedLimit: toolPhaseOutcome.reachedLimit === true,
+                        messageCount: toolPhaseMessages.length
+                    });
+                } catch (error) {
+                    logger.warn('[执行] 工具阶段失败，回退单阶段执行', {
+                        sessionId,
+                        durationMs: Date.now() - toolPhaseStartedAt,
+                        error: error.message
+                    });
+                    toolPhaseOutcome = null;
+                }
+            }
+
+            if (toolPhaseOutcome) {
+                const toolResultMessage = buildToolPhaseResultMessage(toolPhaseOutcome.transcript, {
+                    maxChars: toolPhaseConfig.maxResultChars
+                });
+                if (toolResultMessage) {
+                    const prefillIndex = messages.findIndex((message) => message.meta?.source === 'assistant_prefill');
+                    const resultMessage = {
+                        role: 'system',
+                        content: toolResultMessage,
+                        meta: { source: 'tool_phase_result' }
+                    };
+                    if (prefillIndex >= 0) {
+                        messages.splice(prefillIndex, 0, resultMessage);
+                    } else {
+                        messages.push(resultMessage);
+                    }
+                }
+                replyToolContext = {};
+            } else if (Array.isArray(toolContext.toolHints) && toolContext.toolHints.length > 0) {
                 messages.unshift({
                     role: 'system',
                     content: `【工具使用说明】\n${toolContext.toolHints.join('\n\n')}`,
                     meta: { source: 'tool_hints' }
                 });
             }
-            const chatAIOverrides = buildChatAIOverrides(config);
-            const chatAISelection = getChatAISelectionSnapshot(config);
             logger.info('[执行] 准备调用 AI', {
                 sessionId,
                 timeoutMs,
@@ -3516,7 +3567,10 @@ async function processBatch(batch) {
                 messageCount: messages.length,
                 lastMessageRole: messages.at(-1)?.role || null,
                 lastMessageSource: messages.at(-1)?.meta?.source || null,
-                toolsEnabled: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean)
+                toolsEnabled: (replyToolContext.tools || []).map((tool) => tool?.function?.name).filter(Boolean),
+                twoPhase: toolPhaseOutcome ? 'reply-phase' : 'single-phase',
+                toolPhaseEnabled,
+                hasAvailableTools
             });
             recordDashboardMetric('chat');
 
@@ -3543,7 +3597,7 @@ async function processBatch(batch) {
             const { replyResult, reply } = await generateReplyWithRetry({
                 aiClient,
                 messages,
-                toolContext,
+                toolContext: replyToolContext,
                 chatAIOverrides,
                 timeoutMs,
                 logger,

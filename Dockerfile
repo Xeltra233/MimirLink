@@ -1,22 +1,38 @@
-FROM node:22-bookworm-slim
+# Go 版镜像（goal-39 从 Node 切换）：多阶段构建，运行阶段只带二进制与前端资源
+# 构建阶段
+FROM golang:1.25-bookworm AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY cmd ./cmd
+COPY internal ./internal
+COPY public ./public
+COPY config.example.json ./
+
+RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/mimir ./cmd/mimir
+
+# 运行阶段
+FROM debian:bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3 make g++ \
-    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /out/mimir /app/mimir
+COPY --from=build /src/public /app/public
+COPY config.example.json /app/config.example.json
 
-COPY package*.json ./
-RUN npm ci --omit=dev
+# 数据/日志目录（与 compose 的卷挂载对应）
+RUN mkdir -p /app/data/chats /app/logs /app/audio
 
-COPY . .
-
-RUN chmod +x /app/start.sh 2>/dev/null; true
-
-ENV NODE_ENV=production
+ENV TZ=Asia/Shanghai
 EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:8001/api/status',r=>{process.exit(r.statusCode===200?0:1)})"
+    CMD curl -fsS http://localhost:8001/api/status || exit 1
 
-CMD ["node", "src/index.js"]
+CMD ["/app/mimir", "-root", "/app", "-bot", "-serve"]

@@ -838,10 +838,13 @@ type ServerStatus struct {
 	ID        string         `json:"id"`
 	Name      string         `json:"name"`
 	Enabled   bool           `json:"enabled"`
+	// State 对齐 Node：connected / connecting / error / disabled
+	State     string         `json:"state"`
 	Transport string         `json:"transport"`
 	Command   string         `json:"command,omitempty"`
 	URL       string         `json:"url,omitempty"`
 	Connected bool           `json:"connected"`
+	RetryCount int           `json:"retryCount"`
 	ToolCount int            `json:"toolCount"`
 	LastError string         `json:"lastError,omitempty"`
 	Tools     []ToolSummary  `json:"tools"`
@@ -904,10 +907,16 @@ func (c *Client) Status() []ServerStatus {
 			Tools:     []ToolSummary{},
 			Config:    MaskedServerConfig(server),
 		}
+		// 状态映射对齐 Node getStatus：客户端/服务器停用 → disabled；已连接 → connected；有错误 → error；其余 → connecting
+		state := "disabled"
+		if c.config.Enabled && server.Enabled {
+			state = "connecting"
+		}
 		if entry, ok := c.servers[server.ID]; ok {
 			status.LastError = entry.lastError
 			if entry.transport != nil {
 				status.Connected = true
+				state = "connected"
 				status.ToolCount = len(entry.tools)
 				for _, tool := range entry.tools {
 					summary := ToolSummary{Name: tool.Name, Description: tool.Description, Required: []string{}}
@@ -920,13 +929,25 @@ func (c *Client) Status() []ServerStatus {
 					}
 					status.Tools = append(status.Tools, summary)
 				}
+			} else if entry.lastError != "" && c.config.Enabled && server.Enabled {
+				state = "error"
 			}
 		}
+		status.State = state
 		statuses = append(statuses, status)
 	}
 	return statuses
 }
 
+// StatusPayload 返回与 Node getMcpClientStatus 对齐的客户端状态对象。
+// 面板前端依赖 { enabled, maxResultChars, servers } 结构（旧版直接返回服务器数组，导致导入后列表不渲染）。
+func (c *Client) StatusPayload() map[string]any {
+	return map[string]any{
+		"enabled":        c.config.Enabled,
+		"maxResultChars": c.config.MaxResultChars,
+		"servers":        c.Status(),
+	}
+}
 // Reconnect 重连单个服务器（断开旧连接后按当前配置重新握手）。
 func (c *Client) Reconnect(serverID string) error {
 	c.mu.Lock()
@@ -963,6 +984,16 @@ func (c *Client) Reload(config ClientConfig) []ServerStatus {
 	c.mu.Unlock()
 	c.ConnectAll(context.Background())
 	return c.Status()
+}
+
+// ReloadPayload 按新配置重载客户端并返回面板状态对象（结构对齐 Node）。
+func (c *Client) ReloadPayload(config ClientConfig) map[string]any {
+	servers := c.Reload(config)
+	return map[string]any{
+		"enabled":        config.Enabled,
+		"maxResultChars": config.MaxResultChars,
+		"servers":        servers,
+	}
 }
 
 // ConfigSnapshot 返回当前客户端配置（深拷贝 servers 切片）。

@@ -1269,6 +1269,122 @@ export class AIClient {
         throw new Error('工具调用轮次过多，已停止继续请求');
     }
 
+    /**
+     * 工具阶段（两阶段链路的第一段）。
+     * 与 chatWithTools 的循环语义保持一致，但职责不同：
+     * - 只负责把工具调用跑完，不产出最终回复（最终回复由携带人设的阶段二生成）；
+     * - 返回工具转写 transcript，供阶段二以【本轮工具执行结果】系统段注入；
+     * - 达到轮次上限或安全上限时直接收束，不做收尾总结调用。
+     */
+    async chatToolPhase(messages, toolContext = {}, overrides = {}) {
+        const tools = Array.isArray(toolContext?.tools) ? toolContext.tools : [];
+        const handlers = toolContext?.handlers || {};
+        if (tools.length === 0) {
+            return { skipped: true, content: '', transcript: [], rounds: 0, toolCallCount: 0, reachedLimit: false };
+        }
+
+        let conversation = Array.isArray(messages) ? messages.map((message) => ({ ...message })) : [];
+        let effectiveOverrides = { ...overrides };
+        const transcript = [];
+
+        // 轮次上限：默认不限（对齐 chatWithTools），另加安全上限防止空转
+        const configuredRounds = Number(this.config?.chat?.maxToolRounds);
+        const maxToolRounds = Number.isFinite(configuredRounds) && configuredRounds > 0 ? Math.floor(configuredRounds) : 0;
+        const hardCeiling = 50;
+
+        for (let round = 0; ; round += 1) {
+            if ((maxToolRounds > 0 && round >= maxToolRounds) || round >= hardCeiling) {
+                this.logPipelineStage('工具阶段达到轮次上限，按已完成的调用进入正式回复', {
+                    rounds: round,
+                    configuredRounds: maxToolRounds,
+                    toolCallCount: transcript.length
+                });
+                return { skipped: false, content: '', transcript, rounds: round, toolCallCount: transcript.length, reachedLimit: true };
+            }
+
+            const payload = this.buildToolsChatPayload(conversation, tools, effectiveOverrides);
+            this.logPipelineStage('工具阶段请求', {
+                round: round + 1,
+                toolCount: tools.length,
+                messageCount: conversation.length,
+                toolNames: tools.map((tool) => tool?.function?.name).filter(Boolean)
+            });
+
+            let result = await this.sendChatRequest(payload, effectiveOverrides);
+            if (!result.ok) {
+                // 与 chatWithTools 一致：主模型失败时尝试备用模型
+                const backupModel = this.config.chat?.backupModel;
+                const backupProviderId = this.config.chat?.backupModelProviderId;
+                if (backupModel && backupProviderId) {
+                    const backupProvider = this.getConfiguredProviders().find((provider) => provider.id === backupProviderId);
+                    if (backupProvider) {
+                        this.logPipelineStage('工具阶段主模型失败，尝试备用模型');
+                        const backupOverrides = {
+                            ...effectiveOverrides,
+                            model: backupModel,
+                            baseUrl: backupProvider.baseUrl || '',
+                            apiKey: backupProvider.apiKey || ''
+                        };
+                        const backupPayload = this.buildToolsChatPayload(conversation, tools, backupOverrides);
+                        const backupResult = await this.sendChatRequest(backupPayload, backupOverrides);
+                        if (backupResult.ok) {
+                            effectiveOverrides = backupOverrides;
+                            result = backupResult;
+                            this.logPipelineStage('工具阶段备用模型请求成功');
+                        }
+                    }
+                }
+                if (!result.ok) {
+                    throw new Error(`AI API 错误: ${result.status} - ${result.errorText}`);
+                }
+            }
+
+            const assistantMessage = result.data?.choices?.[0]?.message || {};
+            const toolCalls = Array.isArray(assistantMessage.tool_calls) ? assistantMessage.tool_calls : [];
+            const assistantContent = this.extractTextContent(assistantMessage.content) || '';
+
+            if (toolCalls.length === 0) {
+                return { skipped: false, content: assistantContent, transcript, rounds: round + 1, toolCallCount: transcript.length, reachedLimit: false };
+            }
+
+            conversation.push({
+                role: 'assistant',
+                content: assistantContent,
+                tool_calls: toolCalls
+            });
+
+            for (const toolCall of toolCalls) {
+                const toolName = toolCall?.function?.name || '';
+                const handler = handlers[toolName];
+                let parsedArgs = {};
+                try {
+                    parsedArgs = toolCall?.function?.arguments ? JSON.parse(toolCall.function.arguments) : {};
+                } catch {
+                    parsedArgs = {};
+                }
+                const startedAt = Date.now();
+                let toolResult;
+                if (typeof handler !== 'function') {
+                    toolResult = { ok: false, error: `未找到工具处理器: ${toolName}` };
+                } else {
+                    toolResult = await handler(parsedArgs);
+                }
+                transcript.push({
+                    name: toolName,
+                    arguments: parsedArgs,
+                    ok: toolResult?.ok !== false,
+                    result: toolResult,
+                    durationMs: Date.now() - startedAt
+                });
+                conversation.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    content: JSON.stringify(toolResult, null, 2)
+                });
+            }
+        }
+    }
+
     getLastChatRawText() {
         return this.lastChatRawText || '';
     }

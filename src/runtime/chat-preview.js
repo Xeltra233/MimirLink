@@ -1,4 +1,5 @@
 import { resolveChatRuntimeInputs } from './source-resolver.js';
+import { buildAIToolContext, buildToolPhaseMessages } from '../tools.js';
 
 export async function buildChatRuntimePreview(input = {}, services = {}) {
     const normalizedContext = input.context || { recentMessages: [], summaries: [] };
@@ -22,6 +23,24 @@ export async function buildChatRuntimePreview(input = {}, services = {}) {
         }
     );
 
+    // 两阶段预览：展示工具阶段（轻提示词 + 工具）与正式回复阶段的拆分
+    const toolPhaseEnabled = services.config?.chat?.toolPhase?.enabled !== false;
+    const toolContext = buildAIToolContext({
+        config: services.config || {},
+        logger: null,
+        mcpClient: services.mcpClient || null
+    });
+    const hasAvailableTools = Array.isArray(toolContext.tools) && toolContext.tools.length > 0;
+    const toolPhasePreview = toolPhaseEnabled
+        ? {
+            enabled: true,
+            hasTools: hasAvailableTools,
+            toolNames: toolContext.tools.map((tool) => tool?.function?.name).filter(Boolean),
+            toolHints: toolContext.toolHints,
+            messages: hasAvailableTools ? buildToolPhaseMessages(built.messages, toolContext.toolHints, { characterName: resolved.character?.name || input.characterName || '' }) : []
+        }
+        : { enabled: false, hasTools: hasAvailableTools, toolNames: [], toolHints: [], messages: [] };
+
     return {
         effectiveBinding: resolved.effectiveBinding,
         bindingTrace: resolved.bindingTrace,
@@ -32,6 +51,7 @@ export async function buildChatRuntimePreview(input = {}, services = {}) {
         sources: built.runtimeSources || [],
         runtimeComposition: built.runtimeComposition || null,
         messageTrace: built.messageTrace || [],
+        twoPhase: toolPhasePreview,
         messages: built.messages
     };
 }

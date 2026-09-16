@@ -1,6 +1,7 @@
 node_modules
 audio
 logs
+data
 tmp
 compare-ui
 claude-script-check.js
@@ -11,3 +12,8 @@ claude-script-check.js
 *.log
 npm-debug.log*
 .DS_Store
+# 任务过程目录与构建产物（goal-* 永不入库，也不进构建上下文）
+goal-*
+fix68
+easysdd
+*.exe

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"mimirlink/internal/ai"
+	"mimirlink/internal/tools"
 	"mimirlink/internal/tts"
 )
 
@@ -421,7 +422,7 @@ func (r *Runtime) chainLeakRetryMaxRetries() int {
 }
 
 // retryOnChainLeak 泄露检测与重试：泄露时把重试指令并入上下文再调一次模型。
-func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, reply string, userInput string) (string, bool) {
+func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, reply string, userInput string, scope tools.CallScope) (string, bool) {
 	if r.chainLeakRetryMaxRetries() <= 0 {
 		return reply, false
 	}
@@ -433,7 +434,7 @@ func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, r
 	retryMessages := append(append([]ai.Message{}, messages...),
 		ai.Message{Role: "assistant", Content: reply},
 		ai.Message{Role: "user", Content: BuildChainLeakRetryMessage(leak.Reason)})
-	retried, err := r.chatWithTools(ctx, retryMessages)
+	retried, err := r.chatWithTools(ctx, retryMessages, scope)
 	if err != nil {
 		r.logger.Printf("[泄露检测] 重试失败: %v", err)
 		return reply, false

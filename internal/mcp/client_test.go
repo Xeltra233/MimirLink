@@ -345,3 +345,55 @@ func TestToolFilterStringForm(t *testing.T) {
 		t.Fatalf("字符串过滤解析不符: %v", config.ToolFilter.Include)
 	}
 }
+
+// 回归：StatusPayload 必须是 { enabled, maxResultChars, servers } 结构。
+// 旧版 /api/mcp/status 的 client 直接返回服务器数组，面板读 client.servers 为 undefined，
+// 导入后服务器列表不渲染。
+func TestStatusPayloadMatchesNodeShape(t *testing.T) {
+	client := New(ClientConfig{
+		Enabled:        true,
+		MaxResultChars: 4000,
+		Servers: []ServerConfig{
+			{ID: "s1", Name: "demo", Enabled: true, Transport: "stdio", Command: "echo"},
+			{ID: "s2", Name: "off", Enabled: false, Transport: "stdio", Command: "echo"},
+			{ID: "s3", Name: "fresh", Enabled: true, Transport: "stdio", Command: "echo"},
+		},
+	}, nil)
+
+	// s1 模拟连接失败（error 状态）
+	client.servers["s1"] = &serverEntry{config: ServerConfig{ID: "s1"}, lastError: "initialize 失败"}
+
+	payload := client.StatusPayload()
+	if payload["enabled"] != true {
+		t.Fatalf("enabled = %v", payload["enabled"])
+	}
+	if payload["maxResultChars"] != 4000 {
+		t.Fatalf("maxResultChars = %v", payload["maxResultChars"])
+	}
+	servers, ok := payload["servers"].([]ServerStatus)
+	if !ok || len(servers) != 3 {
+		t.Fatalf("servers = %#v", payload["servers"])
+	}
+	if servers[0].State != "error" {
+		t.Fatalf("s1 state = %q，期望 error", servers[0].State)
+	}
+	if servers[1].State != "disabled" {
+		t.Fatalf("s2 state = %q，期望 disabled", servers[1].State)
+	}
+	if servers[2].State != "connecting" {
+		t.Fatalf("s3 state = %q，期望 connecting", servers[2].State)
+	}
+
+	// JSON 序列化形状（前端直接消费）
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := decoded["servers"].([]any); !ok {
+		t.Fatalf("servers 不是数组: %T", decoded["servers"])
+	}
+}

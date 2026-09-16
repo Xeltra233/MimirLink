@@ -3068,7 +3068,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 config,
                 characterManager,
                 worldBookManager,
-                promptBuilder
+                promptBuilder,
+                // 预览也要反映 MCP 工具连接状态（两阶段里的工具阶段清单）
+                mcpClient: managers.mcpClient
             });
 
             res.json(preview);

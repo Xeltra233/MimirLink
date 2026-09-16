@@ -18,17 +18,18 @@ import (
 
 // Registry 持有工具实现。
 type Registry struct {
-	search *search.Service
-	mcp    *mcp.Client
-	logger *log.Logger
+	document *config.Document
+	search   *search.Service
+	mcp      *mcp.Client
+	logger   *log.Logger
 }
 
 // New 创建工具注册表（搜索服务为空时只提供非搜索工具）。
-func New(service *search.Service, logger *log.Logger) *Registry {
+func New(document *config.Document, service *search.Service, logger *log.Logger) *Registry {
 	if logger == nil {
 		logger = log.Default()
 	}
-	return &Registry{search: service, logger: logger}
+	return &Registry{document: document, search: service, logger: logger}
 }
 
 // AttachMCP 挂载 MCP 客户端（其工具会一并暴露给模型）。
@@ -38,10 +39,18 @@ func (r *Registry) AttachMCP(client *mcp.Client) { r.mcp = client }
 func (r *Registry) Definitions() []ai.ToolDefinition {
 	definitions := []ai.ToolDefinition{}
 	if r.search != nil && r.search.Enabled() {
-		definitions = append(definitions, buildSearchToolDefinition(), buildFetchToolDefinition())
+		definitions = append(definitions, buildSearchToolDefinition())
+		// web_fetch 随 fetch 开关收敛（对齐 Node getAINativeTools 的 fetch.enabled 判断）
+		if r.search.Config().Fetch.Enabled {
+			definitions = append(definitions, buildFetchToolDefinition())
+		}
 		if r.search.Config().Spice.Enabled {
 			definitions = append(definitions, buildWeatherToolDefinition(), buildCurrencyToolDefinition())
 		}
+	}
+	// 主动 @ 工具：配置开启时进工具表（对齐 Node ai.tools.sendMention.enabled）
+	if r.document != nil && r.document.Bool("ai.tools.sendMention.enabled") {
+		definitions = append(definitions, buildMentionToolDefinition())
 	}
 	if r.mcp != nil {
 		for _, item := range r.mcp.Definitions() {
@@ -77,9 +86,9 @@ func (r *Registry) Names() []string {
 }
 
 // Execute 执行一次工具调用，返回给模型的文本结果。
-func (r *Registry) Execute(ctx context.Context, call ai.ToolCall) string {
+func (r *Registry) Execute(ctx context.Context, call ai.ToolCall, scope CallScope) string {
 	startedAt := time.Now()
-	output, err := r.dispatch(ctx, call.Function.Name, call.Function.Arguments)
+	output, err := r.dispatch(ctx, call.Function.Name, call.Function.Arguments, scope)
 	if err != nil {
 		r.logger.Printf("[工具] %s 失败(%dms): %v", call.Function.Name, time.Since(startedAt).Milliseconds(), err)
 		return fmt.Sprintf("工具执行失败：%s", err.Error())
@@ -88,7 +97,7 @@ func (r *Registry) Execute(ctx context.Context, call ai.ToolCall) string {
 	return output
 }
 
-func (r *Registry) dispatch(ctx context.Context, name string, rawArguments string) (string, error) {
+func (r *Registry) dispatch(ctx context.Context, name string, rawArguments string, scope CallScope) (string, error) {
 	arguments := map[string]any{}
 	if strings.TrimSpace(rawArguments) != "" {
 		if err := json.Unmarshal([]byte(rawArguments), &arguments); err != nil {
@@ -104,6 +113,8 @@ func (r *Registry) dispatch(ctx context.Context, name string, rawArguments strin
 		return r.getWeather(ctx, arguments)
 	case "convert_currency":
 		return r.convertCurrency(ctx, arguments)
+	case "send_group_mention":
+		return r.sendGroupMention(ctx, arguments, scope)
 	default:
 		if strings.HasPrefix(name, "mcp__") {
 			return r.callMCP(ctx, name, arguments)

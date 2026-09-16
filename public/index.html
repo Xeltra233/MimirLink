@@ -8578,6 +8578,14 @@
             transform: translateY(0) !important;
         }
 
+        /* 设置页卡片保持静止：不做悬停位移，避免移动导致难点中 */
+        #config .card:hover,
+        #config .model-provider-item:hover,
+        #config .participant-profile-item:hover,
+        #config .list-item:hover {
+            transform: none !important;
+        }
+
         /* 轻微鼠标跟随倾斜 */
         .tilt-card {
             transform-style: preserve-3d !important;
@@ -12313,6 +12321,18 @@
                             <label>工具调用轮次上限</label>
                             <input type="number" id="config-chat-max-tool-rounds" placeholder="不限" min="1" max="50">
                         </div>
+                        <div class="form-group">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="config-chat-tool-phase-enabled">
+                                两阶段提示词（工具阶段 / 正式回复）
+                            </label>
+                            <p class="hint-text">开启后先用轻提示词完成工具调用，再加载人设等提示词做正式回复；每条消息多一次轻量模型调用，关闭则回到单阶段。</p>
+                        </div>
+                        <div class="form-group">
+                            <label>工具结果注入上限（字符）</label>
+                            <input type="number" id="config-chat-tool-phase-max-chars" placeholder="4000" min="200" max="50000">
+                            <p class="hint-text">工具阶段结果注入正式回复时的单条截断长度</p>
+                        </div>
                     </div>
                     </div>
                 </div>
@@ -13479,6 +13499,8 @@
                     // 避免给过小的或隐藏结构重复/误加
                     if (el.dataset.tiltBound === '1') return;
                     if (el.closest('.dashboard-donut-wrap, #dashboard-donut-panel, .dashboard-donut-chart, .dashboard-chart-panel')) return;
+                    // 设置页卡片不做鼠标跟随倾斜：表单控件密集，移动的卡片很难点中
+                    if (el.closest('#config')) return;
                     if (el.closest('button, a, input, select, textarea, label')) {
                         // 本身就是交互控件时不倾斜
                         if (el.matches('button, a, input, select, textarea, label')) return;
@@ -17780,6 +17802,7 @@
             const messages = Array.isArray(preview.messages) ? preview.messages : [];
             const messageTrace = Array.isArray(preview.messageTrace) ? preview.messageTrace : [];
             const runtimeComposition = preview.runtimeComposition || {};
+            const twoPhase = preview.twoPhase || null;
             const traceMap = new Map(messageTrace.map((item) => [item.index, item]));
             const allSlots = [...new Set([
                 ...sourceItems.map((item) => item?.sourceSlot).filter(Boolean),
@@ -17911,6 +17934,12 @@
                     <div class="runtime-preview-meta">世界 ${escapeHtml(preview.worldBook?.name || '-')}</div>
                 </div>
                 <div class="runtime-preview-box full">
+                    <h4>两阶段提示词</h4>
+                    <div class="runtime-preview-meta">状态: ${twoPhase?.enabled ? '开启（工具阶段 → 正式回复）' : '关闭（单阶段）'}</div>
+                    <div class="runtime-preview-meta">工具阶段可用工具: ${escapeHtml((twoPhase?.toolNames || []).join(', ') || '无')}</div>
+                    <div class="runtime-preview-meta">正式回复阶段: 不加载工具说明与工具定义${twoPhase?.enabled ? '，注入工具结果' : ''}</div>
+                </div>
+                <div class="runtime-preview-box full">
                     <h4>过滤</h4>
                     <div class="runtime-preview-list">
                         ${renderFilterSelect('按槽位过', 'slot', allSlots)}
@@ -17938,8 +17967,22 @@
                         `).join('') : '<div class="empty-state">没有来源数据</div>'}
                     </div>
                 </div>
+                ${twoPhase?.enabled && Array.isArray(twoPhase.messages) && twoPhase.messages.length > 0 ? `
+                <div class="runtime-preview-box full runtime-preview-filterable-box" data-runtime-filter-scope="tool-phase">
+                    <h4>工具阶段消息（第一阶段）</h4>
+                    <div class="runtime-preview-list">
+                        ${twoPhase.messages.map((message, index) => `
+                            <div class="runtime-preview-message runtime-preview-filterable" data-runtime-slot="" data-runtime-stage="">
+                                <div class="runtime-preview-message-header">
+                                    <span class="runtime-preview-message-role">#${index + 1} ${escapeHtml(message.role || 'unknown')}</span>
+                                </div>
+                                <pre>${escapeHtml(message.content || '')}</pre>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>` : ''}
                 <div class="runtime-preview-box full runtime-preview-filterable-box" data-runtime-filter-scope="messages">
-                    <h4>最终消息</h4>
+                    <h4>${twoPhase?.enabled ? '正式回复消息（第二阶段）' : '最终消息'}</h4>
                     <div class="runtime-preview-list">
                         ${messages.length > 0 ? messages.map((message, index) => {
                             const trace = traceMap.get(index);
@@ -20924,18 +20967,43 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
             return `mcp-${String(serverId)}-${String(tool)}`.replace(/[^a-zA-Z0-9_-]/g, '_');
         }
 
+        // 兼容两种后端状态形状：Node/新版 Go 的 { enabled, maxResultChars, servers }，
+        // 以及旧版 Go 直接返回的服务器数组（旧形状曾导致列表渲染为空）。
+        function normalizeMcpClientStatus(client) {
+            const serversSource = Array.isArray(client)
+                ? client
+                : (Array.isArray(client?.servers) ? client.servers : []);
+            const servers = serversSource.map((server) => {
+                const enabled = server?.enabled !== false;
+                const state = server?.state || (!enabled ? 'disabled' : (server?.connected ? 'connected' : (server?.lastError ? 'error' : 'connecting')));
+                return {
+                    ...server,
+                    enabled,
+                    state,
+                    tools: Array.isArray(server?.tools) ? server.tools : []
+                };
+            });
+            return {
+                // 数组形状拿不到客户端级开关，保持 null 让调用方不覆盖界面状态
+                enabled: Array.isArray(client) ? null : client?.enabled === true,
+                maxResultChars: Array.isArray(client) ? null : (client?.maxResultChars ?? null),
+                servers
+            };
+        }
+
         async function refreshMcpStatus() {
             const container = document.getElementById('mcp-server-list');
             if (!container) return;
             try {
                 const { res, data } = await fetchJsonSafe('/api/mcp/status');
                 if (!res.ok || !data.success) throw new Error(data.error || '获取 MCP 状态失败');
-                mcpClientStatus = data.client;
+                const clientStatus = normalizeMcpClientStatus(data.client);
+                mcpClientStatus = clientStatus;
                 const enabledEl = document.getElementById('config-mcp-client-enabled');
                 const maxCharsEl = document.getElementById('config-mcp-max-result-chars');
-                if (enabledEl) enabledEl.checked = data.client?.enabled === true;
-                if (maxCharsEl && document.activeElement !== maxCharsEl) maxCharsEl.value = data.client?.maxResultChars ?? 4000;
-                renderMcpServers(data.client);
+                if (enabledEl && typeof clientStatus.enabled === 'boolean') enabledEl.checked = clientStatus.enabled;
+                if (maxCharsEl && typeof clientStatus.maxResultChars === 'number' && document.activeElement !== maxCharsEl) maxCharsEl.value = clientStatus.maxResultChars;
+                renderMcpServers(clientStatus);
             } catch (error) {
                 container.textContent = `状态获取失败: ${error.message}`;
             }
@@ -20944,7 +21012,7 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
         function renderMcpServers(client) {
             const container = document.getElementById('mcp-server-list');
             if (!container) return;
-            const servers = Array.isArray(client?.servers) ? client.servers : [];
+            const servers = normalizeMcpClientStatus(client).servers;
             if (servers.length === 0) {
                 container.innerHTML = '<div class="empty-state">还没有 MCP 服务器</div>';
                 return;
@@ -21323,6 +21391,8 @@ ${items.length > 0 ? items.slice(0, 8).map((rule) => `- [${badge}] ${rule.name |
                 updateGroupRepeatFields();
                 document.getElementById('config-chat-empty-retry-enabled').checked = currentConfig.chat?.emptyReplyRetry?.enabled !== false;
                 document.getElementById('config-chat-max-tool-rounds').value = currentConfig.chat?.maxToolRounds > 0 ? currentConfig.chat.maxToolRounds : '';
+                document.getElementById('config-chat-tool-phase-enabled').checked = currentConfig.chat?.toolPhase?.enabled !== false;
+                document.getElementById('config-chat-tool-phase-max-chars').value = currentConfig.chat?.toolPhase?.maxResultChars > 0 ? currentConfig.chat.toolPhase.maxResultChars : '';
                 document.getElementById('config-chat-empty-retry-max').value = currentConfig.chat?.emptyReplyRetry?.maxRetries ?? 2;
                 document.getElementById('config-chat-empty-retry-delay').value = currentConfig.chat?.emptyReplyRetry?.delayMs ?? 800;
                 document.getElementById('config-chat-chain-leak-retry-enabled').checked = currentConfig.chat?.chainLeakRetry?.enabled !== false;
@@ -21801,6 +21871,11 @@ ${escapeHtml(regexWarnings)}` : ''}</div>`;
                         delayMs: parseInt(document.getElementById('config-chat-empty-retry-delay').value) || 800
                     },
                     maxToolRounds: Math.max(0, parseInt(document.getElementById('config-chat-max-tool-rounds').value, 10) || 0), // 留空 = 不限
+                    toolPhase: {
+                        enabled: document.getElementById('config-chat-tool-phase-enabled').checked,
+                        // 留空 = 用后端默认 4000
+                        maxResultChars: Math.max(0, parseInt(document.getElementById('config-chat-tool-phase-max-chars').value, 10) || 0) || undefined
+                    },
                     chainLeakRetry: {
                         enabled: document.getElementById('config-chat-chain-leak-retry-enabled').checked,
                         maxRetries: readIntegerInput('config-chat-chain-leak-retry-max', 1),

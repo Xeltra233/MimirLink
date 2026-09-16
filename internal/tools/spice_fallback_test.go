@@ -67,14 +67,14 @@ func TestMCPSearchFallback(t *testing.T) {
 		},
 	})
 
-	registry := New(searchService, nil)
+	registry := New(nil, searchService, nil)
 	registry.AttachMCP(mcpClient)
 	output := registry.Execute(context.Background(), func() ai.ToolCall {
 		call := ai.ToolCall{}
 		call.Function.Name = "web_search"
 		call.Function.Arguments = `{"query":"测试"}`
 		return call
-	}())
+	}(), CallScope{})
 	if !strings.Contains(output, "MCP 兜底结果") || !strings.Contains(output, `"provider":"mcp"`) {
 		t.Fatalf("应走 MCP 兜底: %s", output)
 	}
@@ -97,14 +97,14 @@ func TestMCPFallbackOff(t *testing.T) {
 	mcpClient := mcp.NewForTest(map[string]func(args map[string]any) (string, error){
 		"search": func(args map[string]any) (string, error) { return "不应出现", nil },
 	})
-	registry := New(searchService, nil)
+	registry := New(nil, searchService, nil)
 	registry.AttachMCP(mcpClient)
 	output := registry.Execute(context.Background(), func() ai.ToolCall {
 		call := ai.ToolCall{}
 		call.Function.Name = "web_search"
 		call.Function.Arguments = `{"query":"测试"}`
 		return call
-	}())
+	}(), CallScope{})
 	if strings.Contains(output, "不应出现") {
 		t.Fatalf("off 时不应走 MCP 兜底: %s", output)
 	}

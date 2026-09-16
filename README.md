@@ -15,7 +15,8 @@ cd MimirLink
 # 放入 config.json 和角色卡到 data/characters/
 docker compose up -d
 ```
-支持 `linux/amd64` `linux/arm64`。
+镜像为 Go 版多阶段构建（`golang` 构建 → `debian-slim` 运行，启动命令 `mimir -root /app -bot -serve`），支持 `linux/amd64` `linux/arm64`。
+容器内配置路径优先读 `config/config.json`，回退 `config.json`，两种挂载方式等效。
 
 **目录挂载**：
 | 宿主机 | 容器 | 说明 |
@@ -69,6 +70,8 @@ docker compose up -d
 | `chat.groupRepeat.enabled` | 群聊复读直发开关，默认关闭；也可在 Web 面板“配置 -> 聊天 -> 聊天行为”中切换 |
 | `chat.groupRepeat.triggerCount` | 连续相同文本触发次数，默认 `2` |
 | `chat.groupRepeat.cooldownMs` | 触发后同群同文冷却时间，默认 `180000`（3 分钟） |
+| `chat.toolPhase.enabled` | 两阶段提示词（工具阶段 / 正式回复）开关，默认开启；开启后先带工具说明与轻上下文完成工具调用，再加载人设等提示词做正式回复。关闭则回到单阶段行为 |
+| `chat.toolPhase.maxResultChars` | 工具阶段结果注入正式回复时的单条截断长度，默认 `4000` |
 | `chat.varparseModel` | 变量解析模型（可选），留空关闭；仅主回复缺少有效 `<UpdateVariable>` 时额外调用一次 |
 | `chat.imageCaptionModel` | 图片转述模型（可选），留空则把原图直传聊天模型（需多模态） |
 | `chat.imageCaptionPrompt` | 图片转述提示词，配置页默认填入内置提示词；留空或与内置默认一致即按内置默认处理 |
@@ -77,11 +80,18 @@ docker compose up -d
 | `chat.imageCaptionSkipWhenModelSupportsImage` | 主模型声明支持图片输入时跳过转述，默认 `true` |
 | `chat.imageCaptionFailContinue` | 转述失败时注入占位提示继续回复，默认 `false`（回 ⚠️ 提示） |
 ### Linux / Windows
+Go 版（推荐，功能与 Node 版一致）：
+```bash
+cp config.example.json config.json
+go build -o mimir ./cmd/mimir
+./mimir -root . -bot -serve
+# 面板: http://localhost:8001
+```
+Node 版（保留，源码在 `src/`）：
 ```bash
 npm install
 cp config.example.json config.json
 npm start
-# 面板: http://localhost:8001
 ```
 Node.js >= 22.5.0（`node:sqlite` 内置模块）。
 

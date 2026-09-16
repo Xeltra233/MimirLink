@@ -41,7 +41,7 @@ func (s *Server) loadMCPSection() map[string]any {
 }
 
 // writeMCPSection 写回 mcp 段并保存配置，然后热重载客户端（如有）。
-func (s *Server) writeMCPSection(section map[string]any) ([]mcp.ServerStatus, error) {
+func (s *Server) writeMCPSection(section map[string]any) (map[string]any, error) {
 	if err := s.document.Set("mcp", section); err != nil {
 		return nil, err
 	}
@@ -57,18 +57,19 @@ func (s *Server) writeMCPSection(section map[string]any) ([]mcp.ServerStatus, er
 		client := mcp.New(config, s.logger)
 		client.ConnectAll(requestContext())
 		s.mcpClient = client
-		return client.Status(), nil
+		return client.StatusPayload(), nil
 	}
-	return s.mcpClient.Reload(config), nil
+	return s.mcpClient.ReloadPayload(config), nil
 }
 
 // requestContext 面板内部操作的后台上下文。
 func requestContext() context.Context { return context.Background() }
 
-// clientStatusPayload 返回客户端状态（与 Node getMcpClientStatus 一致：运行态优先）。
-func (s *Server) clientStatusPayload() []mcp.ServerStatus {
+// clientStatusPayload 返回客户端状态（与 Node getMcpClientStatus 一致：运行态优先，
+// 并保持 { enabled, maxResultChars, servers } 的响应结构）。
+func (s *Server) clientStatusPayload() map[string]any {
 	if s.mcpClient != nil {
-		return s.mcpClient.Status()
+		return s.mcpClient.StatusPayload()
 	}
 	section := s.loadMCPSection()
 	sectionJSON, _ := json.Marshal(section)
@@ -82,7 +83,11 @@ func (s *Server) clientStatusPayload() []mcp.ServerStatus {
 			Transport: server.Transport, Command: server.Command, URL: server.URL,
 		})
 	}
-	return statuses
+	return map[string]any{
+		"enabled":        config.Enabled,
+		"maxResultChars": config.MaxResultChars,
+		"servers":        statuses,
+	}
 }
 
 func maskSecretMap(values map[string]string) map[string]string {
@@ -274,10 +279,13 @@ func (s *Server) handleMCPServers(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	var serverStatus *mcp.ServerStatus
-	for index := range status {
-		if status[index].ID == normalized.ID {
-			serverStatus = &status[index]
-			break
+	// 从状态对象里取回刚保存服务器的运行状态（payload 结构：{ enabled, maxResultChars, servers }）
+	if servers, ok := status["servers"].([]mcp.ServerStatus); ok {
+		for index := range servers {
+			if servers[index].ID == normalized.ID {
+				serverStatus = &servers[index]
+				break
+			}
 		}
 	}
 	if serverStatus != nil {

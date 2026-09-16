@@ -1226,8 +1226,26 @@ func (s *Server) handlePromptPreview(writer http.ResponseWriter, request *http.R
 		"runtimeComposition": composition,
 		"messageTrace":       chat.BuildMessageTrace(messages, segments),
 		"messages":           messages,
+		"twoPhase":           s.twoPhasePreview(messages),
 		"contextConfig":      contextConfigSnapshot(s.document),
 	})
+}
+
+// twoPhasePreview 组装两阶段预览（对齐 Node chat-preview 的 twoPhase 字段）。
+func (s *Server) twoPhasePreview(messages []ai.Message) map[string]any {
+	enabled := true
+	if s.document.Exists("chat.toolPhase.enabled") {
+		enabled = s.document.Bool("chat.toolPhase.enabled")
+	}
+	hints := tools.HintsFor(s.document, s.mcpClient)
+	toolNames := tools.ToolNamesForPreview(s.document, s.mcpClient)
+	return map[string]any{
+		"enabled":   enabled,
+		"hasTools":  len(toolNames) > 0,
+		"toolNames": toolNames,
+		"toolHints": hints,
+		"messages":  chat.BuildToolPhaseMessages(messages, hints, s.currentCharacterName()),
+	}
 }
 
 // previewParticipants 从请求体（或模拟记忆）整理参与者名单，供上下文注入展示。

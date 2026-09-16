@@ -496,6 +496,171 @@ function buildToolHints(config = {}) {
     return [buildWebToolHint(config), buildMentionToolHint(config)].filter(Boolean);
 }
 
+// 消息头解析：与 buildStructuredMessage 的头部格式一致（群聊/私聊|QQ|昵称|群号|群名）
+const TOOL_PHASE_HEADER_PATTERN = /\[(群聊|私聊)\|QQ:([^|\]]*)\|昵称:([^|\]]*)\|群号:([^|\]]*)\|群名:([^|\]]*)/;
+
+// 取单条消息的纯文本（兼容多模态分段）
+function toolPhaseMessageText(message) {
+    const content = message?.content;
+    if (typeof content === 'string') {
+        return content;
+    }
+    if (Array.isArray(content)) {
+        return content
+            .map((part) => (typeof part === 'string' ? part : (part?.text || '')))
+            .filter(Boolean)
+            .join('\n');
+    }
+    return '';
+}
+
+/**
+ * 两阶段链路：构造工具阶段的轻量场景卡。
+ * 只从现有消息头提取角色名/会话/发言人/近期发言人名单，解决“只给聊天记录不给背景”导致的指代与 @ 找人发懵；
+ * 不加载人设、世界书、记忆正文，保持工具阶段轻量。
+ */
+export function buildToolPhaseScene(fullMessages, characterName = '', maxParticipants = 10) {
+    const order = [];
+    const names = new Map();
+    const groupNames = new Map();
+    let sessionLabel = '';
+    let currentSpeaker = '';
+    let lastGroupId = '';
+    for (const message of Array.isArray(fullMessages) ? fullMessages : []) {
+        const match = toolPhaseMessageText(message).match(TOOL_PHASE_HEADER_PATTERN);
+        if (!match) {
+            continue;
+        }
+        const [, chatLabel, qq, nickname, groupId, groupName] = match;
+        if (!qq) {
+            continue;
+        }
+        const existing = order.indexOf(qq);
+        if (existing >= 0) {
+            order.splice(existing, 1);
+        }
+        order.push(qq);
+        names.set(qq, nickname || `QQ ${qq}`);
+        if (chatLabel === '群聊' && groupId && groupId !== 'N/A') {
+            lastGroupId = groupId;
+            // 当前事件头可能没有群名（群名:N/A），优先保留历史里出现过的真名
+            if (groupName && groupName !== 'N/A') {
+                groupNames.set(groupId, groupName);
+            }
+        } else if (chatLabel === '私聊') {
+            sessionLabel = `私聊 QQ:${qq}`;
+        }
+        if (message.role === 'user') {
+            currentSpeaker = `${nickname || `QQ ${qq}`}(${qq})`;
+        }
+    }
+    if (lastGroupId) {
+        sessionLabel = `群聊「${groupNames.get(lastGroupId) || `群 ${lastGroupId}`}」(${lastGroupId})`;
+    }
+
+    const lines = ['【当前场景】'];
+    if (characterName) {
+        lines.push(`- 你正在以角色「${characterName}」参与这次对话；本次只做工具决策，不需要扮演或输出人设内容。`);
+    }
+    if (sessionLabel) {
+        lines.push(`- 当前会话: ${sessionLabel}`);
+    }
+    if (currentSpeaker) {
+        lines.push(`- 当前发言人: ${currentSpeaker}`);
+    }
+    const recent = order.slice(-Math.max(1, maxParticipants)).map((qq) => `${names.get(qq)}(${qq})`);
+    if (recent.length >= 2) {
+        lines.push(`- 近期发言人: ${recent.join('、')}`);
+    }
+    if (lines.length === 1) {
+        return '';
+    }
+    return lines.join('\n');
+}
+
+/**
+ * 两阶段链路：构造工具阶段消息。
+ * 保留轻量场景卡 + 功能内置提示词（工具说明）与轻量对话上下文，
+ * 不带人设/预设/世界书/记忆等重提示词，也不带 assistant 预填充。
+ */
+export function buildToolPhaseMessages(fullMessages, toolHints, options = {}) {
+    const messages = [];
+    const scene = buildToolPhaseScene(fullMessages, options.characterName || '');
+    if (scene) {
+        messages.push({ role: 'system', content: scene, meta: { source: 'tool_scene' } });
+    }
+    if (Array.isArray(toolHints) && toolHints.length > 0) {
+        messages.push({
+            role: 'system',
+            content: `【工具使用说明】\n${toolHints.join('\n\n')}`,
+            meta: { source: 'tool_hints' }
+        });
+    }
+    for (const message of Array.isArray(fullMessages) ? fullMessages : []) {
+        if (!message || message.role === 'system') {
+            continue;
+        }
+        // 预填充只服务于正式回复的语气与格式
+        if (message.meta?.source === 'assistant_prefill') {
+            continue;
+        }
+        messages.push({ ...message });
+    }
+    return messages;
+}
+
+/** 两阶段链路：把工具阶段的结果整理成注入正式回复阶段的系统段 */
+export function buildToolPhaseResultMessage(transcript = [], options = {}) {
+    const entries = Array.isArray(transcript) ? transcript.filter((entry) => entry && entry.name) : [];
+    if (entries.length === 0) {
+        return '';
+    }
+
+    const maxChars = clampInteger(options.maxChars, 200, 50000, 4000);
+    const lines = [
+        '【本轮工具执行结果】',
+        '这些是刚刚真实执行工具得到的最新结果，回复时以它们为准；不要编造工具没有返回的信息。'
+    ];
+    entries.forEach((entry, index) => {
+        const status = entry.ok === false ? '失败' : '完成';
+        lines.push(`${index + 1}. ${sanitizeText(entry.name)}｜参数: ${summarizeToolArguments(entry.arguments)}｜状态: ${status}`);
+        const resultText = stringifyToolResult(entry.result);
+        if (resultText) {
+            lines.push(truncateText(resultText, maxChars));
+        }
+    });
+    return lines.join('\n');
+}
+
+/** 工具参数摘要：只保留键值预览，避免把长参数原样带进正式回复 */
+function summarizeToolArguments(args = {}) {
+    if (!args || typeof args !== 'object' || Array.isArray(args)) {
+        const text = sanitizeText(args);
+        return text ? truncateText(text, 160) : '无';
+    }
+    const parts = [];
+    for (const [key, value] of Object.entries(args)) {
+        const valueText = typeof value === 'string' ? value : JSON.stringify(value);
+        parts.push(`${key}=${truncateText(sanitizeText(valueText), 80)}`);
+    }
+    return parts.length > 0 ? truncateText(parts.join(', '), 200) : '无';
+}
+
+/** 工具结果序列化：字符串直出，其余序列化后交给截断处理 */
+function stringifyToolResult(result) {
+    if (result === undefined || result === null) {
+        return '';
+    }
+    if (typeof result === 'string') {
+        return sanitizeText(result);
+    }
+    try {
+        return JSON.stringify(result, null, 1);
+    } catch {
+        return sanitizeText(String(result));
+    }
+}
+
 // ==================== 工具上下文 ====================
 
 /** MCP 搜索兜底：本地 provider 全挂时，自动改用一个 MCP 搜索引擎工具（可配置关闭/指定服务器） */

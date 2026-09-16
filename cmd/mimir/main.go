@@ -40,6 +40,16 @@ import (
 
 const version = "0.1.0-dev"
 
+// resolveConfigPath 解析配置文件路径：优先 config/config.json（只能挂载目录的部署平台），
+// 回退根目录 config.json（对齐 Node src/index.js loadConfig 的查找顺序）。
+func resolveConfigPath(rootDir string) string {
+	dirConfigPath := filepath.Join(rootDir, "config", "config.json")
+	if info, err := os.Stat(dirConfigPath); err == nil && !info.IsDir() {
+		return dirConfigPath
+	}
+	return filepath.Join(rootDir, "config.json")
+}
+
 func main() {
 	var (
 		rootDir     = flag.String("root", ".", "MimirLink 根目录（含 config.json 与 data/）")
@@ -109,7 +119,7 @@ func main() {
 	}
 
 	if *roundtrip != "" {
-		document, err := config.Load(filepath.Join(absoluteRoot, "config.json"))
+		document, err := config.Load(resolveConfigPath(absoluteRoot))
 		if err != nil {
 			fail("读取配置失败: %v", err)
 		}
@@ -209,7 +219,7 @@ func main() {
 }
 
 func servePanel(rootDir string, portOverride int) error {
-	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	document, err := config.Load(resolveConfigPath(rootDir))
 	if err != nil {
 		return err
 	}
@@ -270,7 +280,7 @@ func servePanel(rootDir string, portOverride int) error {
 }
 
 func runMCPProbe(rootDir string, callName string, callArgs string) {
-	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	document, err := config.Load(resolveConfigPath(rootDir))
 	if err != nil {
 		fail("读取配置失败: %v", err)
 	}
@@ -357,7 +367,7 @@ func runRecallProbe(dbPath string, query string, scopeType string, scopeKey stri
 }
 
 func runSearchProbe(rootDir string, query string, limit int, fetchURL string) {
-	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	document, err := config.Load(resolveConfigPath(rootDir))
 	if err != nil {
 		fail("读取配置失败: %v", err)
 	}
@@ -386,7 +396,7 @@ func runSearchProbe(rootDir string, query string, limit int, fetchURL string) {
 }
 
 func runBot(rootDir string) error {
-	document, err := config.Load(filepath.Join(rootDir, "config.json"))
+	document, err := config.Load(resolveConfigPath(rootDir))
 	if err != nil {
 		return err
 	}
@@ -442,7 +452,7 @@ func runBot(rootDir string) error {
 
 	searchConfig := tools.LoadSearchConfig(document)
 	searchService := search.New(searchConfig, logger)
-	toolRegistry := tools.New(searchService, logger)
+	toolRegistry := tools.New(document, searchService, logger)
 
 	// MCP 客户端（stdio / http）
 	var mcpRaw map[string]any
@@ -499,7 +509,7 @@ func runBot(rootDir string) error {
 	defer cancel()
 
 	// 配置热加载：面板写 config.json 后无需重启 bot（对齐 Node 单进程的即时生效）
-	configPath := filepath.Join(rootDir, "config.json")
+	configPath := resolveConfigPath(rootDir)
 	stopWatch := make(chan struct{})
 	defer close(stopWatch)
 	go config.WatchConfig(document, 2*time.Second, func() {
