@@ -90,3 +90,38 @@ func (s *Server) botStatusSnapshot() map[string]any {
 	}
 	return result
 }
+
+// onebotStatusPayload 组装面板状态里的 OneBot 段：
+// 优先取 Bot 控制口的真实连接状态，Bot 未运行时回退配置值与提示语。
+func (s *Server) onebotStatusPayload() map[string]any {
+	payload := map[string]any{
+		"connected": false,
+		"url":       s.document.String("onebot.url"),
+		"mode":      orDefault(s.document.String("onebot.mode"), "ws"),
+		"tokenMode": orDefault(s.document.String("onebot.tokenMode"), "header"),
+		"hasToken":  strings.TrimSpace(s.document.String("onebot.accessToken")) != "",
+		"selfId":    "",
+		"nickname":  "",
+	}
+	status := s.botStatusSnapshot()
+	if status == nil {
+		payload["note"] = "Bot 进程未运行（连接状态由 Bot 提供，请用 -bot 启动或在同进程加 -serve 共用）"
+		return payload
+	}
+	copyText := func(key string, source map[string]any, from string) {
+		value := strings.TrimSpace(fmt.Sprintf("%v", source[from]))
+		if value != "" && value != "<nil>" {
+			payload[key] = value
+		}
+	}
+	if connected, ok := status["connected"].(bool); ok {
+		payload["connected"] = connected
+	}
+	for _, pair := range [][2]string{{"selfId", "selfId"}, {"nickname", "nickname"}, {"url", "url"}, {"mode", "mode"}, {"tokenMode", "tokenMode"}} {
+		copyText(pair[0], status, pair[1])
+	}
+	if hasToken, ok := status["hasToken"].(bool); ok {
+		payload["hasToken"] = hasToken
+	}
+	return payload
+}

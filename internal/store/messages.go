@@ -114,3 +114,26 @@ func (d *DB) SearchMessages(query string, limit int) ([]Message, error) {
 	}
 	return messages, nil
 }
+
+// CompositionCounts 是面板“数据构成”统计（对齐 Node getDashboardCompositionStats）：
+// 人物档案 / 固定知识 / 动态知识分别按 memory_entries.entry_type 计数。
+type CompositionCounts struct {
+	ParticipantProfiles int64
+	FixedKnowledge      int64
+	DynamicKnowledge    int64
+}
+
+// CompositionCounts 统计三类记忆条目（空表返回 0）。
+func (d *DB) CompositionCounts() (CompositionCounts, error) {
+	var result CompositionCounts
+	err := d.handle.QueryRow(`
+		SELECT
+			COALESCE(SUM(CASE WHEN entry_type = 'participant_profile' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN entry_type = 'knowledge_fixed' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN entry_type = 'knowledge_dynamic' THEN 1 ELSE 0 END), 0)
+		FROM memory_entries`).Scan(&result.ParticipantProfiles, &result.FixedKnowledge, &result.DynamicKnowledge)
+	if err != nil {
+		return CompositionCounts{}, fmt.Errorf("统计数据构成失败: %w", err)
+	}
+	return result, nil
+}

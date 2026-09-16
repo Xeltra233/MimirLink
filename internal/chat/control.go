@@ -23,7 +23,11 @@ func (r *Runtime) ControlStatus() map[string]any {
 		"selfId":     "",
 		"nickname":   "",
 		"connected":  false,
+		"url":        r.document.String("onebot.url"),
 		"onebotUrl":  r.document.String("onebot.url"),
+		"mode":       orDefaultText(r.document.String("onebot.mode"), "ws"),
+		"tokenMode":  orDefaultText(r.document.String("onebot.tokenMode"), "header"),
+		"hasToken":   strings.TrimSpace(r.document.String("onebot.accessToken")) != "",
 		"uptimeMs":   time.Since(r.startedAt).Milliseconds(),
 	}
 	if r.bot != nil {

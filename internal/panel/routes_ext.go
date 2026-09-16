@@ -40,11 +40,19 @@ func (s *Server) registerExtendedRoutes() {
 
 func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request) {
 	counts := store.Counts{}
+	composition := store.CompositionCounts{}
+	oldestMessage, newestMessage := int64(0), int64(0)
 	activePath := ""
 	if database, path, err := s.openActiveMemory(); err == nil {
 		activePath = path
 		if c, err := database.Counts(); err == nil {
 			counts = c
+		}
+		if c, err := database.CompositionCounts(); err == nil {
+			composition = c
+		}
+		if oldest, newest := database.MessageTimeRange(); oldest > 0 || newest > 0 {
+			oldestMessage, newestMessage = oldest, newest
 		}
 		_ = database.Close()
 	}
@@ -67,7 +75,6 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 		"participantProfileProgress":  nil,
 		"knowledgeImportProgress":     nil,
 		"corpusEmbedProgress":         s.rangeEmbedProgressPayload(),
-		"dashboardMetrics":            nil,
 		"lastRouting":                 nil,
 		"lastInjectionObservation":    nil,
 		"recentInjectionObservations": []any{},
@@ -78,12 +85,7 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 			"bufferWindowMs":        s.document.Int("chat.bufferWindowMs", 1200),
 			"engine":                "go",
 		},
-		"onebot": map[string]any{
-			"connected": false,
-			"url":       s.document.String("onebot.url"),
-			"mode":      s.document.String("onebot.mode"),
-			"note":      "Go 面板不承载 OneBot 连接，请使用 -bot 进程",
-		},
+		"onebot":        s.onebotStatusPayload(),
 		"character":     fallback(character, "未选择"),
 		"characterFile": characterFileOf(character),
 		"worldbook":     fallback(worldbook, "未加载"),
@@ -95,14 +97,39 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 		"messages":       counts.Messages,
 		"summaries":      counts.Summaries,
 		"globalMemory": map[string]any{
-			"sessions":      counts.Sessions,
-			"messages":      counts.Messages,
-			"totalMessages": counts.Messages,
-			"summaries":     counts.Summaries,
+			"sessions":         counts.Sessions,
+			"messages":         counts.Messages,
+			"totalMessages":    counts.Messages,
+			"totalSessions":    counts.Sessions,
+			"summaries":        counts.Summaries,
+			"totalSummaries":   counts.Summaries,
+			"sessionMode":      sessionMode,
+			"oldestMessage":    nilIfZero(oldestMessage),
+			"newestMessage":    nilIfZero(newestMessage),
+			"memoryFileSizeMB": memoryFileSizeMB(activePath),
 			"storage": map[string]any{
 				"type": "sqlite",
 				"path": activePath,
 			},
+		},
+		// 面板数据构成（对齐 Node getDashboardMetricsSnapshot 的 composition 字段）
+		"dashboardMetrics": map[string]any{
+			"bucketMs": 600000,
+			"timeline": []any{},
+			"series": map[string]any{
+				"chat":               []any{},
+				"participantProfile": []any{},
+				"knowledgeImport":    []any{},
+				"tts":                []any{},
+			},
+			"composition": map[string]any{
+				"messages":            counts.Messages,
+				"summaries":           counts.Summaries,
+				"participantProfiles": composition.ParticipantProfiles,
+				"fixedKnowledge":      composition.FixedKnowledge,
+				"dynamicKnowledge":    composition.DynamicKnowledge,
+			},
+			"updatedAt": time.Now().UnixMilli(),
 		},
 		"activeMemory": map[string]any{
 			"currentCharacter":  character,

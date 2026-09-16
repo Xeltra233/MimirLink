@@ -26,7 +26,7 @@ func newTestServer(t *testing.T) (*Server, string) {
 	}
 	raw := []byte(`{
 		"auth": {"enabled": false},
-		"chat": {"dataDir": "` + strings.ReplaceAll(dataDir, `\`, `\\`) + `", "defaultCharacter": "测试角色"},
+		"chat": {"dataDir": "` + filepath.ToSlash(dataDir) + `", "defaultCharacter": "测试角色"},
 		"server": {"port": 8139},
 		"memory": {"storage": {"path": "` + strings.ReplaceAll(filepath.Join(dataDir, "chats", "memory.sqlite"), `\`, `\\`) + `"}}
 	}`)
@@ -257,5 +257,86 @@ func TestDataClearConfirmContract(t *testing.T) {
 	targets := doRequest(server, http.MethodPost, "/api/data/clear", `{"targets":["logs"]}`)
 	if targets.Code != http.StatusOK {
 		t.Fatalf("targets 清理返回 %d: %s", targets.Code, targets.Body.String())
+	}
+}
+
+// TestStatusDashboardCompositionAndOneBot：状态接口的数据构成统计与 OneBot token 指示。
+func TestStatusDashboardCompositionAndOneBot(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	for _, dir := range []string{"chats", "characters", "worlds", "presets"} {
+		if err := os.MkdirAll(filepath.Join(dataDir, dir), 0o755); err != nil {
+			t.Fatalf("准备目录失败: %v", err)
+		}
+	}
+	memoryPath := filepath.Join(dataDir, "chats", "memory.sqlite")
+	raw := []byte(`{
+		"auth": {"enabled": false},
+		"chat": {"dataDir": "` + filepath.ToSlash(dataDir) + `", "defaultCharacter": "测试角色", "sessionMode": "global_shared"},
+		"onebot": {"url": "ws://127.0.0.1:1", "mode": "ws", "tokenMode": "header", "accessToken": "e2e-token"},
+		"memory": {"storage": {"path": "` + filepath.ToSlash(memoryPath) + `"}}
+	}`)
+	document, err := config.New(filepath.Join(root, "config.json"), raw)
+	if err != nil {
+		t.Fatalf("构造配置失败: %v", err)
+	}
+	database, err := store.Open(memoryPath)
+	if err != nil {
+		t.Fatalf("创建记忆库失败: %v", err)
+	}
+	if err := database.EnsureSchema(); err != nil {
+		t.Fatalf("初始化记忆库失败: %v", err)
+	}
+	options := store.NamespaceOptions{ScopeType: "global"}
+	for _, entryType := range []string{"participant_profile", "participant_profile", "knowledge_fixed", "knowledge_dynamic", "conversation"} {
+		if _, err := database.AddMemoryEntry(options, store.MemoryEntry{EntryType: entryType, Content: "测试内容 " + entryType}); err != nil {
+			t.Fatalf("写入记忆条目失败: %v", err)
+		}
+	}
+	if err := database.AppendMessage(store.Message{ID: "m1", SessionID: "global_shared_memory", Role: "user", Content: "你好", Timestamp: 1000, DateISO: "2026-01-01"}); err != nil {
+		t.Fatalf("写入消息失败: %v", err)
+	}
+	_ = database.Close()
+
+	server, err := NewServer(Options{RootDir: root, Document: document})
+	if err != nil {
+		t.Fatalf("构造面板失败: %v", err)
+	}
+	recorder := doRequest(server, http.MethodGet, "/api/status", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("状态接口失败: %d %s", recorder.Code, recorder.Body.String())
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("解析状态失败: %v", err)
+	}
+	composition, _ := payload["dashboardMetrics"].(map[string]any)["composition"].(map[string]any)
+	if num(composition["participantProfiles"]) != 2 || num(composition["fixedKnowledge"]) != 1 || num(composition["dynamicKnowledge"]) != 1 {
+		t.Fatalf("数据构成统计不符: %v", composition)
+	}
+	if num(composition["messages"]) != 1 {
+		t.Fatalf("数据构成消息数不符: %v", composition["messages"])
+	}
+	globalMemory, _ := payload["globalMemory"].(map[string]any)
+	if num(globalMemory["totalSummaries"]) != 0 || globalMemory["sessionMode"] != "global_shared" {
+		t.Fatalf("globalMemory 字段不符: %v", globalMemory)
+	}
+	onebot, _ := payload["onebot"].(map[string]any)
+	if onebot["hasToken"] != true || onebot["tokenMode"] != "header" || onebot["mode"] != "ws" {
+		t.Fatalf("OneBot 状态不符: %v", onebot)
+	}
+	if onebot["connected"] != false {
+		t.Fatalf("Bot 未运行时不应显示已连接: %v", onebot)
+	}
+}
+
+func num(value any) int64 {
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed)
+	case int64:
+		return typed
+	default:
+		return -1
 	}
 }
