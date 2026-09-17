@@ -3,6 +3,8 @@ package chat
 import (
 	"testing"
 	"time"
+
+	"mimirlink/internal/music"
 )
 
 // TestGroupRepeatDetector：计数触发、不同文本重置、冷却、禁用。
@@ -125,4 +127,28 @@ func TestAdminPokeCommand(t *testing.T) {
 // testNow 生成递增时间。
 func testNow(offsetSeconds int) time.Time {
 	return time.Unix(1789311808+int64(offsetSeconds), 0)
+}
+
+// TestMusicSessionPersistence 守护点歌多轮会话持久性：同一 Runtime 下搜索后选歌能命中先前会话。
+func TestMusicSessionPersistence(t *testing.T) {
+	model := &fakeModel{replies: []string{"ok"}}
+	runtime, _, _ := newRuntime(t, map[string]any{
+		"chat": map[string]any{
+			"music": map[string]any{
+				"enabled": true,
+			},
+		},
+	}, model)
+	if runtime.musicStore == nil {
+		t.Fatal("musicStore 应在 Runtime 初始化时创建")
+	}
+	sessionKey := "group:99001:user:2001"
+	runtime.musicStore.Set(sessionKey, &music.Session{
+		Query:   "七里香",
+		Results: []map[string]any{{"title": "七里香", "id": "123"}},
+	}, 10*time.Minute)
+
+	if session := runtime.musicStore.Get(sessionKey); session == nil || session.Query != "七里香" {
+		t.Fatalf("musicStore 未保持会话: %+v", session)
+	}
 }

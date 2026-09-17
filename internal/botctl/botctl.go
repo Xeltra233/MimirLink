@@ -209,7 +209,7 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 
 func (s *Server) handleReconnect(writer http.ResponseWriter, request *http.Request) {
 	if err := s.handler.ReconnectOneBot(); err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "已向 Bot 进程下发 OneBot 重连指令"})
@@ -223,7 +223,7 @@ func (s *Server) handleMention(writer http.ResponseWriter, request *http.Request
 	}
 	result, err := s.handler.AdminMention(payload)
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	result["success"] = true
@@ -238,7 +238,7 @@ func (s *Server) handleAnalyze(writer http.ResponseWriter, request *http.Request
 	}
 	result, err := s.handler.AnalyzeParticipantProfile(payload)
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	result["success"] = true
@@ -253,7 +253,7 @@ func (s *Server) handleRefreshName(writer http.ResponseWriter, request *http.Req
 	}
 	result, err := s.handler.RefreshParticipantName(payload)
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	result["success"] = true
@@ -269,7 +269,7 @@ func (s *Server) handleTestAI(writer http.ResponseWriter, request *http.Request)
 	}
 	result, err := s.handler.TestAI(payload)
 	if err != nil {
-		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		writeJSON(writer, http.StatusOK, map[string]any{"success": false, "error": err.Error(), "message": err.Error()})
 		return
 	}
 	result["success"] = true

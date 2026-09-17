@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,15 +14,20 @@ import (
 // callRecordingBot 记录 Call 调用（表情回应/戳一戳等非核心接口），其余能力复用 fakeBot。
 type callRecordingBot struct {
 	*fakeBot
-	calls []map[string]any
+	callMu sync.RWMutex
+	calls  []map[string]any
 }
 
 func (b *callRecordingBot) Call(action string, params map[string]any) (json.RawMessage, error) {
+	b.callMu.Lock()
 	b.calls = append(b.calls, map[string]any{"action": action, "params": params})
+	b.callMu.Unlock()
 	return json.RawMessage(`{"status":"ok","retcode":0}`), nil
 }
 
 func (b *callRecordingBot) callParams(action string) []map[string]any {
+	b.callMu.RLock()
+	defer b.callMu.RUnlock()
 	results := []map[string]any{}
 	for _, call := range b.calls {
 		if call["action"] == action {
@@ -285,13 +291,14 @@ func TestAdminMentionCommand(t *testing.T) {
 		t.Fatal("管理员 /at 应被处理")
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && len(bot.groupSent) == 0 {
+	for time.Now().Before(deadline) && bot.groupSentLen() == 0 {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if len(bot.groupSent) == 0 {
+	sent := bot.getGroupSent()
+	if len(sent) == 0 {
 		t.Fatal("应真实发送主动 @ 消息")
 	}
-	segments, _ := bot.groupSent[0]["message"].([]map[string]any)
+	segments, _ := sent[0]["message"].([]map[string]any)
 	if len(segments) != 2 || segments[0]["type"] != "at" || segments[1]["type"] != "text" {
 		t.Fatalf("主动 @ 段结构不符: %+v", segments)
 	}
@@ -299,7 +306,7 @@ func TestAdminMentionCommand(t *testing.T) {
 		t.Fatalf("@ 目标不符: %+v", segments[0])
 	}
 	// 非管理员
-	before := len(bot.groupSent)
+	before := bot.groupSentLen()
 	event2 := buildGroupEvent("/at ", false, "99001", "2001")
 	event2["message"] = []any{
 		map[string]any{"type": "text", "data": map[string]any{"text": "/at "}},
@@ -309,8 +316,8 @@ func TestAdminMentionCommand(t *testing.T) {
 	if handled := runtime.HandleEvent(event2); !handled {
 		t.Fatal("非管理员 /at 也应被处理（发送失败提示）")
 	}
-	if len(bot.groupSent) != before+1 {
-		t.Fatalf("非管理员应收到失败提示，实际发送 %d 条", len(bot.groupSent)-before)
+	if bot.groupSentLen() != before+1 {
+		t.Fatalf("非管理员应收到失败提示，实际发送 %d 条", bot.groupSentLen()-before)
 	}
 }
 

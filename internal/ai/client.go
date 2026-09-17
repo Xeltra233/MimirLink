@@ -302,6 +302,9 @@ func (c *Client) Chat(ctx context.Context, messages []Message, overrides map[str
 			fallbackMessages := messages[:len(messages)-1]
 			result, retryErr := c.doChatRequest(ctx, fallbackMessages, overrides)
 			if retryErr == nil && (result.Content != "" || result.ReasoningContent != "" || len(result.ToolCalls) > 0) {
+				if result.Content == "" && result.ReasoningContent != "" && len(result.ToolCalls) == 0 {
+					result.Content = result.ReasoningContent
+				}
 				return result, nil
 			}
 		}
@@ -310,6 +313,10 @@ func (c *Client) Chat(ctx context.Context, messages []Message, overrides map[str
 			return nil, fmt.Errorf("AI 返回了空回复（非流式与流式兜底均失败: %v）", streamErr)
 		}
 		return streamResult, nil
+	}
+	// 对齐 Node ai.js：标准 content 为空但有 reasoning_content 时回退使用
+	if result.Content == "" && result.ReasoningContent != "" && len(result.ToolCalls) == 0 {
+		result.Content = result.ReasoningContent
 	}
 	return result, nil
 
@@ -488,9 +495,15 @@ func (c *Client) chatStreaming(ctx context.Context, messages []Message, override
 	if content.Len() == 0 && reasoning.Len() == 0 {
 		return nil, fmt.Errorf("流式响应无内容")
 	}
+	finalContent := content.String()
+	finalReasoning := reasoning.String()
+	// 对齐 Node ai.js：标准 content 为空但有 reasoning_content 时回退使用
+	if finalContent == "" && finalReasoning != "" {
+		finalContent = finalReasoning
+	}
 	return &ChatResult{
-		Content:          content.String(),
-		ReasoningContent: reasoning.String(),
+		Content:          finalContent,
+		ReasoningContent: finalReasoning,
 	}, nil
 }
 

@@ -72,7 +72,9 @@ type Runtime struct {
 	regexProc      *regexProcessor
 	focusSegment   string
 	repeatDetector *GroupRepeatDetector
+	seenMu         sync.Mutex
 	seenMessageIDs map[string]time.Time
+	musicStore     *music.SessionStore
 	// 消息聚合状态（对齐 Node 连发合并）
 	aggregateCount  int
 	aggregateReason string
@@ -125,6 +127,10 @@ func New(options Options) *Runtime {
 			}
 		}
 	}
+	var rawConfig []byte
+	if options.Document != nil {
+		rawConfig = options.Document.Raw()
+	}
 	return &Runtime{
 		startedAt:      time.Now(),
 		document:       options.Document,
@@ -136,9 +142,10 @@ func New(options Options) *Runtime {
 		logger:         logger,
 		historySize:    historySize,
 		rootDir:        options.RootDir,
-		regexProc:      newRegexProcessor(options.Document.Raw()),
+		regexProc:      newRegexProcessor(rawConfig),
 		repeatDetector: NewGroupRepeatDetector(),
 		seenMessageIDs: map[string]time.Time{},
+		musicStore:     music.NewSessionStore(),
 		metrics:        metrics.New(),
 	}
 }
@@ -217,7 +224,9 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	// 消息幂等去重（对齐 Node runtime.js 的去重职责：同一 message_id 只处理一次）
 	if messageID := idField(event, "message_id"); messageID != "" {
 		now := time.Now()
+		r.seenMu.Lock()
 		if lastAt, seen := r.seenMessageIDs[messageID]; seen && now.Sub(lastAt) < 10*time.Minute {
+			r.seenMu.Unlock()
 			return false
 		}
 		// 顺带清理过期表项
@@ -229,6 +238,7 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 			}
 		}
 		r.seenMessageIDs[messageID] = now
+		r.seenMu.Unlock()
 	}
 
 	segments := messageSegments(event["message"])
@@ -444,7 +454,7 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	thinkingTimer := r.startThinkingNotify(event, messageType, groupID, userID)
 
 	startedAt := time.Now()
-	reply, messages, err := r.generateReply(context.Background(), messages, scope, ChatScopeKey(messageType, groupID, userID))
+	reply, reasoning, messages, err := r.generateReply(context.Background(), messages, scope, ChatScopeKey(messageType, groupID, userID))
 	if thinkingTimer != nil {
 		thinkingTimer.Stop()
 	}
@@ -495,8 +505,13 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		r.logger.Printf("[聊天] 写入回复失败: %v", err)
 	}
 
+	replyToSend := reply
+	sendReasoning := r.document.Bool("chat.sendReasoningToQQ") && strings.TrimSpace(reasoning) != ""
+	if sendReasoning {
+		replyToSend = buildDebugReplyWithReasoning(reasoning, reply)
+	}
 	// 回复分发（对齐 Node dispatchReply：引用/at 前缀、splitMessage 分段、[voice] TTS、段间延迟）
-	if err := r.dispatchReply(event, messageType, groupID, userID, reply, r.loadDispatcherConfig(false), r.ttsManagerIfAvailable()); err != nil {
+	if err := r.dispatchReply(event, messageType, groupID, userID, replyToSend, r.loadDispatcherConfig(sendReasoning), r.ttsManagerIfAvailable()); err != nil {
 		r.logger.Printf("[聊天] 发送回复失败: %v", err)
 		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
 		return false
@@ -555,7 +570,7 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 	messages = append(messages, ai.Message{Role: "system", Content: "【当前时间】" + currentTimeString()})
 	// 1.5) 会话上下文 / 输入护栏 / 人类群聊决策规则（对齐 Node situational-context /
 	//      input-guardrail / human-chat-control-v2 段）
-	if situational := r.buildSituationalContext(sessionKey, history, messageType); situational != "" {
+	if situational := r.buildSituationalContext(sessionKey, history, messageType, userID); situational != "" {
 		messages = append(messages, ai.Message{Role: "system", Content: situational})
 	}
 	if r.guardrailEnabled() {
@@ -764,22 +779,22 @@ func (r *Runtime) maxToolRounds() int {
 // hardToolRoundCeiling 是"不限制"模式下的安全上限，防止模型陷入死循环。
 const hardToolRoundCeiling = 50
 
-// chatWithTools 执行对话并按需进入工具调用循环。
-func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message, scope tools.CallScope) (string, error) {
+// chatWithTools 执行对话并按需进入工具调用循环，返回回复正文、思维链内容与错误。
+func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message, scope tools.CallScope) (string, string, error) {
 	if r.tools == nil {
 		result, err := r.ai.Chat(ctx, messages, nil)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		return result.Content, nil
+		return result.Content, result.ReasoningContent, nil
 	}
 	definitions := r.tools.Definitions()
 	if len(definitions) == 0 {
 		result, err := r.ai.Chat(ctx, messages, nil)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
-		return result.Content, nil
+		return result.Content, result.ReasoningContent, nil
 	}
 
 	configuredRounds := r.maxToolRounds()
@@ -804,10 +819,10 @@ func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message, scop
 
 		result, err := r.ai.Chat(ctx, conversation, overrides)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if len(result.ToolCalls) == 0 {
-			return result.Content, nil
+			return result.Content, result.ReasoningContent, nil
 		}
 
 		assistantMessage := ai.Message{Role: "assistant", Content: result.Content, ToolCalls: result.ToolCalls}
@@ -1274,6 +1289,9 @@ func (r *Runtime) buildInputHeader(event map[string]any, messageType string, gro
 	nickname := ""
 	if sender, ok := event["sender"].(map[string]any); ok {
 		nickname = stringValue(sender["nickname"])
+		if card := stringValue(sender["card"]); card != "" {
+			nickname = card
+		}
 	}
 	timeText := time.Now().Format("2006/1/2 15:04:05")
 	if timestamp, ok := numericField(event, "time"); ok && timestamp > 0 {
@@ -1283,6 +1301,13 @@ func (r *Runtime) buildInputHeader(event map[string]any, messageType string, gro
 	groupName := "N/A"
 	if messageType == "group" {
 		groupLabel = groupID
+		if gn := stringValue(event["group_name"]); gn != "" {
+			groupName = gn
+		} else if sender, ok := event["sender"].(map[string]any); ok && stringValue(sender["group_name"]) != "" {
+			groupName = stringValue(sender["group_name"])
+		} else if groupID != "" {
+			groupName = "群" + groupID
+		}
 	}
 	isAtBot := "false"
 	if containsAtSelf(event["message"], r.bot.SelfID()) {
@@ -1533,14 +1558,22 @@ func contextFlagFor(document *config.Document, overrides map[string]bool, key st
 }
 
 // buildSituationalContext 组装会话上下文段（对齐 Node buildSituationalContext 可用子集：
-// 会话感知 + 参与者 + 最近用户意图；画像/引用上下文依赖运行时状态，Go 版暂缺数据源）。
-func (r *Runtime) buildSituationalContext(sessionKey string, history []store.Message, messageType string) string {
+// 会话感知 + 参与者 + 最近用户意图 + 当前发言人画像）。
+func (r *Runtime) buildSituationalContext(sessionKey string, history []store.Message, messageType string, userID string) string {
+	var speakerProfile string
+	if r.memory != nil && userID != "" {
+		namespace := namespaceOptionsFor(r.document, r.characterName(), sessionKey)
+		if entry, err := r.memory.GetParticipantProfileEntry(namespace, userID); err == nil && entry != nil {
+			speakerProfile = strings.TrimSpace(entry.Content)
+		}
+	}
 	return situationalContextFor(r.document, SituationalInput{
-		SessionKey:    sessionKey,
-		MessageType:   messageType,
-		History:       history,
-		MessageCount:  r.pendingMessageCount(),
-		TriggerReason: r.pendingTriggerReason(),
+		SessionKey:     sessionKey,
+		MessageType:    messageType,
+		History:        history,
+		MessageCount:   r.pendingMessageCount(),
+		TriggerReason:  r.pendingTriggerReason(),
+		SpeakerProfile: speakerProfile,
 	})
 }
 
@@ -1635,6 +1668,7 @@ func (r *Runtime) tryHandleMusicCommand(event map[string]any, messageType string
 	config := music.NormalizeConfig(r.musicConfigRaw())
 	handler := &music.Handler{
 		Config:     r.musicConfigRaw,
+		Store:      r.musicStore,
 		AudioDir:   filepath.Join(r.dataDir(), "audio"),
 		FFmpegPath: r.document.String("ffmpegPath"),
 		Warn:       func(message string) { r.logger.Printf("[点歌] %s", message) },

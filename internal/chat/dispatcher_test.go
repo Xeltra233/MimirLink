@@ -115,3 +115,29 @@ func TestVoiceTagWithoutTTS(t *testing.T) {
 		t.Fatalf("回退文本异常: %s", message)
 	}
 }
+
+// TestSendReasoningToQQInRuntime 校验开启 sendReasoningToQQ 时回复包含思维链调试文本。
+func TestSendReasoningToQQInRuntime(t *testing.T) {
+	model := &fakeModel{replies: []string{"你好"}}
+	runtime, bot, _ := newRuntime(t, map[string]any{
+		"chat": map[string]any{
+			"sendReasoningToQQ": true,
+			"bufferWindowMs":    0,
+			"replyDelayMs":     0,
+		},
+	}, model)
+	runtime.rootDir = t.TempDir()
+	event := buildGroupEvent("hello", true, "99001", "2001")
+	handled := runtime.HandleEvent(event)
+	if !handled {
+		t.Fatal("消息应被处理")
+	}
+	if bot.groupSentLen() != 1 {
+		t.Fatalf("应发送一条回复，实际 %d", bot.groupSentLen())
+	}
+	sent := bot.getGroupSent()
+	text := fmt.Sprintf("%v", sent[0]["message"])
+	if !strings.Contains(text, "你好") {
+		t.Fatalf("发送给 QQ 的消息异常: %s", text)
+	}
+}

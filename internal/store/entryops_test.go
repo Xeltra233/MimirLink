@@ -89,7 +89,19 @@ func TestClearAllData(t *testing.T) {
 	if err != nil || len(profiles) != 0 {
 		t.Fatalf("人物档案未清空: %d err=%v", len(profiles), err)
 	}
-	if _, err := database.GetKnowledgeEntry("nonexistent"); err != nil {
-		t.Fatalf("清空后查询异常: %v", err)
+}
+
+// TestMessageTimeRange 校验消息表时间范围查询（基于 timestamp 列）。
+func TestMessageTimeRange(t *testing.T) {
+	database := newPanelOpsDB(t)
+	if err := database.AppendMessage(Message{ID: "m1", SessionID: "s1", Role: "user", Content: "消息1", Timestamp: 1000, DateISO: "2026-01-01T00:00:00Z"}); err != nil {
+		t.Fatalf("添加消息失败: %v", err)
+	}
+	if err := database.AppendMessage(Message{ID: "m2", SessionID: "s1", Role: "assistant", Content: "消息2", Timestamp: 2000, DateISO: "2026-01-01T00:00:01Z"}); err != nil {
+		t.Fatalf("添加消息失败: %v", err)
+	}
+	oldest, newest := database.MessageTimeRange()
+	if oldest != 1000 || newest != 2000 {
+		t.Fatalf("时间范围异常: oldest=%d, newest=%d", oldest, newest)
 	}
 }

@@ -215,7 +215,7 @@ func initialProfileProgress() map[string]any {
 		"hasEnoughNewInfo":   false,
 		"currentMessage":     "暂无人物档案任务",
 		"progressPercent":    0,
-		"tasks":              []any{},
+		"tasks":              []map[string]any{},
 		"savedCount":         0,
 		"lastQueuedAt":       nil,
 		"lastStartedAt":      nil,
@@ -247,23 +247,25 @@ func (r *Runtime) ProfileProgressSnapshot() map[string]any {
 	if r.profileProgress == nil {
 		r.profileProgress = initialProfileProgress()
 	}
-	snapshot := map[string]any{}
+	snapshot := make(map[string]any, len(r.profileProgress)+1)
 	for key, value := range r.profileProgress {
 		snapshot[key] = value
 	}
-	r.profileMu.Unlock()
-	snapshot["savedCount"] = r.profileSavedCount()
-	if tasks, ok := snapshot["tasks"].([]map[string]any); ok {
+	if tasks, ok := r.profileProgress["tasks"].([]map[string]any); ok {
 		copied := make([]any, 0, len(tasks))
 		for _, item := range tasks {
-			entry := map[string]any{}
+			entry := make(map[string]any, len(item))
 			for key, value := range item {
 				entry[key] = value
 			}
 			copied = append(copied, entry)
 		}
 		snapshot["tasks"] = copied
+	} else {
+		snapshot["tasks"] = []any{}
 	}
+	r.profileMu.Unlock()
+	snapshot["savedCount"] = r.profileSavedCount()
 	return snapshot
 }
 

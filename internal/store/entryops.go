@@ -127,7 +127,7 @@ func (d *DB) DeleteParticipantProfile(entryID string) (bool, error) {
 
 // MessageTimeRange 返回消息表的时间范围（用于面板记忆统计）。
 func (d *DB) MessageTimeRange() (oldest int64, newest int64) {
-	row := d.handle.QueryRow(`SELECT IFNULL(MIN(created_at), 0), IFNULL(MAX(created_at), 0) FROM messages`)
+	row := d.handle.QueryRow(`SELECT IFNULL(MIN(timestamp), 0), IFNULL(MAX(timestamp), 0) FROM messages`)
 	_ = row.Scan(&oldest, &newest)
 	return oldest, newest
 }
@@ -155,6 +155,12 @@ func (d *DB) ClearAllData() (map[string]int, error) {
 	if d.ReadOnly {
 		return nil, fmt.Errorf("记忆库以只读方式打开，无法清空")
 	}
+	tx, err := d.handle.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("开启清空事务失败: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	cleared := map[string]int{"sessions": 0, "messages": 0, "summaries": 0, "variables": 0, "namespaces": 0, "profiles": 0, "knowledge": 0}
 	type step struct {
 		key  string
@@ -172,7 +178,7 @@ func (d *DB) ClearAllData() (map[string]int, error) {
 		{"namespaces", `DELETE FROM memory_namespaces`, nil},
 	}
 	for _, item := range steps {
-		result, err := d.handle.Exec(item.sql, item.args...)
+		result, err := tx.Exec(item.sql, item.args...)
 		if err != nil {
 			return cleared, fmt.Errorf("清空数据失败(%s): %w", item.key, err)
 		}
@@ -180,7 +186,10 @@ func (d *DB) ClearAllData() (map[string]int, error) {
 		cleared[item.key] += int(affected)
 	}
 	// 关联表（可能不存在于旧库，失败不阻断，与 Node 的 try/catch 一致）
-	_, _ = d.handle.Exec(`DELETE FROM sticky_entries`)
-	_, _ = d.handle.Exec(`DELETE FROM summary_index_entries`)
+	_, _ = tx.Exec(`DELETE FROM sticky_entries`)
+	_, _ = tx.Exec(`DELETE FROM summary_index_entries`)
+	if err := tx.Commit(); err != nil {
+		return cleared, fmt.Errorf("提交清空事务失败: %w", err)
+	}
 	return cleared, nil
 }

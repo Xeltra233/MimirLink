@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -47,6 +48,12 @@ func newFakeServer(t *testing.T) *fakeServer {
 		case fake.active <- connection:
 		default:
 		}
+		var writeMu sync.Mutex
+		writeJSON := func(v any) error {
+			writeMu.Lock()
+			defer writeMu.Unlock()
+			return connection.WriteJSON(v)
+		}
 		done := make(chan struct{})
 		go func() {
 			defer close(done)
@@ -76,16 +83,16 @@ func newFakeServer(t *testing.T) *fakeServer {
 						map[string]any{"sender": map[string]any{"nickname": "甲", "user_id": "1"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "转发内容"}}}},
 					}}
 				case "fail_action":
-					_ = connection.WriteJSON(map[string]any{"status": "failed", "retcode": 1, "msg": "模拟失败", "echo": echo})
+					_ = writeJSON(map[string]any{"status": "failed", "retcode": 1, "msg": "模拟失败", "echo": echo})
 					continue
 				}
-				_ = connection.WriteJSON(map[string]any{"status": "ok", "retcode": 0, "data": data, "echo": echo})
+				_ = writeJSON(map[string]any{"status": "ok", "retcode": 0, "data": data, "echo": echo})
 			}
 		}()
 		for {
 			select {
 			case event := <-fake.events:
-				if err := connection.WriteJSON(event); err != nil {
+				if err := writeJSON(event); err != nil {
 					return
 				}
 			case <-done:

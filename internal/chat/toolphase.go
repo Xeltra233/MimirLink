@@ -272,8 +272,8 @@ func appendMentionTaskToMessages(messages []ai.Message, task string) []ai.Messag
 }
 
 // generateReply 执行正式回复（两阶段优先，失败/关闭时回退单阶段）；
-// 返回最终使用的消息序列（含工具结果段），供后续重试链路复用。
-func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scope tools.CallScope, chatScope string) (string, []ai.Message, error) {
+// 返回最终回复、思维链内容（若有）与最终使用的消息序列（含工具结果段），供后续重试链路复用。
+func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scope tools.CallScope, chatScope string) (string, string, []ai.Message, error) {
 	hints := []string{}
 	hasTools := false
 	if r.tools != nil {
@@ -293,9 +293,9 @@ func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scop
 			}
 			result, err := r.ai.Chat(ctx, messages, nil)
 			if err != nil {
-				return "", messages, err
+				return "", "", messages, err
 			}
-			return result.Content, messages, nil
+			return result.Content, result.ReasoningContent, messages, nil
 		}
 		r.logger.Printf("[执行] 工具阶段失败，回退单阶段执行: %v", err)
 	}
@@ -305,8 +305,8 @@ func (r *Runtime) generateReply(ctx context.Context, messages []ai.Message, scop
 		text := "【工具使用说明】\n" + strings.Join(hints, "\n\n")
 		messages = append([]ai.Message{{Role: "system", Content: text}}, messages...)
 	}
-	reply, err := r.chatWithTools(ctx, messages, scope)
-	return reply, messages, err
+	reply, reasoning, err := r.chatWithTools(ctx, messages, scope)
+	return reply, reasoning, messages, err
 }
 
 // toolCallScope 构造本次消息的工具执行上下文（对齐 Node buildAIToolContext 的默认值 + mentionGenerator）。

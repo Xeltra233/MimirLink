@@ -59,12 +59,26 @@ func (s *Server) callBotControl(path string, payload map[string]any) (map[string
 		return nil, fmt.Errorf("Bot 响应不是合法 JSON: %s", strings.TrimSpace(string(raw)))
 	}
 	if response.StatusCode != http.StatusOK {
-		return result, fmt.Errorf("Bot 返回 %d: %v", response.StatusCode, result["error"])
+		errMsg := extractBotErrorMessage(result, fmt.Sprintf("HTTP %d", response.StatusCode))
+		return result, fmt.Errorf("Bot 返回 %d: %s", response.StatusCode, errMsg)
 	}
 	if result["success"] == false {
-		return result, fmt.Errorf("%v", orDefault(fmt.Sprint(result["error"]), "Bot 执行失败"))
+		errMsg := extractBotErrorMessage(result, "Bot 执行失败")
+		return result, fmt.Errorf("%s", errMsg)
 	}
 	return result, nil
+}
+
+func extractBotErrorMessage(result map[string]any, fallback string) string {
+	for _, key := range []string{"error", "message", "msg"} {
+		if val, ok := result[key]; ok && val != nil {
+			str := strings.TrimSpace(fmt.Sprint(val))
+			if str != "" && str != "<nil>" {
+				return str
+			}
+		}
+	}
+	return fallback
 }
 
 // botStatusSnapshot 返回 bot 状态（不可用时返回 nil）。

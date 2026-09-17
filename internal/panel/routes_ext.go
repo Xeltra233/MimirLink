@@ -54,6 +54,8 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 			composition = c
 		}
 		if oldest, newest := database.MessageTimeRange(); oldest > 0 || newest > 0 {
+			oldestMessage = oldest
+			newestMessage = newest
 		}
 		_ = database.Close()
 	}

@@ -193,12 +193,12 @@ func (r *Runtime) RefreshParticipantName(request botctl.ProfileRequest) (map[str
 	if ok {
 		if groupID != "" {
 			if raw, err := caller.Call("get_group_member_info", map[string]any{"group_id": groupID, "user_id": participantID, "no_cache": true}); err == nil {
-				nickname = firstNonEmptyJSONString(raw, "nickname", "card")
+				nickname = firstNonEmptyJSONString(raw, "card", "nickname")
 			}
 		}
 		if nickname == "" {
 			if raw, err := caller.Call("get_stranger_info", map[string]any{"user_id": participantID, "no_cache": true}); err == nil {
-				nickname = firstNonEmptyJSONString(raw, "nickname")
+				nickname = firstNonEmptyJSONString(raw, "remark", "nickname")
 			}
 		}
 	}
@@ -303,13 +303,17 @@ func (r *Runtime) TestAI(request botctl.TestAIRequest) (map[string]any, error) {
 		TargetUserID: strings.TrimSpace(request.TargetUserID),
 		TargetName:   strings.TrimSpace(request.TargetName),
 	}
-	reply, err := r.chatWithTools(context.Background(), messages, scope)
+	reply, reasoning, err := r.chatWithTools(context.Background(), messages, scope)
 	if err != nil {
 		return nil, err
 	}
+	var reasoningVal any
+	if strings.TrimSpace(reasoning) != "" {
+		reasoningVal = reasoning
+	}
 	return map[string]any{
 		"response":         reply,
-		"reasoningContent": nil,
+		"reasoningContent": reasoningVal,
 		"toolsEnabled":     toolNames,
 	}, nil
 }

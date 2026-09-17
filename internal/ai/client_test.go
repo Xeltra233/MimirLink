@@ -117,6 +117,27 @@ func TestChatStreamingReasoningOnly(t *testing.T) {
 	if result.ReasoningContent != "思考内容" {
 		t.Fatalf("reasoning 异常: %q", result.ReasoningContent)
 	}
+	if result.Content != "思考内容" {
+		t.Fatalf("content 应回退使用 reasoning: %q", result.Content)
+	}
+}
+
+// TestChatNonStreamingReasoningOnly：非流式仅返回 reasoning_content 时回退使用。
+func TestChatNonStreamingReasoningOnly(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"choices":[{"message":{"content":"","reasoning_content":"非流式思考内容"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	result, err := client.Chat(context.Background(), []Message{{Role: "user", Content: "你好"}}, nil)
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	if result.Content != "非流式思考内容" {
+		t.Fatalf("content 应回退使用 reasoning: %q", result.Content)
+	}
 }
 
 // TestChatNormalPath：正常非流式响应一次成功。

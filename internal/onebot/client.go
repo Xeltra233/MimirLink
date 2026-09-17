@@ -42,6 +42,8 @@ type Client struct {
 	logger  *log.Logger
 
 	mu            sync.Mutex
+	writeMu       sync.Mutex
+	stopOnce      sync.Once
 	connection    *websocket.Conn
 	connected     bool
 	callID        int64
@@ -275,11 +277,17 @@ func (c *Client) connectOnce(ctx context.Context) error {
 		c.failPending("连接已断开")
 	}()
 
-	go c.pingLoop(ctx, connection)
+	connDone := make(chan struct{})
+	defer close(connDone)
+
+	go c.pingLoop(ctx, connDone, connection)
 	// ctx 取消时主动断开，避免 Run 卡在读取循环里无法退出
 	go func() {
-		<-ctx.Done()
-		_ = connection.Close()
+		select {
+		case <-ctx.Done():
+			_ = connection.Close()
+		case <-connDone:
+		}
 	}()
 
 	// 读取循环必须立刻开始，否则 API 响应无人接收（Call 会一直等到超时）
@@ -310,12 +318,14 @@ func (c *Client) connectOnce(ctx context.Context) error {
 	}
 }
 
-func (c *Client) pingLoop(ctx context.Context, connection *websocket.Conn) {
+func (c *Client) pingLoop(ctx context.Context, connDone <-chan struct{}, connection *websocket.Conn) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			return
+		case <-connDone:
 			return
 		case <-ticker.C:
 			c.mu.Lock()
@@ -324,7 +334,9 @@ func (c *Client) pingLoop(ctx context.Context, connection *websocket.Conn) {
 			if !alive {
 				return
 			}
+			c.writeMu.Lock()
 			_ = connection.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(10*time.Second))
+			c.writeMu.Unlock()
 		}
 	}
 }
@@ -399,7 +411,10 @@ func (c *Client) Call(action string, params map[string]any) (json.RawMessage, er
 	if err != nil {
 		return nil, err
 	}
-	if err := connection.WriteMessage(websocket.TextMessage, payload); err != nil {
+	c.writeMu.Lock()
+	err = connection.WriteMessage(websocket.TextMessage, payload)
+	c.writeMu.Unlock()
+	if err != nil {
 		c.mu.Lock()
 		delete(c.pending, echo)
 		c.mu.Unlock()
@@ -564,11 +579,9 @@ func (c *Client) GetImage(file string) (map[string]any, error) {
 
 // Close 停止客户端。
 func (c *Client) Close() {
-	select {
-	case <-c.stopCh:
-	default:
+	c.stopOnce.Do(func() {
 		close(c.stopCh)
-	}
+	})
 	c.mu.Lock()
 	connection := c.connection
 	c.mu.Unlock()

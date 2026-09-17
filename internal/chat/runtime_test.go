@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"mimirlink/internal/ai"
@@ -17,6 +18,7 @@ import (
 )
 
 type fakeBot struct {
+	mu           sync.RWMutex
 	selfID       string
 	groupSent    []map[string]any
 	privateSent  []map[string]any
@@ -27,13 +29,31 @@ type fakeBot struct {
 func (b *fakeBot) SelfID() string { return b.selfID }
 
 func (b *fakeBot) SendGroupMessage(groupID string, message any) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.groupSent = append(b.groupSent, map[string]any{"groupID": groupID, "message": message})
 	return nil
 }
 
 func (b *fakeBot) SendPrivateMessage(userID string, message any) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
 	b.privateSent = append(b.privateSent, map[string]any{"userID": userID, "message": message})
 	return nil
+}
+
+func (b *fakeBot) groupSentLen() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return len(b.groupSent)
+}
+
+func (b *fakeBot) getGroupSent() []map[string]any {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	copied := make([]map[string]any, len(b.groupSent))
+	copy(copied, b.groupSent)
+	return copied
 }
 
 func (b *fakeBot) GetForwardMsg(id string) (any, error) {
@@ -51,6 +71,7 @@ func (b *fakeBot) GetMsg(messageID string) (map[string]any, error) {
 }
 
 type fakeModel struct {
+	mu           sync.Mutex
 	replies      []string
 	profileReply string // 命中档案分析提示词时返回
 	failAlways   bool   // 始终返回错误（模拟 vision 模型不可用）
@@ -59,6 +80,8 @@ type fakeModel struct {
 }
 
 func (m *fakeModel) Chat(ctx context.Context, messages []ai.Message, overrides map[string]any) (*ai.ChatResult, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.requests = append(m.requests, messages)
 	if m.failAlways {
 		return nil, errors.New("模型不可用")

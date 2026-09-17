@@ -96,8 +96,17 @@ func (d *DB) CollectParticipantProfileSource(participantID string, options Names
 	}
 	var since int64
 	if existing != nil && !config.Force {
-		if value, ok := existing.Metadata["lastProcessedMessageAt"].(float64); ok {
-			since = int64(value)
+		switch v := existing.Metadata["lastProcessedMessageAt"].(type) {
+		case float64:
+			since = int64(v)
+		case int64:
+			since = v
+		case int:
+			since = int64(v)
+		case json.Number:
+			if parsed, err := v.Int64(); err == nil {
+				since = parsed
+			}
 		}
 	}
 

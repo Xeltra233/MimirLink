@@ -188,7 +188,7 @@ func TestGenerateReplyTwoPhase(t *testing.T) {
 		{Role: "system", Content: "你是测试角色，回答要简短。"},
 		{Role: "user", Content: "帮我提醒他交作业"},
 	}
-	reply, finalMessages, err := runtime.generateReply(context.Background(), messages, scope, "group:99001")
+	reply, _, finalMessages, err := runtime.generateReply(context.Background(), messages, scope, "group:99001")
 	if err != nil {
 		t.Fatalf("两阶段执行失败: %v", err)
 	}
@@ -260,7 +260,7 @@ func TestGenerateReplyFallback(t *testing.T) {
 		{Role: "system", Content: "你是测试角色，回答要简短。"},
 		{Role: "user", Content: "帮我提醒他交作业"},
 	}
-	reply, _, err := runtime.generateReply(context.Background(), messages, scope, "group:99001")
+	reply, _, _, err := runtime.generateReply(context.Background(), messages, scope, "group:99001")
 	if err != nil {
 		t.Fatalf("回退后不应报错: %v", err)
 	}

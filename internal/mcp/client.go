@@ -566,14 +566,28 @@ func (t *stdioTransport) Call(ctx context.Context, method string, params any) (j
 
 	payload, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
 	if err != nil {
+		t.mu.Lock()
+		delete(t.pending, id)
+		t.mu.Unlock()
 		return nil, err
 	}
+	t.mu.Lock()
+	if t.closed {
+		delete(t.pending, id)
+		t.mu.Unlock()
+		return nil, fmt.Errorf("MCP 进程已退出")
+	}
 	if _, err := t.writer.Write(append(payload, '\n')); err != nil {
+		delete(t.pending, id)
+		t.mu.Unlock()
 		return nil, fmt.Errorf("写入 MCP 请求失败: %w", err)
 	}
 	if err := t.writer.Flush(); err != nil {
+		delete(t.pending, id)
+		t.mu.Unlock()
 		return nil, fmt.Errorf("发送 MCP 请求失败: %w", err)
 	}
+	t.mu.Unlock()
 
 	select {
 	case <-ctx.Done():
@@ -635,12 +649,15 @@ func newHTTPTransport(server ServerConfig) (transport, error) {
 	if strings.TrimSpace(server.URL) == "" {
 		return nil, fmt.Errorf("http 传输缺少 url")
 	}
+	timeout := server.TimeoutMs
+	if timeout <= 0 {
+		timeout = 60000
+	}
 	return &httpTransport{
 		server: server,
-		client: &http.Client{Timeout: time.Duration(server.TimeoutMs) * time.Millisecond},
+		client: &http.Client{Timeout: time.Duration(timeout) * time.Millisecond},
 	}, nil
 }
-
 func (t *httpTransport) Call(ctx context.Context, method string, params any) (json.RawMessage, error) {
 	t.mu.Lock()
 	t.nextID += 1

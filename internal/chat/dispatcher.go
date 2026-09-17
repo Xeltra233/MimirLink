@@ -437,7 +437,7 @@ func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, r
 	retryMessages := append(append([]ai.Message{}, messages...),
 		ai.Message{Role: "assistant", Content: reply},
 		ai.Message{Role: "user", Content: BuildChainLeakRetryMessage(leak.Reason)})
-	retried, err := r.chatWithTools(ctx, retryMessages, scope)
+	retried, _, err := r.chatWithTools(ctx, retryMessages, scope)
 	if err != nil {
 		r.logger.Printf("[泄露检测] 重试失败: %v", err)
 		return reply, false
