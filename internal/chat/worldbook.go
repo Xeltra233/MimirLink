@@ -42,6 +42,7 @@ func readWorldBook(dataDir string, characterName string) (*worldBook, string, er
 	}
 	worldsDir := filepath.Join(dataDir, "worlds")
 	candidates := []string{
+		characterName + "’s Lorebook.json",
 		characterName + "'s Lorebook.json",
 		characterName + " Lorebook.json",
 		characterName + ".json",

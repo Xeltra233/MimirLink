@@ -1,6 +1,8 @@
 package chat
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -77,6 +79,26 @@ func TestMatchWorldBookEntries(t *testing.T) {
 	limited := matchWorldBookEntries(book, "徐缺拿出了刀，谈到宗门大会的会后安排", 2, nil)
 	if len(limited) != 2 {
 		t.Fatalf("maxEntries 截断异常: %d", len(limited))
+	}
+}
+
+// TestReadWorldBookFilenameChain：文件名匹配链对齐 Node（含 U+2019 弯引号变体）。
+func TestReadWorldBookFilenameChain(t *testing.T) {
+	dataDir := t.TempDir()
+	worldsDir := filepath.Join(dataDir, "worlds")
+	if err := os.MkdirAll(worldsDir, 0o755); err != nil {
+		t.Fatalf("建目录失败: %v", err)
+	}
+	// 仅放弯引号变体：直引号候选找不到时必须落到弯引号文件。
+	if err := os.WriteFile(filepath.Join(worldsDir, "测试角色’s Lorebook.json"), []byte(`{"entries": []}`), 0o644); err != nil {
+		t.Fatalf("写世界书失败: %v", err)
+	}
+	book, name, err := readWorldBook(dataDir, "测试角色")
+	if err != nil || book == nil {
+		t.Fatalf("弯引号世界书应被命中: %v %q", err, name)
+	}
+	if name != "测试角色’s Lorebook.json" {
+		t.Fatalf("命中文件名不符: %q", name)
 	}
 }
 

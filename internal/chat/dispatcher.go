@@ -191,8 +191,9 @@ func (r *Runtime) loadDispatcherConfig(forceSingleMessage bool) dispatcherConfig
 		splitMessage = r.document.Bool("chat.splitMessage")
 	}
 	segmentDelay := int(r.document.Int("chat.segmentDelayMs", 300))
+	// 对齐 Node：仅缺省时取 max(segmentDelayMs, 1200)；显式配置（含 0）必须尊重。
 	proactive := int(r.document.Int("chat.proactiveMessageIntervalMs", 0))
-	if proactive < segmentDelay {
+	if !r.document.Exists("chat.proactiveMessageIntervalMs") {
 		if segmentDelay < 1200 {
 			proactive = 1200
 		} else {

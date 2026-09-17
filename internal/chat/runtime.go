@@ -465,20 +465,48 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	thinkingTimer := r.startThinkingNotify(event, messageType, groupID, userID)
 
 	startedAt := time.Now()
-	reply, reasoning, messages, err := r.generateReply(context.Background(), messages, scope, ChatScopeKey(messageType, groupID, userID))
+	retrySettings := r.emptyReplyRetrySettings()
+	maxAttempts := 1
+	if retrySettings.Enabled {
+		maxAttempts = retrySettings.MaxRetries + 1
+	}
+	var reply, reasoning string
+	baseMessages := messages
+	attempts := 0
+	for attempts = 1; attempts <= maxAttempts; attempts++ {
+		var attemptMessages []ai.Message
+		reply, reasoning, attemptMessages, err = r.generateReply(context.Background(), baseMessages, scope, ChatScopeKey(messageType, groupID, userID))
+		messages = attemptMessages
+		if err != nil {
+			break
+		}
+		reply = strings.TrimSpace(reply)
+		if !isEmptyLikeReply(reply) {
+			break
+		}
+		if attempts >= maxAttempts {
+			break
+		}
+		r.logger.Printf("[执行] AI 返回空回复，准备重试 %d/%d", attempts, retrySettings.MaxRetries)
+		if retrySettings.DelayMs > 0 {
+			time.Sleep(time.Duration(retrySettings.DelayMs) * time.Millisecond)
+		}
+	}
 	if thinkingTimer != nil {
 		thinkingTimer.Stop()
 	}
 	reply = strings.TrimSpace(reply)
 	if err != nil {
 		r.logger.Printf("[聊天] AI 调用失败: %v", err)
+		r.sendQuotedStatus(event, messageType, groupID, userID, r.buildAIServiceFailureMessage(err, 0))
 		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
-		return false
+		return true
 	}
-	if reply == "" {
-		r.logger.Printf("[聊天] 模型返回空回复")
+	if isEmptyLikeReply(reply) {
+		r.logger.Printf("[聊天] 模型返回空回复（已重试 %d 次）", attempts-1)
+		r.sendQuotedStatus(event, messageType, groupID, userID, r.buildAIServiceFailureMessage(errEmptyReply, attempts))
 		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
-		return false
+		return true
 	}
 	r.metrics.Record(metrics.Chat, 1)
 	r.logger.Printf("[聊天] AI 回复 %d 字，用时 %dms", len([]rune(reply)), time.Since(startedAt).Milliseconds())
@@ -729,7 +757,7 @@ func currentTimeString() string {
 // ---------------- 记忆 ----------------
 
 func (r *Runtime) sessionKey(messageType string, groupID string, userID string) string {
-	mode := r.document.String("chat.sessionMode")
+	mode := normalizeSessionMode(r.document.String("chat.sessionMode"))
 	switch mode {
 	case "global_shared":
 		return "global_shared_memory"
@@ -738,7 +766,7 @@ func (r *Runtime) sessionKey(messageType string, groupID string, userID string) 
 			return "group:" + groupID
 		}
 		return "private:" + userID
-	case "group_user":
+	case "group_user", "user":
 		if messageType == "group" {
 			return "group_user:" + groupID + ":" + userID
 		}
@@ -751,6 +779,20 @@ func (r *Runtime) sessionKey(messageType string, groupID string, userID string) 
 	}
 }
 
+// normalizeSessionMode 归一会话模式别名（对齐 Node normalizeSessionMode：
+// scoped/group_shared、user/group_user、global/global_shared 互为别名）。
+func normalizeSessionMode(mode string) string {
+	switch strings.TrimSpace(mode) {
+	case "scoped", "group_shared":
+		return "group_shared"
+	case "user", "group_user":
+		return "group_user"
+	case "global", "global_shared":
+		return "global_shared"
+	default:
+		return "user_persistent"
+	}
+}
 func generateMessageID() string {
 	return fmt.Sprintf("%d_%s", time.Now().UnixMilli(), randomSuffix(6))
 }

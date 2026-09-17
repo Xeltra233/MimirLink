@@ -126,3 +126,24 @@ func TestBuildMessagesScopesToCurrentChat(t *testing.T) {
 		t.Fatalf("不应包含其他群聊历史: %s", joined)
 	}
 }
+
+// TestNormalizeSessionModeAlias 会话模式别名归一（对齐 Node normalizeSessionMode）。
+func TestNormalizeSessionModeAlias(t *testing.T) {
+	cases := map[string]string{
+		"": "user_persistent", "user_persistent": "user_persistent",
+		"scoped": "group_shared", "group_shared": "group_shared",
+		"user": "group_user", "group_user": "group_user",
+		"global": "global_shared", "global_shared": "global_shared",
+		"unknown": "user_persistent",
+	}
+	for input, expected := range cases {
+		if got := normalizeSessionMode(input); got != expected {
+			t.Fatalf("normalizeSessionMode(%q)=%q，期望 %q", input, got, expected)
+		}
+	}
+	// 别名 user 应与 group_user 走同一 sessionKey
+	runtime, _, _ := newRuntime(t, map[string]any{"chat": map[string]any{"sessionMode": "user"}}, &fakeModel{replies: []string{"ok"}})
+	if key := runtime.sessionKey("group", "99001", "2001"); key != "group_user:99001:2001" {
+		t.Fatalf("别名 user 的 sessionKey 异常: %q", key)
+	}
+}
