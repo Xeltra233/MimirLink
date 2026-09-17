@@ -1,10 +1,18 @@
 package chat
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
+
+	"mimirlink/internal/tools"
 )
+
+// ctxForChainLeak/newScopeForChainLeak 构造链式泄露重试单测的最小上下文。
+func ctxForChainLeak() context.Context { return context.Background() }
+
+func newScopeForChainLeak() tools.CallScope { return tools.CallScope{} }
 
 // TestDetectChainLeak：泄露检测（英文推理短语/代码豁免/英文请求豁免/密度阈值）。
 func TestDetectChainLeak(t *testing.T) {
@@ -139,5 +147,49 @@ func TestSendReasoningToQQInRuntime(t *testing.T) {
 	text := fmt.Sprintf("%v", sent[0]["message"])
 	if !strings.Contains(text, "你好") {
 		t.Fatalf("发送给 QQ 的消息异常: %s", text)
+	}
+}
+
+// TestChainLeakRetryDisabled 关闭链式泄露重试：泄露回复直接保留，不调第二次模型。
+func TestChainLeakRetryDisabled(t *testing.T) {
+	leakReply := "I'm currently analyzing the user's intent and formulating a response strategy. 你好"
+	model := &fakeModel{replies: []string{leakReply}}
+	runtime, _, _ := newRuntime(t, map[string]any{
+		"chat": map[string]any{
+			"chainLeakRetry":    map[string]any{"enabled": false},
+			"emptyReplyRetry":   map[string]any{"delayMs": 0},
+			"bufferWindowMs":    0,
+			"replyDelayMs":      0,
+		},
+	}, model)
+	got, didRetry := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
+	if didRetry {
+		t.Fatal("关闭时不应重试")
+	}
+	if got != leakReply {
+		t.Fatalf("关闭时应保留原回复: %q", got)
+	}
+	if len(model.requests) != 0 {
+		t.Fatalf("关闭时不应调用模型，实际 %d 次", len(model.requests))
+	}
+}
+
+// TestChainLeakRetryEnabled 启用时泄露触发一次重试并采用干净回复。
+func TestChainLeakRetryEnabled(t *testing.T) {
+	leakReply := "I'm currently analyzing the user's intent and formulating a response strategy. 你好"
+	model := &fakeModel{replies: []string{"干净的中文回复"}}
+	runtime, _, _ := newRuntime(t, map[string]any{
+		"chat": map[string]any{
+			"chainLeakRetry": map[string]any{"delayMs": 0},
+			"bufferWindowMs": 0,
+			"replyDelayMs":   0,
+		},
+	}, model)
+	got, didRetry := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
+	if !didRetry {
+		t.Fatal("启用时泄露应重试")
+	}
+	if got != "干净的中文回复" {
+		t.Fatalf("应采用重试后的干净回复: %q", got)
 	}
 }

@@ -413,16 +413,35 @@ func buildDebugReplyWithReasoning(reasoningContent string, visibleReply string) 
 	return "【思维链】\n" + reasoning + "\n\n【正文】\n" + reply
 }
 
-// chainLeakRetryMaxRetries 读取重试上限（chat.chainLeakRetry.maxRetries，默认 1）。
-func (r *Runtime) chainLeakRetryMaxRetries() int {
-	if !r.document.Exists("chat.chainLeakRetry.maxRetries") {
-		return 1
+// chainLeakRetrySettings 读取链式泄露重试配置（对齐 Node chainLeakRetry 段：
+// 默认启用/1次/500ms；delayMs 按原语义 0 视为缺省 500）。
+type chainLeakRetrySettings struct {
+	Enabled    bool
+	MaxRetries int
+	DelayMs    int
+}
+
+func (r *Runtime) chainLeakRetryConfig() chainLeakRetrySettings {
+	settings := chainLeakRetrySettings{Enabled: true, MaxRetries: 1, DelayMs: 500}
+	if r.document.Exists("chat.chainLeakRetry.enabled") {
+		settings.Enabled = r.document.Bool("chat.chainLeakRetry.enabled")
 	}
-	maxRetries := int(r.document.Int("chat.chainLeakRetry.maxRetries", 1))
-	if maxRetries < 0 {
+	if r.document.Exists("chat.chainLeakRetry.maxRetries") {
+		settings.MaxRetries = clampRetryInt(int(r.document.Int("chat.chainLeakRetry.maxRetries", 1)), 0, 5, 1)
+	}
+	if r.document.Exists("chat.chainLeakRetry.delayMs") {
+		settings.DelayMs = clampRetryInt(int(r.document.Int("chat.chainLeakRetry.delayMs", 500)), 0, 10000, 500)
+	}
+	return settings
+}
+
+// chainLeakRetryMaxRetries 读取重试上限（关闭时为 0）。
+func (r *Runtime) chainLeakRetryMaxRetries() int {
+	settings := r.chainLeakRetryConfig()
+	if !settings.Enabled {
 		return 0
 	}
-	return maxRetries
+	return settings.MaxRetries
 }
 
 // retryOnChainLeak 泄露检测与重试：泄露时把重试指令并入上下文再调一次模型。
@@ -435,6 +454,9 @@ func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, r
 		return reply, false
 	}
 	r.logger.Printf("[泄露检测] 疑似泄露（%s），触发重试", leak.Reason)
+	if delayMs := r.chainLeakRetryConfig().DelayMs; delayMs > 0 {
+		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+	}
 	retryMessages := append(append([]ai.Message{}, messages...),
 		ai.Message{Role: "assistant", Content: reply},
 		ai.Message{Role: "user", Content: BuildChainLeakRetryMessage(leak.Reason)})
