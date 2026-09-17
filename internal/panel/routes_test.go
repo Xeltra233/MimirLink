@@ -258,6 +258,39 @@ func TestWorldbookSelectRejectsMissingFile(t *testing.T) {
 	}
 }
 
+// TestLLMToggleFlipsState 守护 LLM 开关按钮契约：POST /api/status/llm/toggle 翻转当前状态
+// 并返回新值（Node parity）。旧实现把空 body 当作 enabled=false，按钮只能关不能开。
+func TestLLMToggleFlipsState(t *testing.T) {
+	server, _ := newTestServer(t)
+
+	// 未显式设置时默认开启 → 第一次点击应关闭
+	first := doRequest(server, http.MethodPost, "/api/status/llm/toggle", "")
+	if first.Code != http.StatusOK {
+		t.Fatalf("toggle 返回 %d: %s", first.Code, first.Body.String())
+	}
+	firstPayload := map[string]any{}
+	_ = json.Unmarshal(first.Body.Bytes(), &firstPayload)
+	if firstPayload["success"] != true || firstPayload["enabled"] != false {
+		t.Fatalf("首次翻转应关闭: %s", first.Body.String())
+	}
+
+	// 第二次点击 → 开启
+	second := doRequest(server, http.MethodPost, "/api/status/llm/toggle", "")
+	secondPayload := map[string]any{}
+	_ = json.Unmarshal(second.Body.Bytes(), &secondPayload)
+	if secondPayload["enabled"] != true {
+		t.Fatalf("第二次翻转应开启: %s", second.Body.String())
+	}
+
+	// 状态接口与翻转结果一致
+	status := doRequest(server, http.MethodGet, "/api/status/llm", "")
+	statusPayload := map[string]any{}
+	_ = json.Unmarshal(status.Body.Bytes(), &statusPayload)
+	if statusPayload["enabled"] != true {
+		t.Fatalf("状态接口应与翻转结果一致: %s", status.Body.String())
+	}
+}
+
 // TestRegexLayerConfigPaths 守护正则规则写在 Node 的绑定层键上（bindings.global.regexRules），
 // 旧实现写到了 regex.global，面板读不到、Node 版也读不到。
 func TestRegexLayerConfigPaths(t *testing.T) {

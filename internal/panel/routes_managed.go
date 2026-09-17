@@ -1216,15 +1216,21 @@ func (s *Server) handleOnebotReconnect(writer http.ResponseWriter, request *http
 	})
 }
 
-func (s *Server) handleLLMStatus(writer http.ResponseWriter, request *http.Request) {
-	enabled := !(s.document.Bool("runtime.llmEnabled") == false && s.document.Exists("runtime.llmEnabled"))
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "enabled": enabled})
+// llmEnabled 读取运行时 LLM 开关：未显式设置时默认开启（对齐 Node getLlmEnabled）。
+func (s *Server) llmEnabled() bool {
+	return !(s.document.Bool("runtime.llmEnabled") == false && s.document.Exists("runtime.llmEnabled"))
 }
 
+func (s *Server) handleLLMStatus(writer http.ResponseWriter, request *http.Request) {
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "enabled": s.llmEnabled()})
+}
+
+// handleLLMToggle 对齐 Node POST /api/status/llm/toggle：翻转当前状态并返回新值。
+// 旧实现把空 body 当成 enabled=false（设置语义），面板按钮只能关不能开。
 func (s *Server) handleLLMToggle(writer http.ResponseWriter, request *http.Request) {
-	body := decodeBody(request)
-	enabled := body["enabled"] == true
-	if err := s.document.Set("runtime.llmEnabled", enabled); err != nil {
+	current := s.llmEnabled()
+	next := !current
+	if err := s.document.Set("runtime.llmEnabled", next); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
@@ -1232,7 +1238,8 @@ func (s *Server) handleLLMToggle(writer http.ResponseWriter, request *http.Reque
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "enabled": enabled})
+	s.logger.Printf("LLM 状态切换: %t -> %t", current, next)
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "enabled": next})
 }
 
 // handleDataClear 对齐 Node POST /api/data/clear：
