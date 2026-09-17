@@ -6,6 +6,7 @@ package panel
 import (
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -67,7 +68,79 @@ func (s *Server) clientIP(request *http.Request) string {
 	return host
 }
 
-// middleware 组合安全头与限流（对齐 Node app.use 顺序：安全头 → 全局限流 → 登录限流）。
+// isWriteMethod 判断是否为写方法（对齐 Node isWriteMethod：POST/PUT/PATCH/DELETE）。
+func isWriteMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	}
+	return false
+}
+
+// isAllowedPanelOrigin 校验写请求的来源是否同源（对齐 Node isAllowedPanelOrigin：
+// Origin/Referer 缺失放行；跨主机、跨协议、跨端口拒绝）。
+func isAllowedPanelOrigin(request *http.Request, originValue string) bool {
+	if strings.TrimSpace(originValue) == "" {
+		return true
+	}
+	origin, err := urlParse(originValue)
+	if err != nil {
+		return false
+	}
+	host := request.Host
+	hostname, port := splitHostPort(host)
+	if port == "" {
+		if request.TLS != nil {
+			port = "443"
+		} else {
+			port = "80"
+		}
+	}
+	originPort := origin.port
+	if originPort == "" {
+		if origin.scheme == "https" {
+			originPort = "443"
+		} else {
+			originPort = "80"
+		}
+	}
+	if origin.scheme != "http" && origin.scheme != "https" {
+		return false
+	}
+	if originPort != port {
+		return false
+	}
+	switch origin.hostname {
+	case hostname, "127.0.0.1", "localhost", "::1":
+		return true
+	}
+	return false
+}
+
+// originParts 是来源解析结果。
+type originParts struct {
+	scheme   string
+	hostname string
+	port     string
+}
+
+func urlParse(raw string) (originParts, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return originParts{}, err
+	}
+	_, port := splitHostPort(parsed.Host)
+	return originParts{scheme: strings.ToLower(parsed.Scheme), hostname: strings.ToLower(parsed.Hostname()), port: port}, nil
+}
+
+func splitHostPort(hostport string) (string, string) {
+	if host, port, err := net.SplitHostPort(hostport); err == nil {
+		return strings.ToLower(host), port
+	}
+	return strings.ToLower(hostport), ""
+}
+
+// middleware 组合安全头与限流（对齐 Node app.use 顺序：安全头 → 全局限流 → 登录限流 → 同源写校验）。
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		setSecurityHeaders(writer)
@@ -80,6 +153,30 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		if request.URL.Path == "/api/auth/login" && !s.loginLimiter.allow(ip, now) {
 			writeJSON(writer, http.StatusTooManyRequests, map[string]any{"success": false, "error": "登录尝试过于频繁，请 1 分钟后再试"})
 			return
+		}
+		// 同源写校验（对齐 Node requireSameOriginWrite：仅写方法 + /api 下生效；
+		// Origin/Referer 缺失放行，跨源写请求 403）。
+		if strings.HasPrefix(request.URL.Path, "/api/") && isWriteMethod(request.Method) {
+			sourceOrigin := strings.TrimSpace(request.Header.Get("Origin"))
+			if sourceOrigin == "" {
+				if referer := strings.TrimSpace(request.Header.Get("Referer")); referer != "" {
+					if refererOrigin, err := url.Parse(referer); err == nil {
+						sourceOrigin = refererOrigin.Scheme + "://" + refererOrigin.Host
+					} else {
+						sourceOrigin = "invalid"
+					}
+				}
+			}
+			if sourceOrigin != "" && !isAllowedPanelOrigin(request, sourceOrigin) {
+				s.logger.Printf("跨源写入请求已被拒绝 method=%s path=%s origin=%q referer=%q", request.Method, request.URL.Path, request.Header.Get("Origin"), request.Header.Get("Referer"))
+				writeJSON(writer, http.StatusForbidden, map[string]any{"success": false, "error": "跨源写入请求已被拒绝"})
+				return
+			}
+		}
+		// 请求体上限（对齐 Node express.json({limit:'25mb'})：仅约束 /api 下非 multipart 的
+		// JSON 请求；文件上传走 multipart 自带限额，不在此截断）。
+		if strings.HasPrefix(request.URL.Path, "/api/") && !strings.HasPrefix(strings.ToLower(request.Header.Get("Content-Type")), "multipart/") {
+			request.Body = http.MaxBytesReader(writer, request.Body, 25<<20)
 		}
 		next.ServeHTTP(writer, request)
 	})

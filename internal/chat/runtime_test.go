@@ -341,8 +341,8 @@ func TestForwardRenderingIncludesTranscriptAndImages(t *testing.T) {
 	runtime, bot, _ := newRuntime(t, nil, model)
 	bot.forwards["fwd-1"] = map[string]any{
 		"messages": []any{
-			map[string]any{"sender": map[string]any{"nickname": "小明", "user_id": "3001"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "看这张"}}, map[string]any{"type": "image", "data": map[string]any{"file": "a.png"}}}},
-			map[string]any{"sender": map[string]any{"nickname": "小红", "user_id": "3002"}, "message": []any{map[string]any{"type": "image", "data": map[string]any{"file": "b.png"}}}},
+			map[string]any{"sender": map[string]any{"nickname": "小明", "user_id": "3001"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "看这张"}}, map[string]any{"type": "image", "data": map[string]any{"url": "https://example.com/a.png"}}}},
+			map[string]any{"sender": map[string]any{"nickname": "小红", "user_id": "3002"}, "message": []any{map[string]any{"type": "image", "data": map[string]any{"url": "https://example.com/b.png"}}}},
 		},
 	}
 	event := buildGroupEvent("看看", true, "99001", "2001")
@@ -353,12 +353,33 @@ func TestForwardRenderingIncludesTranscriptAndImages(t *testing.T) {
 		t.Fatalf("含合并转发的消息应触发")
 	}
 	request := model.requests[0]
-	last := request[len(request)-1].Content.(string)
+	last := ""
+	imageParts := 0
+	for _, message := range request {
+		if text, ok := message.Content.(string); ok {
+			last += text + "\n"
+		}
+		if parts, ok := message.Content.([]any); ok {
+			for _, part := range parts {
+				if entry, ok := part.(map[string]any); ok {
+					if text, ok := entry["text"].(string); ok {
+						last += text + "\n"
+					}
+					if entry["type"] == "image_url" {
+						imageParts++
+					}
+				}
+			}
+		}
+	}
 	if !strings.Contains(last, "[合并转发聊天记录|共2条|含图片2张]") {
 		t.Fatalf("转发转写头部不符: %s", last)
 	}
 	if !strings.Contains(last, "1. 小明") || !strings.Contains(last, "2. 小红") {
 		t.Fatalf("转发内容缺少成员与顺序: %s", last)
+	}
+	if imageParts != 2 {
+		t.Fatalf("转发内 2 张图应直传模型，实际 %d", imageParts)
 	}
 }
 

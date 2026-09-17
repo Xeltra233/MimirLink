@@ -183,6 +183,11 @@ func writeJSON(writer http.ResponseWriter, status int, payload any) {
 	_ = encoder.Encode(payload)
 }
 
+// unauthorizedJSON 返回与 Node requireAuth 一致的 401 包络（含 needLogin 标记）。
+func unauthorizedJSON(writer http.ResponseWriter) {
+	writeJSON(writer, http.StatusUnauthorized, map[string]any{"success": false, "error": "未登录", "needLogin": true})
+}
+
 func (s *Server) requestAuthorized(request *http.Request) bool {
 	if !s.auth.Enabled() {
 		return true
@@ -200,7 +205,7 @@ func (s *Server) requireAuth(next http.HandlerFunc) http.HandlerFunc {
 			next(writer, request)
 			return
 		}
-		writeJSON(writer, http.StatusUnauthorized, map[string]any{"success": false, "error": "未登录"})
+		unauthorizedJSON(writer)
 	}
 }
 
@@ -658,7 +663,7 @@ func (s *Server) handleStatic(writer http.ResponseWriter, request *http.Request)
 	open := path == "/login.html" || strings.HasPrefix(path, "/assets/") || strings.HasPrefix(path, "/favicon")
 	if !open && !s.requestAuthorized(request) {
 		if strings.HasPrefix(path, "/api/") {
-			writeJSON(writer, http.StatusUnauthorized, map[string]any{"success": false, "error": "未登录"})
+			unauthorizedJSON(writer)
 			return
 		}
 		http.Redirect(writer, request, "/login.html", http.StatusFound)

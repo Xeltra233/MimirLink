@@ -551,17 +551,28 @@ func (c *Client) GetMsg(messageID string) (map[string]any, error) {
 	return payload, nil
 }
 
-// GetForwardMsg 获取合并转发内容。
+// GetForwardMsg 获取合并转发内容（对齐 Node fetchForwardTranscript：{id} 失败回退 {message_id}）。
 func (c *Client) GetForwardMsg(id string) (any, error) {
-	data, err := c.Call("get_forward_msg", map[string]any{"id": id})
-	if err != nil {
-		return nil, err
+	var lastErr error
+	for _, params := range []map[string]any{{"id": id}, {"message_id": id}} {
+		data, err := c.Call("get_forward_msg", params)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		var payload any
+		if err := json.Unmarshal(data, &payload); err != nil {
+			lastErr = err
+			continue
+		}
+		if payload != nil {
+			return payload, nil
+		}
 	}
-	var payload any
-	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, err
+	if lastErr != nil {
+		return nil, lastErr
 	}
-	return payload, nil
+	return nil, nil
 }
 
 // GetImage 获取图片（返回本地文件路径等）。

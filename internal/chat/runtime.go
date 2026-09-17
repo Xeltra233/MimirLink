@@ -387,6 +387,17 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	// 图片输入链路（对齐 Node prepareImageInput：direct/caption/placeholder + 三级降级）
 	var pendingImageParts []map[string]any
 	imageDataList := extractImageSegments(event["message"])
+	forwardSeen := map[string]bool{}
+	for _, data := range imageDataList {
+		source := strings.TrimSpace(stringValue(data["url"]))
+		if source == "" {
+			source = strings.TrimSpace(stringValue(data["file"]))
+		}
+		if source != "" {
+			forwardSeen[source] = true
+		}
+	}
+	imageDataList = append(imageDataList, r.collectForwardImageData(event["message"], forwardSeen)...)
 	if len(imageDataList) > 0 {
 		imageInput, imageErr := r.prepareImageInput(imageDataList)
 		if imageErr != nil {
@@ -1141,8 +1152,7 @@ func (r *Runtime) renderSegmentsAt(segments []map[string]any, depth int, visited
 		case "reply":
 			builder.WriteString("[引用消息]")
 		case "forward":
-			builder.WriteString(r.renderForwardAt(stringValue(data["id"]), depth, visited))
-		default:
+			builder.WriteString(r.renderForwardAt(forwardSegmentID(data), depth, visited))
 			builder.WriteString("[" + segmentType + "]")
 		}
 	}
@@ -1197,20 +1207,26 @@ func (r *Runtime) renderForwardAt(forwardID string, depth int, visited map[strin
 	lines := make([]string, 0, len(shown))
 	imageCount := 0
 	totalChars := 0
-	for index, node := range shown {
+	shownIndex := 0
+	for _, node := range shown {
 		text := strings.TrimSpace(r.renderSegmentsAt(node.segments, depth+1, visited))
 		for _, segment := range node.segments {
 			if stringValue(segment["type"]) == "image" {
 				imageCount += 1
 			}
 		}
-		line := fmt.Sprintf("%d. %s: %s", index+1, node.name, text)
-		if totalChars+len(line) > forwardMaxChars {
+		if text == "" {
+			// 对齐 Node：空文本节点跳过，不占行号。
+			continue
+		}
+		shownIndex++
+		line := fmt.Sprintf("%d. %s: %s", shownIndex, node.name, text)
+		if totalChars+len([]rune(line)) > forwardMaxChars {
 			truncated = true
 			break
 		}
 		lines = append(lines, line)
-		totalChars += len(line)
+		totalChars += len([]rune(line))
 	}
 	if truncated {
 		lines = append(lines, fmt.Sprintf("…（共 %d 条，已截断）", len(nodes)))
@@ -1220,6 +1236,85 @@ func (r *Runtime) renderForwardAt(forwardID string, depth int, visited map[strin
 		imageNote = fmt.Sprintf("|含图片%d张", imageCount)
 	}
 	return fmt.Sprintf("[合并转发聊天记录|共%d条%s]\n%s\n[/合并转发]", len(nodes), imageNote, strings.Join(lines, "\n"))
+}
+
+// collectForwardImageData 抽取本条消息内合并转发里的图片 data（对齐 Node forwardImageSegments +
+// prepareImageInput 转发图逻辑：多条消息里的多张图都进识图；直发已出现的图去重；超出单轮 8 张预算时截断）。
+func (r *Runtime) collectForwardImageData(message any, seenSources map[string]bool) []map[string]any {
+	result := []map[string]any{}
+	visited := map[string]bool{}
+	if seenSources == nil {
+		seenSources = map[string]bool{}
+	}
+	forwardSeen := map[string]bool{}
+	var walkSegments func(segments []map[string]any, depth int)
+	walkSegments = func(segments []map[string]any, depth int) {
+		if depth > r.forwardMaxDepth() {
+			return
+		}
+		for _, segment := range segments {
+			if stringValue(segment["type"]) != "forward" {
+				continue
+			}
+			data, _ := segment["data"].(map[string]any)
+			id := forwardSegmentID(data)
+			if id == "" || visited[id] {
+				continue
+			}
+			visited[id] = true
+			payload, err := r.bot.GetForwardMsg(id)
+			if err != nil {
+				continue
+			}
+			for _, node := range normalizeForwardNodes(payload) {
+				for _, nodeSegment := range node.segments {
+					if stringValue(nodeSegment["type"]) != "image" {
+						// 嵌套转发继续下钻。
+						if stringValue(nodeSegment["type"]) == "forward" {
+							walkSegments([]map[string]any{nodeSegment}, depth+1)
+						}
+						continue
+					}
+					if data, ok := nodeSegment["data"].(map[string]any); ok {
+						source := strings.TrimSpace(stringValue(data["url"]))
+						if source == "" {
+							source = strings.TrimSpace(stringValue(data["file"]))
+						}
+						if source != "" && seenSources[source] {
+							continue
+						}
+						identity := "forward|" + id + "|" + source
+						if forwardSeen[identity] {
+							continue
+						}
+						forwardSeen[identity] = true
+						if source != "" {
+							seenSources[source] = true
+						}
+						if len(result) >= imageMaxImages {
+							continue
+						}
+						result = append(result, data)
+					}
+				}
+			}
+		}
+	}
+	walkSegments(messageSegments(message), 0)
+	return result
+}
+
+// forwardSegmentID 解析 forward 段 id（对齐 Node findForwardSegments/summarizeOneBotSegment：
+func forwardSegmentID(data map[string]any) string {
+	if data == nil {
+		return ""
+	}
+	for _, key := range []string{"id", "message_id", "messageId", "res_id", "resId"} {
+		if value := stringValue(data[key]); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 type forwardNode struct {
@@ -1260,20 +1355,34 @@ func normalizeForwardNodes(payload any) []forwardNode {
 		if entry == nil {
 			continue
 		}
+		// 用户名口径对齐 Node normalizeForwardNodes：nickname > sender.card > sender.nickname > name > user_id > sender.user_id > 未知。
 		name := stringValue(entry["nickname"])
 		userID := idField(entry, "user_id")
+		senderCard, senderNickname, senderUID := "", "", ""
 		if sender, ok := entry["sender"].(map[string]any); ok {
-			if card := stringValue(sender["card"]); card != "" {
-				name = card
-			} else if nickname := stringValue(sender["nickname"]); nickname != "" {
-				name = nickname
-			}
+			senderCard = stringValue(sender["card"])
+			senderNickname = stringValue(sender["nickname"])
 			if id := idField(sender, "user_id"); id != "" {
-				userID = id
+				senderUID = id
 			}
 		}
 		if name == "" {
+			name = senderCard
+		}
+		if name == "" {
+			name = senderNickname
+		}
+		if name == "" {
+			name = stringValue(entry["name"])
+		}
+		if name == "" {
 			name = userID
+		}
+		if name == "" {
+			name = senderUID
+		}
+		if userID == "" {
+			userID = senderUID
 		}
 		if name == "" {
 			name = "未知"
@@ -1284,6 +1393,9 @@ func normalizeForwardNodes(payload any) []forwardNode {
 		}
 		if content == nil {
 			content = entry["data"]
+		}
+		if content == nil {
+			content = entry["message_content"]
 		}
 		segments := messageSegments(content)
 		if len(segments) == 0 {

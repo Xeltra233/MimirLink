@@ -58,7 +58,7 @@ func (r *Runtime) renderQuotedMessage(payload map[string]any) string {
 			}
 			if segmentType == "forward" {
 				data, _ := segment["data"].(map[string]any)
-				builder.WriteString(r.renderForward(stringValue(data["id"])))
+				builder.WriteString(r.renderForward(forwardSegmentID(data)))
 				continue
 			}
 			builder.WriteString(renderSingleSegment(r, segment))
