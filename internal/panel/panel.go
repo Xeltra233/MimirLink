@@ -170,6 +170,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/memory/download", s.requireAuth(s.handleMemoryDownload))
 	s.mux.HandleFunc("/mcp", s.handleMCP)
 	s.mux.HandleFunc("/mcp/", s.handleMCP)
+// 注：Node mcp.enabled===false 时不挂载端点；Go 侧在 handleMCP 内做启用门控（见 handleMCP 头部）。
 	s.mux.HandleFunc("/onebot/event", s.handleOneBotEvent)
 	s.mux.HandleFunc("/", s.handleStatic)
 }
@@ -639,6 +640,11 @@ func memoryFileSizeMB(path string) string {
 // ---------- MCP 入口（令牌校验占位） ----------
 
 func (s *Server) handleMCP(writer http.ResponseWriter, request *http.Request) {
+	// 对齐 Node：mcp.enabled===false 时端点不挂载（Go 侧返回 404，由 handleMCPRange 语义退化）。
+	if s.document.Exists("mcp.enabled") && !s.document.Bool("mcp.enabled") {
+		writeJSON(writer, http.StatusNotFound, map[string]any{"error": "MCP 端点已禁用"})
+		return
+	}
 	token := s.document.String("mcp.token")
 	if token != "" && !auth.TokenRequest(request, token) {
 		writer.Header().Set("WWW-Authenticate", "Bearer")

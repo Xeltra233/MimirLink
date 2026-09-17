@@ -545,3 +545,20 @@ func TestAudioFilePublicNoAuth(t *testing.T) {
 		t.Fatalf("非 tts_ 前缀应 404，实际 %d", rec.Code)
 	}
 }
+
+// TestMCPDisabledReturns404 mcp.enabled=false 时端点停用（对齐 Node 不挂载）。
+func TestMCPDisabledReturns404(t *testing.T) {
+	server, _ := newTestServer(t)
+	// 默认未配置 mcp.enabled：端点可用
+	if rec := doRequest(server, http.MethodPost, "/mcp", `{"jsonrpc":"2.0","id":1,"method":"ping"}`); rec.Code == http.StatusNotFound {
+		t.Fatalf("默认应挂载 MCP 端点，实际 404")
+	}
+	// 显式禁用：404
+	if err := server.document.Set("mcp.enabled", false); err != nil {
+		t.Fatalf("写配置失败: %v", err)
+	}
+	recorder := doRequest(server, http.MethodPost, "/mcp", `{"jsonrpc":"2.0","id":1,"method":"ping"}`)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("禁用后应 404，实际 %d", recorder.Code)
+	}
+}
