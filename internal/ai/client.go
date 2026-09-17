@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"mimirlink/internal/config"
@@ -58,6 +59,92 @@ type Provider struct {
 type Client struct {
 	provider Provider
 	client   *http.Client
+	// token 统计（对齐 Node AIClient tokenStats）
+	statsMu sync.Mutex
+	stats   tokenStatsState
+}
+
+// tokenStatsState 是累计的 token 用量。
+type tokenStatsState struct {
+	TotalInputTokens  int64
+	TotalOutputTokens int64
+	CacheHitTokens    int64
+	CacheMissTokens   int64
+	TotalRequests     int64
+}
+
+// GetTokenStats 输出 token 统计（对齐 Node getTokenStats 字段与 cacheHitRate 格式）。
+func (c *Client) GetTokenStats() map[string]any {
+	c.statsMu.Lock()
+	defer c.statsMu.Unlock()
+	hit := c.stats.CacheHitTokens
+	miss := c.stats.CacheMissTokens
+	total := hit + miss
+	rate := "0%"
+	if total > 0 {
+		rate = fmt.Sprintf("%.1f%%", float64(hit)/float64(total)*100)
+	}
+	return map[string]any{
+		"totalInputTokens":  c.stats.TotalInputTokens,
+		"totalOutputTokens": c.stats.TotalOutputTokens,
+		"cacheHitTokens":    hit,
+		"cacheMissTokens":   miss,
+		"cacheHitRate":      rate,
+		"totalRequests":     c.stats.TotalRequests,
+	}
+}
+
+// recordUsage 从响应体中累计 usage（对齐 Node updateUsage 的字段回退链）。
+func (c *Client) recordUsage(decoded map[string]any) {
+	if decoded == nil {
+		return
+	}
+	usage, _ := decoded["usage"].(map[string]any)
+	if usage == nil {
+		return
+	}
+	promptTokens := numberValue(usage["prompt_tokens"])
+	completionTokens := numberValue(usage["completion_tokens"])
+	cacheHit := numberValue(usage["prompt_cache_hit_tokens"])
+	if cacheHit == 0 {
+		cacheHit = numberValue(usage["cached_tokens"])
+	}
+	if cacheHit == 0 {
+		if details, ok := usage["prompt_tokens_details"].(map[string]any); ok {
+			cacheHit = numberValue(details["cached_tokens"])
+		}
+	}
+	cacheMiss := numberValue(usage["prompt_cache_miss_tokens"])
+	if cacheMiss == 0 {
+		if details, ok := usage["prompt_tokens_details"].(map[string]any); ok {
+			if cached := numberValue(details["cached_tokens"]); cached > 0 {
+				cacheMiss = promptTokens - cached
+			}
+		}
+	}
+	c.statsMu.Lock()
+	c.stats.TotalInputTokens += promptTokens
+	c.stats.TotalOutputTokens += completionTokens
+	c.stats.CacheHitTokens += cacheHit
+	c.stats.CacheMissTokens += cacheMiss
+	c.stats.TotalRequests += 1
+	c.statsMu.Unlock()
+}
+
+func numberValue(value any) int64 {
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed)
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case json.Number:
+		parsed, _ := typed.Int64()
+		return parsed
+	default:
+		return 0
+	}
 }
 
 // ChatResult 是一次补全结果。
@@ -194,6 +281,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, overrides map[str
 	if err := json.Unmarshal(raw, &decoded); err != nil {
 		return nil, fmt.Errorf("解析响应失败: %w", err)
 	}
+	c.recordUsage(decoded)
 	choices, _ := decoded["choices"].([]any)
 	if len(choices) == 0 {
 		return nil, fmt.Errorf("AI 响应没有 choices")
@@ -266,6 +354,7 @@ func (c *Client) doChatRequest(ctx context.Context, messages []Message, override
 	if err != nil {
 		return nil, err
 	}
+	c.recordUsage(decoded)
 	choices, _ := decoded["choices"].([]any)
 	if len(choices) == 0 {
 		return nil, fmt.Errorf("AI 响应没有 choices")
@@ -373,6 +462,7 @@ func (c *Client) chatStreaming(ctx context.Context, messages []Message, override
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 			continue
 		}
+		c.recordUsage(chunk)
 		choices, _ := chunk["choices"].([]any)
 		if len(choices) == 0 {
 			continue

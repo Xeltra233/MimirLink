@@ -169,13 +169,13 @@ func (r *Runtime) maybeHandleParticipantProfileManualCommand(event map[string]an
 		r.sendFailureMessage(event, messageType, groupID, userID, fmt.Sprintf("请使用 %s @某人 来手动分析人物档案", command))
 		return true
 	}
-	enabled, _, _, _, blacklist := r.participantProfileConfig()
-	if !enabled {
+	profileSettings := r.profileSettings()
+	if !profileSettings.Enabled {
 		r.sendFailureMessage(event, messageType, groupID, userID, "人物档案功能未启用，无法手动分析")
 		return true
 	}
 	target := participants[0]
-	if blacklist[target.ID] {
+	if profileSettings.Blacklist[target.ID] {
 		r.sendFailureMessage(event, messageType, groupID, userID, fmt.Sprintf("QQ %s 已在人物档案黑名单中，无法手动分析", target.ID))
 		return true
 	}
@@ -206,10 +206,9 @@ func (r *Runtime) sendQuotedStatus(event map[string]any, messageType string, gro
 		return
 	}
 	segments := []map[string]any{}
+	// Node sendQuotedStatusMessage 只要有 message_id 就引用（不受 chat.quoteReplyEnabled 影响）
 	if messageID := idField(event, "message_id"); messageID != "" {
-		if r.document.Bool("chat.quoteReplyEnabled") || !r.document.Exists("chat.quoteReplyEnabled") {
-			segments = append(segments, map[string]any{"type": "reply", "data": map[string]any{"id": messageID}})
-		}
+		segments = append(segments, map[string]any{"type": "reply", "data": map[string]any{"id": messageID}})
 	}
 	segments = append(segments, map[string]any{"type": "text", "data": map[string]any{"text": text}})
 	var err error

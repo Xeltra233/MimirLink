@@ -555,6 +555,12 @@ func runBot(rootDir string, relay *eventRelay, logger *log.Logger) error {
 		defer func() { _ = controlServer.Close() }()
 	}
 
+	// 人物档案定时巡检（对齐 Node participantProfileIntervalTimer；triggerMode=interval/both 时生效）
+	runtime.StartProfileTicker()
+	defer runtime.StopProfileTimers()
+	// 启动补建：历史消息数达标但没有档案的参与者（对齐 Node backfillParticipantProfilesFromHistory）
+	go runtime.BackfillParticipantProfilesFromHistory()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

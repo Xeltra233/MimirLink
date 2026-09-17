@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/tts"
 )
 
@@ -179,6 +180,8 @@ func (s *Server) handleTTSTest(manager *tts.Manager) http.HandlerFunc {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 			return
 		}
+		// 仪表盘分桶：合成事件（对齐 Node routes.js recordDashboardMetric('tts')）
+		s.metrics.Record(metrics.TTS, 1)
 		filename := filepath.Base(path)
 		writeJSON(writer, http.StatusOK, map[string]any{
 			"success":  true,

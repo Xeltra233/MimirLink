@@ -23,6 +23,7 @@ import (
 	"mimirlink/internal/config"
 	"mimirlink/internal/logging"
 	"mimirlink/internal/mcp"
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tts"
 )
@@ -61,6 +62,8 @@ type Server struct {
 	// 知识导入进度（对齐 Node /api/status 的 knowledgeImportProgress）
 	knowledgeMu       sync.Mutex
 	knowledgeProgress map[string]any
+	// metrics 面板侧分桶（knowledgeImport / tts 测试；chat/档案由 bot 上报）
+	metrics *metrics.Recorder
 }
 
 // NewServer 构建面板服务。
@@ -86,6 +89,7 @@ func NewServer(options Options) (*Server, error) {
 		startedAt:     time.Now(),
 		mcpClient:     options.MCP,
 		rangeState:    newRangeState(),
+		metrics:       metrics.New(),
 	}
 	server.dataDir = server.DataDir()
 	server.auth = auth.NewManager(auth.Options{

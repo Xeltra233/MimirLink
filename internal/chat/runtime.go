@@ -21,6 +21,7 @@ import (
 	"mimirlink/internal/ai"
 	"mimirlink/internal/characters"
 	"mimirlink/internal/config"
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/music"
 	"mimirlink/internal/store"
 	"mimirlink/internal/tools"
@@ -86,6 +87,26 @@ type Runtime struct {
 	// 戳一戳通知冷却（对齐 Node _lastPokeResponse 15 秒）
 	pokeMu     sync.Mutex
 	lastPokeAt time.Time
+	// 人物档案触发体系（对齐 Node participantProfileTargets/Timers/Builds/RetryQueue + 进度）
+	profileMu             sync.Mutex
+	profileProgress       map[string]any
+	profileTargets        map[string]profileTargetEntry
+	profileRetryQueue     map[string]profileRetryEntry
+	profileBuilds         map[string]bool
+	profileTimers         map[string]*time.Timer
+	profileTickerStop     chan struct{}
+	profileTickerOnce     sync.Once
+	profileStopOnce       sync.Once
+	profileLastIntervalAt time.Time
+	// metrics 仪表盘实时分桶（对齐 Node recordDashboardMetric）
+	metrics *metrics.Recorder
+	// recalledEntries 暂存最近一次召回条目（供快照记录，单事件串行处理下可复用）
+	recalledEntries []store.MemoryEntry
+	// recall/观测快照（对齐 Node lastRecallSnapshot / lastInjectionObservation）
+	observationMu               sync.RWMutex
+	lastRecallSnapshot          map[string]any
+	lastInjectionObservation    map[string]any
+	recentInjectionObservations []map[string]any
 }
 
 // New 创建运行时。
@@ -118,6 +139,7 @@ func New(options Options) *Runtime {
 		regexProc:      newRegexProcessor(options.Document.Raw()),
 		repeatDetector: NewGroupRepeatDetector(),
 		seenMessageIDs: map[string]time.Time{},
+		metrics:        metrics.New(),
 	}
 }
 
@@ -414,17 +436,30 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	// 工具执行上下文（对齐 Node buildAIToolContext：当前群/发言人默认值 + 主动 @ 生成器）
 	scope := r.toolCallScope(sessionKey, messageType, content, injectionRisk, groupID, userID, speakerNameFromEvent(event))
 
+	// recall / 注入观测快照（对齐 Node index.js 3260 段：每次回复前记录 lastRecall 与 observation）
+	r.recordRecallSnapshot(sessionKey, content, r.recalledEntries)
+	r.recordInjectionObservation(sessionKey, messageType, item.triggerReason, content, injectionRisk, r.recalledEntries, userID)
+
+	// 思考中提示（对齐 Node chat.thinkingNotify：超时先发一条提示）
+	thinkingTimer := r.startThinkingNotify(event, messageType, groupID, userID)
+
 	startedAt := time.Now()
 	reply, messages, err := r.generateReply(context.Background(), messages, scope, ChatScopeKey(messageType, groupID, userID))
+	if thinkingTimer != nil {
+		thinkingTimer.Stop()
+	}
 	reply = strings.TrimSpace(reply)
 	if err != nil {
 		r.logger.Printf("[聊天] AI 调用失败: %v", err)
+		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
 		return false
 	}
 	if reply == "" {
 		r.logger.Printf("[聊天] 模型返回空回复")
+		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
 		return false
 	}
+	r.metrics.Record(metrics.Chat, 1)
 	r.logger.Printf("[聊天] AI 回复 %d 字，用时 %dms", len([]rune(reply)), time.Since(startedAt).Milliseconds())
 
 	// 变量桥接后处理（对齐 Node index.js 3562 段）：
@@ -463,10 +498,11 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	// 回复分发（对齐 Node dispatchReply：引用/at 前缀、splitMessage 分段、[voice] TTS、段间延迟）
 	if err := r.dispatchReply(event, messageType, groupID, userID, reply, r.loadDispatcherConfig(false), r.ttsManagerIfAvailable()); err != nil {
 		r.logger.Printf("[聊天] 发送回复失败: %v", err)
+		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
 		return false
 	}
-	// 回复后异步人物档案构建（对齐 Node maybeBuildParticipantProfile 的 auto 触发）
-	r.maybeBuildParticipantProfile(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
+	// 回复后登记人物档案目标（对齐 Node scheduleParticipantProfileUpdate：idle 定时 / interval 巡检触发）
+	r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
 	return true
 }
 
@@ -550,7 +586,7 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 		messages = append(messages, ai.Message{Role: "system", Content: segment})
 	}
 	// 5) 数据库召回（固定知识 / 动态知识 / 其他召回）
-	if recalled := r.recallSection(sessionKey, currentContent); recalled != "" {
+	if recalled := r.recallSectionWithEntries(sessionKey, currentContent); recalled != "" {
 		messages = append(messages, ai.Message{Role: "system", Content: recalled})
 	}
 
@@ -823,10 +859,23 @@ func (r *Runtime) recallSection(sessionKey string, query string) string {
 	return recallSectionFor(r.memory, r.document, r.characterName(), sessionKey, query, r.logger)
 }
 
+// recallSectionWithEntries 与 recallSection 相同，但把召回条目暂存到运行时
+// （供 processIncoming 生成 lastRecall / injection observation 快照，对齐 Node 记录点）。
+func (r *Runtime) recallSectionWithEntries(sessionKey string, query string) string {
+	entries := recallEntriesFor(r.memory, r.document, r.characterName(), sessionKey, query, r.logger)
+	r.recalledEntries = entries
+	return renderRecallEntries(entries, r.logger)
+}
+
 // recallSectionFor 数据库召回段落（运行时与靶场/预览共用）。
 func recallSectionFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger) string {
+	return renderRecallEntries(recallEntriesFor(memory, document, character, sessionKey, query, logger), logger)
+}
+
+// recallEntriesFor 拉取召回条目（对齐 Node recallMemory 调用参数）。
+func recallEntriesFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger) []store.MemoryEntry {
 	if memory == nil {
-		return ""
+		return nil
 	}
 	namespace := namespaceOptionsFor(document, character, sessionKey)
 	entries, err := memory.RecallMemory(namespace, query, recallOptionsFor(document))
@@ -834,8 +883,13 @@ func recallSectionFor(memory *store.DB, document *config.Document, character str
 		if logger != nil {
 			logger.Printf("[记忆] 召回失败: %v", err)
 		}
-		return ""
+		return nil
 	}
+	return entries
+}
+
+// renderRecallEntries 渲染召回条目为提示词段落。
+func renderRecallEntries(entries []store.MemoryEntry, logger *log.Logger) string {
 	if len(entries) == 0 {
 		return ""
 	}
@@ -1565,145 +1619,6 @@ func (r *Runtime) humanChatControlPrompt() string {
 	}
 	prompt := strings.TrimSpace(r.document.String("chat.humanChatControlPrompt"))
 	return prompt
-}
-
-// participantProfileConfig 解析 memory.participantProfile 配置（对齐 Node getParticipantProfileConfig 核心字段）。
-func (r *Runtime) participantProfileConfig() (enabled bool, threshold int, sourceLimit int, analysisMode string, blacklist map[string]bool) {
-	blacklist = map[string]bool{}
-	enabled = r.document.Bool("memory.participantProfile.enabled")
-	threshold = int(r.document.Int("memory.participantProfile.triggerMessages", 8))
-	if threshold < 1 {
-		threshold = 8
-	}
-	sourceLimit = int(r.document.Int("memory.participantProfile.maxSourceMessages", 50))
-	if sourceLimit < 1 {
-		sourceLimit = 50
-	}
-	analysisMode = strings.TrimSpace(r.document.String("memory.participantProfile.analysisMode"))
-	if analysisMode == "" {
-		analysisMode = "all_context"
-	}
-	for _, item := range r.document.Get("memory.participantProfile.blacklistParticipantIds").Array() {
-		if id := strings.TrimSpace(item.String()); id != "" {
-			blacklist[id] = true
-		}
-	}
-	return enabled, threshold, sourceLimit, analysisMode, blacklist
-}
-
-// maybeBuildParticipantProfile 异步构建人物档案：阈值检查 → AI 生成 → 写入档案条目。
-// 失败只记日志，不影响聊天主链路（对齐 Node 异步任务语义）。
-func (r *Runtime) maybeBuildParticipantProfile(sessionKey string, participantID string, participantName string, messageType string, groupID string) {
-	if r.memory == nil {
-		r.logger.Printf("[档案] 记忆库未就绪，跳过建档")
-		return
-	}
-	if strings.TrimSpace(participantID) == "" {
-		r.logger.Printf("[档案] 缺少参与者 ID，跳过建档")
-		return
-	}
-	enabled, threshold, sourceLimit, analysisMode, blacklist := r.participantProfileConfig()
-	if !enabled {
-		r.logger.Printf("[档案] 自动建档未启用（memory.participantProfile.enabled=false）")
-		return
-	}
-	if blacklist[participantID] {
-		r.logger.Printf("[档案] %s 在黑名单中，跳过建档", participantID)
-		return
-	}
-	namespace := r.namespaceOptions(sessionKey)
-	sourceFilter := "all"
-	if analysisMode == "bot_only_messages" || analysisMode == "bot_only_profile" {
-		sourceFilter = "bot_only"
-	}
-	go func() {
-		source, err := r.memory.CollectParticipantProfileSource(participantID, namespace, store.ProfileSourceConfig{
-			Threshold: threshold, Limit: sourceLimit, SourceFilter: sourceFilter,
-		})
-		if err != nil {
-			r.logger.Printf("[档案] 采集源消息失败: %v", err)
-			return
-		}
-		if len(source.Messages) == 0 || (!source.HasEnoughNewInfo && source.Existing != nil) {
-			return
-		}
-		if source.HasEnoughNewInfo == false && source.Existing == nil {
-			r.logger.Printf("[档案] 新信息不足，跳过建档（%s 阈值 %d）", participantID, threshold)
-			return
-		}
-		profileText, err := r.generateParticipantProfile(source, participantID, participantName, analysisMode)
-		if err != nil {
-			r.logger.Printf("[档案] 生成失败 (%s): %v", participantID, err)
-			return
-		}
-		title := participantName
-		if title == "" {
-			title = participantID
-		}
-		metadata := map[string]any{
-			"messageType":            messageType,
-			"groupId":                groupID,
-			"lastProcessedMessageAt": source.LastProcessedAt,
-		}
-		entryID := ""
-		if source.Existing != nil {
-			entryID = source.Existing.ID
-		}
-		savedID, err := r.memory.SaveParticipantProfile(namespace, entryID, participantID, title, profileText, []string{}, metadata, source.Messages[len(source.Messages)-1].SessionID)
-		if err != nil {
-			r.logger.Printf("[档案] 保存失败 (%s): %v", participantID, err)
-			return
-		}
-		r.logger.Printf("[档案] 已保存 %s → %s（来源 %d 条）", participantID, savedID, len(source.Messages))
-	}()
-}
-
-// generateParticipantProfile 调用 AI 生成档案文本（对齐 Node buildParticipantProfilePrompt 归因硬约束）。
-func (r *Runtime) generateParticipantProfile(source *store.ProfileSource, participantID string, participantName string, analysisMode string) (string, error) {
-	targetName := participantName
-	if targetName == "" {
-		targetName = participantID
-	}
-	lines := make([]string, 0, len(source.Messages))
-	for _, message := range source.Messages {
-		speaker := "第三者"
-		switch {
-		case message.Role == "assistant":
-			speaker = "Bot"
-		case messageMetadataUserID(message) == participantID:
-			speaker = targetName
-		}
-		lines = append(lines, fmt.Sprintf("[%s] %s", speaker, message.Content))
-	}
-	existingSection := ""
-	if source.Existing != nil && strings.TrimSpace(source.Existing.Content) != "" {
-		existingSection = "\n\n【现有档案（增量更新基础）】\n" + source.Existing.Content
-	}
-	prompt := fmt.Sprintf(`请基于以下真实聊天内容增量更新人物档案。
-目标人物：%s（QQ:%s）
-
-归因硬约束：
-1. 档案只描述目标人物：%s（QQ:%s）。
-2. 必须把说话人掰开：目标人物 / Bot / 第三者；不得把 Bot 或第三者的话写成目标人物说的。
-3. 目标人物的稳定画像与当前状态，只能依据"说话人=%s"的本人发言归纳。
-4. Bot 与第三者内容可以用于理解语境，但禁止写入成目标人物自己的表达。
-5. 不要臆测未出现的信息；冲突时宁可写不确定或省略。
-
-新增消息如下：
-%s%s`, targetName, participantID, targetName, participantID, targetName, strings.Join(lines, "\n"), existingSection)
-
-	client := r.ai
-	if provider := r.resolveSummaryProvider(); provider != nil {
-		client = ai.New(*provider)
-	}
-	result, err := client.Chat(context.Background(), []ai.Message{
-		{Role: "system", Content: "你是人物档案分析器。只输出档案正文，不要输出多余解释。"},
-		{Role: "user", Content: prompt},
-	}, nil)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(result.Content), nil
 }
 
 // messageMetadataUserID 提取消息 metadata.userId（转发到 store 包实现）。

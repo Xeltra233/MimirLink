@@ -8,6 +8,7 @@ import (
 	"mimirlink/internal/chat"
 	"mimirlink/internal/config"
 	"mimirlink/internal/logging"
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/store"
 	"net/http"
 	"net/url"
@@ -63,12 +64,36 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 	botStatus := s.botStatusSnapshot()
 	llmEnabled := true
 	var lastRouting any
+	var participantProfileProgress any
+	var lastInjectionObservation any
+	recentInjectionObservations := []any{}
+	var lastRecall any
+	var tokenStats any
+	var botDashboard map[string]any
 	if botStatus != nil {
 		if value, ok := botStatus["llmEnabled"].(bool); ok {
 			llmEnabled = value
 		}
 		if value, ok := botStatus["lastRouting"]; ok {
 			lastRouting = value
+		}
+		if value, ok := botStatus["participantProfileProgress"]; ok {
+			participantProfileProgress = value
+		}
+		if value, ok := botStatus["lastInjectionObservation"]; ok {
+			lastInjectionObservation = value
+		}
+		if value, ok := botStatus["recentInjectionObservations"].([]any); ok {
+			recentInjectionObservations = value
+		}
+		if value, ok := botStatus["lastRecall"]; ok {
+			lastRecall = value
+		}
+		if value, ok := botStatus["tokenStats"]; ok {
+			tokenStats = value
+		}
+		if value, ok := botStatus["dashboardMetrics"].(map[string]any); ok {
+			botDashboard = value
 		}
 	}
 
@@ -84,14 +109,14 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 			"external":  memStats.StackInuse,
 		},
 		"llmEnabled":                  llmEnabled,
-		"participantProfileProgress":  nil,
+		"participantProfileProgress":  participantProfileProgress,
 		"knowledgeImportProgress":     s.knowledgeProgressSnapshot(),
 		"corpusEmbedProgress":         s.rangeEmbedProgressPayload(),
 		"lastRouting":                 lastRouting,
-		"lastInjectionObservation":    nil,
-		"recentInjectionObservations": []any{},
-		"lastRecall":                  nil,
-		"tokenStats":                  nil,
+		"lastInjectionObservation":    lastInjectionObservation,
+		"recentInjectionObservations": recentInjectionObservations,
+		"lastRecall":                  lastRecall,
+		"tokenStats":                  tokenStats,
 		"runtime": map[string]any{
 			"maxConcurrentSessions": s.document.Int("chat.maxConcurrentSessions", 4),
 			"bufferWindowMs":        s.document.Int("chat.bufferWindowMs", 1200),
@@ -124,25 +149,8 @@ func (s *Server) handleStatus(writer http.ResponseWriter, request *http.Request)
 				"path": activePath,
 			},
 		},
-		// 面板数据构成（对齐 Node getDashboardMetricsSnapshot 的 composition 字段）
-		"dashboardMetrics": map[string]any{
-			"bucketMs": 600000,
-			"timeline": []any{},
-			"series": map[string]any{
-				"chat":               []any{},
-				"participantProfile": []any{},
-				"knowledgeImport":    []any{},
-				"tts":                []any{},
-			},
-			"composition": map[string]any{
-				"messages":            counts.Messages,
-				"summaries":           counts.Summaries,
-				"participantProfiles": composition.ParticipantProfiles,
-				"fixedKnowledge":      composition.FixedKnowledge,
-				"dynamicKnowledge":    composition.DynamicKnowledge,
-			},
-			"updatedAt": time.Now().UnixMilli(),
-		},
+		// 面板数据构成 + bot 实时分桶序列（对齐 Node getDashboardMetricsSnapshot）
+		"dashboardMetrics": s.mergedDashboardMetrics(botDashboard, composition, counts),
 		"activeMemory": map[string]any{
 			"currentCharacter":  character,
 			"dbPath":            activePath,
@@ -872,6 +880,100 @@ func (s *Server) resolveProviderDraft(body map[string]any) ai.Provider {
 	}
 	resolved.Timeout = time.Duration(timeoutMs) * time.Millisecond
 	return resolved
+}
+
+// mergedDashboardMetrics 合并 bot 上报的实时分桶与面板本地分桶
+// （对齐 Node 单进程 getDashboardMetricsSnapshot：
+//   - chat / participantProfile 由 bot 记录，bot 是唯一来源；
+//   - tts 由 bot 聊天 TTS 与面板测试合成，两路相加；
+//   - knowledgeImport 由面板导入流水线记录）。
+//
+// bot 未运行时退化为仅面板分桶（knowledgeImport/tts 测试），前端有回退渲染。
+func (s *Server) mergedDashboardMetrics(botDashboard map[string]any, composition store.CompositionCounts, counts store.Counts) map[string]any {
+	local := s.metrics.Snapshot()
+	localTimeline, _ := local["timeline"].([]int64)
+	localSeries, _ := local["series"].(map[string]any)
+
+	valueAt := func(series map[string]any, metric string, index int) float64 {
+		if series == nil {
+			return 0
+		}
+		// bot 序列经控制口 JSON 往返后为 []any（float64），本地面板序列为 []int64
+		switch list := series[metric].(type) {
+		case []int64:
+			if index >= len(list) {
+				return 0
+			}
+			return float64(list[index])
+		case []any:
+			if index >= len(list) {
+				return 0
+			}
+			return numberValue(list[index])
+		default:
+			return 0
+		}
+	}
+
+	bucketMs := metrics.BucketMs
+	timelineLen := len(localTimeline)
+	botTimeline, _ := botDashboard["timeline"].([]any)
+	if len(botTimeline) > 0 {
+		timelineLen = len(botTimeline)
+	}
+	mergeIndex := func(metric string, botOnly bool) []float64 {
+		result := make([]float64, 0, timelineLen)
+		for index := 0; index < timelineLen; index += 1 {
+			localValue := valueAt(localSeries, metric, index)
+			botValue := 0.0
+			if botDashboard != nil {
+				if series, ok := botDashboard["series"].(map[string]any); ok {
+					botValue = valueAt(series, metric, index)
+				}
+			}
+			if botOnly {
+				result = append(result, botValue)
+			} else {
+				result = append(result, localValue+botValue)
+			}
+		}
+		return result
+	}
+
+	series := map[string]any{
+		"chat":               mergeIndex("chat", true),
+		"participantProfile": mergeIndex("participantProfile", true),
+		"tts":                mergeIndex("tts", false),
+		"knowledgeImport":    mergeIndex("knowledgeImport", false),
+	}
+	timeline := make([]any, 0, timelineLen)
+	if len(botTimeline) > 0 {
+		timeline = append(timeline, botTimeline...)
+	} else {
+		for _, item := range localTimeline {
+			timeline = append(timeline, item)
+		}
+	}
+	if len(timeline) == 0 && timelineLen > 0 {
+		// 防御：series 有长度但 timeline 缺失时按当前时间向前推 → 保证前端能解析
+		now := time.Now().UnixMilli()
+		for index := timelineLen - 1; index >= 0; index -= 1 {
+			timeline = append([]any{now - int64(timelineLen-1-index)*metrics.BucketMs}, timeline...)
+		}
+	}
+	return map[string]any{
+		"bucketMs": bucketMs,
+		"timeline": timeline,
+		"series":   series,
+		"composition": map[string]any{
+			"messages":            counts.Messages,
+			"summaries":           counts.Summaries,
+			"participantProfiles": composition.ParticipantProfiles,
+			"fixedKnowledge":      composition.FixedKnowledge,
+			"dynamicKnowledge":    composition.DynamicKnowledge,
+		},
+		"updatedAt": time.Now().UnixMilli(),
+	}
 }
 
 // openActiveMemory 打开当前生效的记忆库（与 Node getActiveMemoryInfo 的解析顺序一致）。

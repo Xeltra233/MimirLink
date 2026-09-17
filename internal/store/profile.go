@@ -232,3 +232,49 @@ func (d *DB) SaveParticipantProfile(options NamespaceOptions, entryID string, pa
 		UpdatedAt:       now,
 	})
 }
+
+// BackfillCandidate 是启动补建人物档案的候选参与者（对齐 Node backfillParticipantProfilesFromHistory 查询）。
+type BackfillCandidate struct {
+	ParticipantID string
+	GroupID       string
+	MessageCount  int
+}
+
+// ParticipantsEligibleForBackfill 找出历史消息数达到阈值、但可能还没有档案的参与者
+// （对齐 Node SELECT ... GROUP BY userId HAVING COUNT(*) >= threshold ORDER BY COUNT(*) DESC）。
+func (d *DB) ParticipantsEligibleForBackfill(threshold int) ([]BackfillCandidate, error) {
+	if threshold < 1 {
+		threshold = 8
+	}
+	rows, err := d.handle.Query(`
+		SELECT json_extract(metadata_json, '$.userId') AS participant_id,
+		       MAX(COALESCE(json_extract(metadata_json, '$.groupId'), '')) AS group_id,
+		       COUNT(*) AS message_count
+		FROM messages
+		WHERE role = 'user' AND json_extract(metadata_json, '$.userId') IS NOT NULL
+		GROUP BY json_extract(metadata_json, '$.userId')
+		HAVING COUNT(*) >= ?
+		ORDER BY COUNT(*) DESC`, threshold)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	result := []BackfillCandidate{}
+	for rows.Next() {
+		var item BackfillCandidate
+		var participantID, groupID *string
+		if err := rows.Scan(&participantID, &groupID, &item.MessageCount); err != nil {
+			return nil, err
+		}
+		if participantID != nil {
+			item.ParticipantID = strings.TrimSpace(*participantID)
+		}
+		if groupID != nil {
+			item.GroupID = strings.TrimSpace(*groupID)
+		}
+		if item.ParticipantID != "" {
+			result = append(result, item)
+		}
+	}
+	return result, rows.Err()
+}

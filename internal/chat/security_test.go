@@ -123,7 +123,7 @@ func TestParticipantProfileAutoBuild(t *testing.T) {
 	model := &fakeModel{replies: []string{"回复1", "回复2"}, profileReply: "档案正文：张三喜欢聊天气"}
 	runtime, _, memory := newRuntime(t, map[string]any{
 		"memory": map[string]any{
-			"participantProfile": map[string]any{"enabled": true, "triggerMessages": 1},
+			"participantProfile": map[string]any{"enabled": true, "triggerMessages": 1, "idleMs": 100},
 		},
 	}, model)
 	runtime.HandleEvent(buildGroupEvent("第一句", true, "99001", "2001"))

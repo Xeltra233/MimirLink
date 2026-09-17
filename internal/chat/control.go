@@ -31,6 +31,13 @@ func (r *Runtime) ControlStatus() map[string]any {
 		"hasToken":    strings.TrimSpace(r.document.String("onebot.accessToken")) != "",
 		"uptimeMs":    time.Since(r.startedAt).Milliseconds(),
 		"lastRouting": r.LastRoutingSnapshot(),
+		// 面板 /api/status 消费的运行进度与观测（对齐 Node 单进程 status 字段）
+		"participantProfileProgress":  r.ProfileProgressSnapshot(),
+		"dashboardMetrics":            r.metrics.Snapshot(),
+		"lastInjectionObservation":    r.LastInjectionObservation(),
+		"recentInjectionObservations": r.RecentInjectionObservations(),
+		"lastRecall":                  r.LastRecallSnapshot(),
+		"tokenStats":                  r.tokenStats(),
 	}
 	if r.bot != nil {
 		status["selfId"] = r.bot.SelfID()
@@ -43,6 +50,14 @@ func (r *Runtime) ControlStatus() map[string]any {
 		status["nickname"] = provider.Nickname()
 	}
 	return status
+}
+
+// tokenStats 读取 AI 客户端 token 统计（对齐 Node aiClient.getTokenStats）。
+func (r *Runtime) tokenStats() any {
+	if provider, ok := r.ai.(interface{ GetTokenStats() map[string]any }); ok {
+		return provider.GetTokenStats()
+	}
+	return nil
 }
 
 // ReconnectOneBot 请求底层 OneBot 客户端主动重建连接。
@@ -103,7 +118,7 @@ func (r *Runtime) AdminMention(request botctl.MentionRequest) (map[string]any, e
 	}, nil
 }
 
-// AnalyzeParticipantProfile 立即执行一次人物档案增量分析（不分批、不等待阈值）。
+// AnalyzeParticipantProfile 立即执行一次人物档案增量分析（force 模式，不分批、不等待阈值）。
 func (r *Runtime) AnalyzeParticipantProfile(request botctl.ProfileRequest) (map[string]any, error) {
 	if r.memory == nil {
 		return nil, fmt.Errorf("记忆库未就绪")
@@ -112,52 +127,51 @@ func (r *Runtime) AnalyzeParticipantProfile(request botctl.ProfileRequest) (map[
 	if participantID == "" {
 		return nil, fmt.Errorf("缺少 participantId")
 	}
-	_, threshold, sourceLimit, analysisMode, blacklist := r.participantProfileConfig()
-	if blacklist[participantID] {
+	settings := r.profileSettings()
+	if !settings.Enabled {
+		return nil, fmt.Errorf("人物档案功能未启用")
+	}
+	if settings.Blacklist[participantID] {
 		return nil, fmt.Errorf("该参与者已在黑名单中")
 	}
 	namespace := r.controlNamespace(request)
-	sourceFilter := "all"
-	if analysisMode == "bot_only_messages" || analysisMode == "bot_only_profile" {
-		sourceFilter = "bot_only"
+	identity := profileIdentity{
+		ParticipantID:   participantID,
+		ParticipantName: strings.TrimSpace(request.Participant),
+		MessageType:     orDefaultString(strings.TrimSpace(request.MessageType), "group"),
+		GroupID:         strings.TrimSpace(request.GroupID),
 	}
-	source, err := r.memory.CollectParticipantProfileSource(participantID, namespace, store.ProfileSourceConfig{
-		Threshold: threshold, Limit: sourceLimit, SourceFilter: sourceFilter, Force: true,
-	})
+	result, err := r.buildParticipantProfile(namespace, identity, profileBuildOptions{Force: true, TriggeredBy: "manual"})
 	if err != nil {
-		return nil, fmt.Errorf("采集源消息失败: %w", err)
+		return nil, err
 	}
-	if len(source.Messages) == 0 {
+	if result == nil {
+		return nil, fmt.Errorf("未能生成人物档案")
+	}
+	if result.Skipped && strings.TrimSpace(result.ProfileID) == "" {
 		return nil, fmt.Errorf("没有可用于分析的历史消息")
 	}
-	profileText, err := r.generateParticipantProfile(source, participantID, strings.TrimSpace(request.Participant), analysisMode)
-	if err != nil {
-		return nil, fmt.Errorf("生成档案失败: %w", err)
+	// 手动分析元数据补充（对齐 Node routes.js analyzeParticipantProfile 的 operator 元数据写入）
+	if entry, fetchErr := r.memory.GetParticipantProfileEntry(namespace, participantID); fetchErr == nil && entry != nil {
+		metadata := map[string]any{}
+		for key, value := range entry.Metadata {
+			metadata[key] = value
+		}
+		metadata["manualAnalyze"] = true
+		metadata["analyzedAt"] = time.Now().UnixMilli()
+		metadata["messageType"] = identity.MessageType
+		if identity.GroupID != "" {
+			metadata["groupId"] = identity.GroupID
+		}
+		if _, saveErr := r.memory.SaveParticipantProfile(namespace, entry.ID, participantID, entry.Title, entry.Content, entry.Tags, metadata, entry.SourceSessionID); saveErr != nil {
+			r.logger.Printf("[控制] 手动分析元数据写入失败: %v", saveErr)
+		}
 	}
-	title := strings.TrimSpace(request.Participant)
-	if title == "" {
-		title = participantID
-	}
-	metadata := map[string]any{
-		"messageType":            orDefaultString(strings.TrimSpace(request.MessageType), "group"),
-		"groupId":                strings.TrimSpace(request.GroupID),
-		"lastProcessedMessageAt": source.LastProcessedAt,
-		"manualAnalyze":          true,
-		"analyzedAt":             time.Now().UnixMilli(),
-	}
-	entryID := ""
-	if source.Existing != nil {
-		entryID = source.Existing.ID
-	}
-	savedID, err := r.memory.SaveParticipantProfile(namespace, entryID, participantID, title, profileText, []string{}, metadata, "")
-	if err != nil {
-		return nil, fmt.Errorf("保存档案失败: %w", err)
-	}
-	r.logger.Printf("[控制] 手动增量分析完成: %s → %s（来源 %d 条）", participantID, savedID, len(source.Messages))
+	r.logger.Printf("[控制] 手动增量分析完成: %s → %s（来源 %d 条）", participantID, result.ProfileID, result.SourceCount)
 	return map[string]any{
-		"message": fmt.Sprintf("人物档案已重新分析（来源 %d 条消息）", len(source.Messages)),
-		"entryId": savedID,
-		"content": profileText,
+		"message": fmt.Sprintf("人物档案已重新分析（来源 %d 条消息）", result.SourceCount),
+		"entryId": result.ProfileID,
+		"content": result.Content,
 	}, nil
 }
 

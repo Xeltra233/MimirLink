@@ -13,6 +13,7 @@ import (
 	"unicode/utf16"
 
 	"mimirlink/internal/ai"
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/store"
 )
 
@@ -722,6 +723,8 @@ func (s *Server) handleKnowledgeImportAI(writer http.ResponseWriter, request *ht
 		"progressPercent": 100, "lastCompletedAt": completedAt, "lastSuccessAt": completedAt,
 		"lastError": nil, "lastResult": result,
 	})
+	s.metrics.Record(metrics.KnowledgeImport, 1)
+	// 仪表盘分桶：知识导入事件（对齐 Node routes.js recordDashboardMetric('knowledgeImport')）
 	s.logger.Printf("小说导入完成: title=%s chunkCount=%d importedCount=%d", payload.Title, len(chunks), len(importedItems))
 
 	writeJSON(writer, http.StatusOK, map[string]any{

@@ -11,6 +11,7 @@ import (
 
 	"mimirlink/internal/characters"
 	"mimirlink/internal/config"
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/store"
 )
 
@@ -327,6 +328,49 @@ func TestStatusDashboardCompositionAndOneBot(t *testing.T) {
 	}
 	if onebot["connected"] != false {
 		t.Fatalf("Bot 未运行时不应显示已连接: %v", onebot)
+	}
+}
+
+// TestMergedDashboardMetrics 守护 /api/status dashboardMetrics 的合并规则：
+// bot 序列（经控制口 JSON 往返为 []any）+ 面板本地 knowledgeImport/tts 测试记录。
+func TestMergedDashboardMetrics(t *testing.T) {
+	server, _ := newTestServer(t)
+	server.metrics.Record(metrics.KnowledgeImport, 2)
+	server.metrics.Record(metrics.TTS, 1)
+	bot := map[string]any{
+		"bucketMs": float64(metrics.BucketMs),
+		"timeline": []any{float64(1), float64(2), float64(3), float64(4), float64(5), float64(6)},
+		"series": map[string]any{
+			"chat":               []any{float64(0), float64(0), float64(0), float64(0), float64(0), float64(3)},
+			"participantProfile": []any{float64(0), float64(0), float64(0), float64(0), float64(0), float64(1)},
+			"tts":                []any{float64(0), float64(0), float64(0), float64(0), float64(0), float64(2)},
+			"knowledgeImport":    []any{float64(0), float64(0), float64(0), float64(0), float64(0), float64(0)},
+		},
+	}
+	merged := server.mergedDashboardMetrics(bot, store.CompositionCounts{}, store.Counts{})
+	if merged["bucketMs"] != metrics.BucketMs {
+		t.Fatalf("bucketMs 应为 %d，实际 %v", metrics.BucketMs, merged["bucketMs"])
+	}
+	series, _ := merged["series"].(map[string]any)
+	chat, _ := series["chat"].([]float64)
+	if len(chat) != 6 || chat[5] != 3 {
+		t.Fatalf("chat 应来自 bot 序列: %v", chat)
+	}
+	profile, _ := series["participantProfile"].([]float64)
+	if len(profile) != 6 || profile[5] != 1 {
+		t.Fatalf("participantProfile 应来自 bot 序列: %v", profile)
+	}
+	tts, _ := series["tts"].([]float64)
+	if len(tts) != 6 || tts[5] != 3 {
+		t.Fatalf("tts 应为 bot(2)+面板(1)：%v", tts)
+	}
+	knowledge, _ := series["knowledgeImport"].([]float64)
+	if len(knowledge) != 6 || knowledge[5] != 2 {
+		t.Fatalf("knowledgeImport 应来自面板本地序列: %v", knowledge)
+	}
+	timeline, _ := merged["timeline"].([]any)
+	if len(timeline) != 6 {
+		t.Fatalf("timeline 应保留 6 桶: %v", timeline)
 	}
 }
 

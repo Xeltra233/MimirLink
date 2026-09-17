@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"mimirlink/internal/ai"
+	"mimirlink/internal/metrics"
 	"mimirlink/internal/tools"
 	"mimirlink/internal/tts"
 )
@@ -313,6 +314,8 @@ func (r *Runtime) dispatchReply(event map[string]any, messageType string, groupI
 			r.logger.Printf("[TTS] 合成失败: %v", err)
 			return sendText(voiceFallbackText(content, explicitVoice))
 		}
+		// 仪表盘分桶：TTS 合成事件（对齐 Node reply-dispatcher recordDashboardMetric('tts')）
+		r.metrics.Record(metrics.TTS, 1)
 		return sendVoice(audioPath)
 	}
 

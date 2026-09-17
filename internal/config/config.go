@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -239,6 +240,7 @@ func (d *Document) Save() error { return d.SaveTo(d.path) }
 func (d *Document) SaveTo(path string) error {
 	// 与 Node saveConfig → normalizeConfig 一致：保存前同步全局正则层（bindings.global.regexRules ⇄ regex.rules）
 	d.syncLegacyRegexRules()
+	d.normalizeProfileAndThinkingConfig()
 	formatted, err := d.Formatted()
 	if err != nil {
 		return err
@@ -307,4 +309,117 @@ func (d *Document) syncLegacyRegexRules() {
 // SyncLegacyRegexRules 供备份/工具链主动执行保存前归一化（与 Save 内部逻辑一致）。
 func SyncLegacyRegexRules(document *Document) {
 	document.syncLegacyRegexRules()
+}
+
+// normalizeProfileAndThinkingConfig 保存前归一化人物档案与思考提示配置
+// （对齐 Node normalizeConfig 中 normalizeParticipantProfileConfig + chat.thinkingNotify 段）。
+func (d *Document) normalizeProfileAndThinkingConfig() {
+	if d == nil {
+		return
+	}
+	// 仅归一化已存在的段落（保持包内「未知键原样保留、不引入新键」契约；
+	// 缺省值由运行时读取时补齐，效果与 Node normalizeConfig 一致）
+	if d.Get("chat.thinkingNotify").Exists() {
+		d.normalizeThinkingNotifyConfig()
+	}
+	if d.Get("memory.participantProfile").Exists() {
+		d.normalizeParticipantProfileConfig()
+	}
+}
+
+// normalizeThinkingNotifyConfig 归一化 chat.thinkingNotify（enabled 默认 true，delaySec 限制 1..3600）。
+func (d *Document) normalizeThinkingNotifyConfig() {
+	thinkingEnabled := true
+	if d.Exists("chat.thinkingNotify.enabled") {
+		thinkingEnabled = d.Bool("chat.thinkingNotify.enabled")
+	}
+	delaySec := d.Int("chat.thinkingNotify.delaySec", 60)
+	if delaySec < 1 {
+		delaySec = 1
+	}
+	if delaySec > 3600 {
+		delaySec = 3600
+	}
+	_ = d.Set("chat.thinkingNotify.enabled", thinkingEnabled)
+	_ = d.Set("chat.thinkingNotify.delaySec", delaySec)
+	_ = d.Set("chat.thinkingNotify.message", d.String("chat.thinkingNotify.message"))
+}
+
+// normalizeParticipantProfileConfig 归一化 memory.participantProfile：
+// 枚举归一 + 数值下限 + 删除派生字段（对齐 Node normalizeParticipantProfileConfig）。
+func (d *Document) normalizeParticipantProfileConfig() {
+	profileEnabled := d.Bool("memory.participantProfile.enabled")
+	injectEnabled := true
+	if d.Exists("memory.participantProfile.injectEnabled") {
+		injectEnabled = d.Bool("memory.participantProfile.injectEnabled")
+	}
+	_ = d.Set("memory.participantProfile.enabled", profileEnabled)
+	_ = d.Set("memory.participantProfile.injectEnabled", injectEnabled)
+	_ = d.Set("memory.participantProfile.blacklistParticipantIds", uniqueStringList(d, "memory.participantProfile.blacklistParticipantIds"))
+	manualCommand := strings.TrimSpace(d.String("memory.participantProfile.manualCommand"))
+	if manualCommand == "" {
+		manualCommand = "/人物档案"
+	}
+	_ = d.Set("memory.participantProfile.manualCommand", manualCommand)
+	_ = d.Set("memory.participantProfile.triggerMessages", positiveOrDefault(d.Int("memory.participantProfile.triggerMessages", 8), 8))
+	_ = d.Set("memory.participantProfile.idleMs", positiveOrDefault(d.Int("memory.participantProfile.idleMs", 120000), 120000))
+	_ = d.Set("memory.participantProfile.intervalMs", positiveOrDefault(d.Int("memory.participantProfile.intervalMs", 300000), 300000))
+	_ = d.Set("memory.participantProfile.maxSourceMessages", positiveOrDefault(d.Int("memory.participantProfile.maxSourceMessages", 50), 50))
+	_ = d.Set("memory.participantProfile.triggerMode", normalizeTriggerMode(d.String("memory.participantProfile.triggerMode")))
+	_ = d.Set("memory.participantProfile.analysisMode", normalizeAnalysisMode(d.String("memory.participantProfile.analysisMode")))
+	retryOnError := true
+	if d.Exists("memory.participantProfile.retryOnError") {
+		retryOnError = d.Bool("memory.participantProfile.retryOnError")
+	}
+	_ = d.Set("memory.participantProfile.retryOnError", retryOnError)
+	_ = d.Set("memory.participantProfile.model", strings.TrimSpace(d.String("memory.participantProfile.model")))
+	// providerId 为空时移除；baseUrl/apiKey 为派生值不落盘（对齐 Node）
+	providerID := strings.TrimSpace(d.String("memory.participantProfile.providerId"))
+	if providerID == "" {
+		_ = d.Delete("memory.participantProfile.providerId")
+	} else {
+		_ = d.Set("memory.participantProfile.providerId", providerID)
+	}
+	_ = d.Delete("memory.participantProfile.baseUrl")
+	_ = d.Delete("memory.participantProfile.apiKey")
+}
+
+// uniqueStringList 读取字符串数组并去重去空。
+func uniqueStringList(d *Document, path string) []string {
+	seen := map[string]bool{}
+	result := []string{}
+	for _, item := range d.Get(path).Array() {
+		value := strings.TrimSpace(item.String())
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, value)
+	}
+	return result
+}
+
+func positiveOrDefault(value int64, fallback int64) int64 {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+func normalizeTriggerMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "idle", "interval", "both":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "idle"
+	}
+}
+
+func normalizeAnalysisMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "messages_only", "profile_plus_messages", "bot_only_messages", "bot_only_profile":
+		return strings.ToLower(strings.TrimSpace(value))
+	default:
+		return "bot_only_profile"
+	}
 }

@@ -65,7 +65,7 @@ func (m *fakeModel) Chat(ctx context.Context, messages []ai.Message, overrides m
 	}
 	// 档案分析提示词按特征返回专用回复，避免异步 goroutine 抢占普通回复
 	for _, message := range messages {
-		if text, ok := message.Content.(string); ok && strings.Contains(text, "人物档案分析器") && m.profileReply != "" {
+		if text, ok := message.Content.(string); ok && m.profileReply != "" && (strings.Contains(text, "归因硬约束") || strings.Contains(text, "请合并同一个 QQ 用户的人物档案")) {
 			return &ai.ChatResult{Content: m.profileReply}, nil
 		}
 	}
