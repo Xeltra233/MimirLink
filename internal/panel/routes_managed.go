@@ -136,8 +136,30 @@ func (s *Server) handleCharacterSelect(writer http.ResponseWriter, request *http
 	metadata := s.characterMetadata(name)
 	card, _ := characters.Read(s.dataDir, name)
 	applied := []string{}
+	plan := characterImportPlan(metadata)
+	// 对齐 Node `options.importX ?? plan.importX`：前端未勾选/未传时按导入计划默认执行。
+	importOptions, _ := body["importOptions"].(map[string]any)
+	optionEnabled := func(key string, planValue bool) bool {
+		if importOptions == nil {
+			return planValue
+		}
+		if raw, ok := importOptions[key]; ok {
+			enabled, _ := raw.(bool)
+			return enabled
+		}
+		return planValue
+	}
 	if metadata["hasEmbeddedWorldBook"] == true {
-		applied = append(applied, "检测到内嵌世界书")
+		if optionEnabled("importWorldBook", plan["importWorldBook"] == true) && metadata["worldBook"] != nil {
+			_, entryCount, err := s.importEmbeddedWorldBook(name, metadata)
+			if err != nil {
+				writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": "内嵌世界书导入失败: " + err.Error()})
+				return
+			}
+			applied = append(applied, fmt.Sprintf("已自动加载内嵌世界书 (%d 条)", entryCount))
+		} else {
+			applied = append(applied, "检测到内嵌世界书")
+		}
 	}
 	if summarizeCharacterMetadata(metadata)["importableRegexScriptCount"].(int) > 0 {
 		applied = append(applied, "检测到可导入正则")
@@ -156,7 +178,221 @@ func (s *Server) handleCharacterSelect(writer http.ResponseWriter, request *http
 	})
 }
 
-// handleCharacterRefresh 重新扫描角色目录并返回列表（对齐 Node POST /api/characters/refresh）。
+// importEmbeddedWorldBook 把角色卡内嵌世界书标准化后写入 data/worlds/<角色名>'s Lorebook.json，
+// 并写入角色级绑定（character_overrides.worldBook / importedFromCard.worldbook）。
+// 对齐 Node applyCharacterMetadata 的 importWorldBook 分支：V1(对象)/V2(数组) 条目统一转 V2，
+// 合并已存在的独立世界书中多出的条目，保留之前合并的变量条目。
+func (s *Server) importEmbeddedWorldBook(name string, metadata map[string]any) (string, int, error) {
+	book, _ := metadata["worldBook"].(map[string]any)
+	if book == nil {
+		return "", 0, fmt.Errorf("该角色卡没有内嵌世界书")
+	}
+	displayName := firstText(textOf(metadata["name"]), safeBase(name))
+	worldbookFilename := safeBase(displayName) + "'s Lorebook.json"
+
+	// V1（对象 key->entry）与 V2（数组）兼容，统一归一化为数组
+	rawEntries := []any{}
+	switch entries := book["entries"].(type) {
+	case []any:
+		rawEntries = entries
+	case map[string]any:
+		for _, value := range entries {
+			rawEntries = append(rawEntries, value)
+		}
+	}
+
+	cardKeySet := map[string]bool{}
+	normalized := make([]any, 0, len(rawEntries))
+	for _, item := range rawEntries {
+		entry, _ := item.(map[string]any)
+		if entry == nil {
+			continue
+		}
+		normalizedEntry := normalizeWorldbookEntry(entry)
+		cardKeySet[worldbookEntryKeySignature(normalizedEntry)] = true
+		normalized = append(normalized, normalizedEntry)
+	}
+
+	// 读取已存在的独立世界书，保留卡内没有的多余条目（对齐 Node extraEntries 逻辑）
+	worldsDir := filepath.Join(s.dataDir, "worlds")
+	if err := os.MkdirAll(worldsDir, 0o755); err != nil {
+		return "", 0, err
+	}
+	worldbookPath := filepath.Join(worldsDir, worldbookFilename)
+	extraEntries := []any{}
+	if raw, err := os.ReadFile(worldbookPath); err == nil {
+		var existing map[string]any
+		if json.Unmarshal(raw, &existing) == nil {
+			if existingEntries, ok := existing["entries"].([]any); ok {
+				for _, item := range existingEntries {
+					entry, _ := item.(map[string]any)
+					if entry == nil {
+						continue
+					}
+					if !cardKeySet[worldbookEntryKeySignature(entry)] {
+						extraEntries = append(extraEntries, entry)
+					}
+				}
+			}
+		}
+	}
+	allEntries := append(append([]any{}, normalized...), extraEntries...)
+	worldbook := map[string]any{
+		"name":        displayName + " 世界书",
+		"description": "从角色卡 " + displayName + " 自动提取的世界书",
+		"entries":     allEntries,
+	}
+	encoded, err := json.MarshalIndent(worldbook, "", "  ")
+	if err != nil {
+		return "", 0, err
+	}
+	if err := os.WriteFile(worldbookPath, encoded, 0o644); err != nil {
+		return "", 0, err
+	}
+
+	// 角色级绑定：worldBook 供面板展示，importedFromCard.worldbook 对齐 Node 来源标记
+	overrides := characters.ReadOverrides(s.dataDir, name)
+	overrides["worldBook"] = worldbookFilename
+	imported, _ := overrides["importedFromCard"].(map[string]any)
+	if imported == nil {
+		imported = map[string]any{}
+	}
+	imported["worldbook"] = worldbookFilename
+	overrides["importedFromCard"] = imported
+	if err := characters.WriteOverrides(s.dataDir, name, overrides); err != nil {
+		return "", 0, err
+	}
+	return worldbookFilename, len(allEntries), nil
+}
+
+// normalizeWorldbookEntry 把单条世界书条目标准化为 V2 形状（对齐 Node applyCharacterMetadata 字段映射）。
+func normalizeWorldbookEntry(entry map[string]any) map[string]any {
+	keys := []string{}
+	if rawKey, ok := entry["key"].(string); ok {
+		for _, part := range strings.Split(rawKey, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				keys = append(keys, trimmed)
+			}
+		}
+	} else {
+		keys = stringListValue(entry["keys"])
+	}
+	secondaryKeys := stringListValue(entry["secondary_keys"])
+	if len(secondaryKeys) == 0 {
+		secondaryKeys = stringListValue(entry["keysecondary"])
+	}
+	position := "after_char"
+	switch value := entry["position"].(type) {
+	case float64:
+		if value == 0 {
+			position = "before_char"
+		}
+	case string:
+		if value == "before_char" {
+			position = "before_char"
+		}
+	}
+	extensions, _ := entry["extensions"].(map[string]any)
+	if extensions == nil {
+		extensions = map[string]any{}
+	}
+	return map[string]any{
+		"id":              worldbookEntryID(entry),
+		"keys":            keys,
+		"secondary_keys":  secondaryKeys,
+		"comment":         textOf(entry["comment"]),
+		"content":         textOf(entry["content"]),
+		"constant":        boolOr(entry["constant"], false),
+		"selective":       boolOr(entry["selective"], true),
+		"insertion_order": numberOr(entry["order"], numberOr(entry["insertion_order"], 100)),
+		"enabled":         boolOr(entry["enabled"], true),
+		"position":        position,
+		"use_regex":       boolOr(entry["use_regex"], true),
+		"extensions":      extensions,
+	}
+}
+
+// worldbookEntryID 对齐 Node `e.uid || e.id || 0` 的取值优先级。
+func worldbookEntryID(entry map[string]any) any {
+	for _, key := range []string{"uid", "id"} {
+		if value, ok := entry[key]; ok && truthyJSON(value) {
+			return value
+		}
+	}
+	return 0
+}
+
+// truthyJSON 近似 JavaScript 真值判断（用于复刻 Node 的 || 取值语义）。
+func truthyJSON(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case bool:
+		return typed
+	case float64:
+		return typed != 0
+	case int:
+		return typed != 0
+	case string:
+		return typed != ""
+	case []any:
+		return true // JS 里空数组为真值
+	case map[string]any:
+		return true // JS 里空对象为真值
+	}
+	return true
+}
+
+// stringListValue 把数组/逗号分隔字符串归一化为 []string。
+func stringListValue(value any) []string {
+	result := []string{}
+	switch typed := value.(type) {
+	case []any:
+		for _, item := range typed {
+			if text := strings.TrimSpace(textOf(item)); text != "" {
+				result = append(result, text)
+			}
+		}
+	case []string:
+		result = append(result, typed...)
+	case string:
+		for _, part := range strings.Split(typed, ",") {
+			if trimmed := strings.TrimSpace(part); trimmed != "" {
+				result = append(result, trimmed)
+			}
+		}
+	}
+	return result
+}
+
+// worldbookEntryKeySignature 复刻 Node 的 keys 去重签名（JSON.stringify(e.keys||e.key||'')）。
+func worldbookEntryKeySignature(entry map[string]any) string {
+	if keys, ok := entry["keys"]; ok && truthyJSON(keys) {
+		encoded, err := json.Marshal(keys)
+		if err == nil {
+			return string(encoded)
+		}
+	}
+	if key, ok := entry["key"]; ok && truthyJSON(key) {
+		encoded, err := json.Marshal(key)
+		if err == nil {
+			return string(encoded)
+		}
+	}
+	return "\"\""
+}
+
+// numberOr 返回数值，缺省或类型不符时用 fallback。
+func numberOr(value any, fallback float64) float64 {
+	switch typed := value.(type) {
+	case float64:
+		return typed
+	case int:
+		return float64(typed)
+	}
+	return fallback
+}
+
 func (s *Server) handleCharacterRefresh(writer http.ResponseWriter, request *http.Request) {
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "characters": s.characterListPayload()})
 }
@@ -415,6 +651,11 @@ func (s *Server) handleWorldbookSelect(writer http.ResponseWriter, request *http
 		return
 	}
 	resolvedPath := s.worldbookFilePath(raw)
+	// 校验解析结果真实存在：否则坏名字会被写进绑定，之后 content 请求全部 500。
+	if _, err := os.Stat(resolvedPath); err != nil {
+		writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "世界书文件不存在: " + raw})
+		return
+	}
 	filename := filepath.Base(resolvedPath)
 	if err := s.document.Set("bindings.global.worldbook", filename); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})

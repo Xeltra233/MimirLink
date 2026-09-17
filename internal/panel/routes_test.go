@@ -184,6 +184,80 @@ func TestWorldbookContentAndSaveContract(t *testing.T) {
 	}
 }
 
+// TestCharacterSelectImportsEmbeddedWorldbook 守护「导入内嵌世界书」链路：勾选 importWorldBook 时
+// 写出 worlds/<角色名>'s Lorebook.json 并写入角色绑定（此前 Go 版忽略 importOptions，
+// 世界书缺失导致前端 content 请求 500）。
+func TestCharacterSelectImportsEmbeddedWorldbook(t *testing.T) {
+	server, dataDir := newTestServer(t)
+	card := map[string]any{
+		"name": "徐缺测试",
+		"character_book": map[string]any{
+			"entries": []any{
+				map[string]any{"keys": []any{"徐缺"}, "content": "徐缺条目内容", "insertion_order": 10},
+				map[string]any{"key": "老王,老王头", "content": "老王条目内容"},
+			},
+		},
+	}
+	if err := characters.Create(dataDir, "徐缺测试", card); err != nil {
+		t.Fatalf("创建角色卡失败: %v", err)
+	}
+	recorder := doRequest(server, http.MethodPost, "/api/characters/select",
+		`{"filename":"徐缺测试.png","importOptions":{"importWorldBook":true}}`)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("select 返回 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	payload := map[string]any{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("响应不是 JSON: %v", err)
+	}
+	applied, _ := payload["appliedActions"].([]any)
+	foundApplied := false
+	for _, item := range applied {
+		if strings.Contains(textOf(item), "已自动加载内嵌世界书") {
+			foundApplied = true
+		}
+	}
+	if !foundApplied {
+		t.Fatalf("appliedActions 缺少自动加载提示: %s", recorder.Body.String())
+	}
+	wbPath := filepath.Join(dataDir, "worlds", "徐缺测试's Lorebook.json")
+	raw, err := os.ReadFile(wbPath)
+	if err != nil {
+		t.Fatalf("世界书未写出: %v", err)
+	}
+	book := map[string]any{}
+	if err := json.Unmarshal(raw, &book); err != nil {
+		t.Fatalf("世界书 JSON 非法: %v", err)
+	}
+	entries, _ := book["entries"].([]any)
+	if len(entries) != 2 {
+		t.Fatalf("世界书条目数错误: %d (%s)", len(entries), string(raw))
+	}
+	summary, _ := payload["bindingSummary"].(map[string]any)
+	worldbookSummary, _ := summary["worldbook"].(map[string]any)
+	if worldbookSummary["value"] != "徐缺测试's Lorebook.json" {
+		t.Fatalf("bindingSummary 世界书值错误: %#v", worldbookSummary)
+	}
+	// 旧缺陷复现点：绑定可解析后 content 必须 200，而不是 500 世界书不存在
+	content := doRequest(server, http.MethodGet, "/api/worldbooks/徐缺测试's%20Lorebook.json/content", "")
+	if content.Code != http.StatusOK {
+		t.Fatalf("content 返回 %d: %s", content.Code, content.Body.String())
+	}
+}
+
+// TestWorldbookSelectRejectsMissingFile 守护世界书绑定不被坏名字污染：
+// 选择不存在的文件应 404 且不更新全局绑定（此前会把回退路径写进绑定，导致 content 500）。
+func TestWorldbookSelectRejectsMissingFile(t *testing.T) {
+	server, _ := newTestServer(t)
+	recorder := doRequest(server, http.MethodPost, "/api/worldbooks/select", `{"filename":"不存在 的世界书.json.bak"}`)
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("选择不存在的世界书应 404，实际 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if bound := server.document.String("bindings.global.worldbook"); bound != "" {
+		t.Fatalf("坏名字不应写入绑定: %q", bound)
+	}
+}
+
 // TestRegexLayerConfigPaths 守护正则规则写在 Node 的绑定层键上（bindings.global.regexRules），
 // 旧实现写到了 regex.global，面板读不到、Node 版也读不到。
 func TestRegexLayerConfigPaths(t *testing.T) {

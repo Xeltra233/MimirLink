@@ -149,9 +149,22 @@ func (s *Server) bindingSummary(name string) map[string]any {
 	if memoryPath == "" {
 		memoryPath = s.document.String("memory.storage.path")
 	}
+	// 世界书来源解析顺序对齐 Node resolveSource：角色显式 → 卡内导入 → 全局 → 无。
 	worldbook := textOf(overrides["worldBook"])
+	worldbookSource := "none"
+	if worldbook != "" {
+		worldbookSource = "character"
+	} else if imported, ok := overrides["importedFromCard"].(map[string]any); ok {
+		if importedWorldbook := textOf(imported["worldbook"]); importedWorldbook != "" {
+			worldbook = importedWorldbook
+			worldbookSource = "card"
+		}
+	}
 	if worldbook == "" {
-		worldbook = s.document.String("bindings.global.worldbook")
+		if globalWorldbook := s.document.String("bindings.global.worldbook"); globalWorldbook != "" {
+			worldbook = globalWorldbook
+			worldbookSource = "global"
+		}
 	}
 	source := func(explicit string, fallback string) string {
 		if explicit != "" {
@@ -168,7 +181,7 @@ func (s *Server) bindingSummary(name string) map[string]any {
 			"value":  nilIf(memoryPath),
 		},
 		"worldbook": map[string]any{
-			"source": source(textOf(overrides["worldBook"]), s.document.String("bindings.global.worldbook")),
+			"source": worldbookSource,
 			"value":  nilIf(worldbook),
 		},
 		"preset": map[string]any{
