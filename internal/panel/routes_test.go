@@ -521,3 +521,27 @@ func num(value any) int64 {
 		return -1
 	}
 }
+
+// TestAudioFilePublicNoAuth /audio 公开可播（对齐 Node express.static 无鉴权）。
+func TestAudioFilePublicNoAuth(t *testing.T) {
+	server, _ := newTestServer(t)
+	// 写一个 tts_ 前缀音频文件到 AudioDir
+	name := "tts_test_public.mp3"
+	if err := os.WriteFile(filepath.Join(server.AudioDir(), name), []byte("fake-audio"), 0o644); err != nil {
+		t.Fatalf("写音频失败: %v", err)
+	}
+	recorder := doRequest(server, http.MethodGet, "/audio/"+name, "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("/audio 应公开可播，实际状态 %d", recorder.Code)
+	}
+	if recorder.Body.String() != "fake-audio" {
+		t.Fatalf("音频内容异常: %q", recorder.Body.String())
+	}
+	// 路径穿越（Go ServeMux 会先 307 清理 ..；编码穿越直达 handler，应被 Base 截断为 404）与非 tts_ 前缀仍 404
+	if rec := doRequest(server, http.MethodGet, "/audio/%2e%2e/config.json", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("路径穿越应 404，实际 %d", rec.Code)
+	}
+	if rec := doRequest(server, http.MethodGet, "/audio/other.mp3", ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("非 tts_ 前缀应 404，实际 %d", rec.Code)
+	}
+}

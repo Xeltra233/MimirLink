@@ -18,7 +18,7 @@ func (s *Server) registerTTSRoutes(manager *tts.Manager) {
 	s.mux.HandleFunc("/api/tts/config", s.requireAuth(s.handleTTSConfig))
 	s.mux.HandleFunc("/api/tts/voices", s.requireAuth(s.handleTTSVoices))
 	s.mux.HandleFunc("/api/tts/test", s.requireAuth(s.handleTTSTest(manager)))
-	s.mux.HandleFunc("/audio/", s.requireAuth(s.handleAudioFile(manager)))
+	s.mux.HandleFunc("/audio/", s.handleAudioFile(manager)) // 对齐 Node express.static：公开可播，无需登录
 }
 
 // handleTTSConfig GET 返回脱敏配置；POST 保存（apiKey 为 '******' 或缺失时保留原值）。
