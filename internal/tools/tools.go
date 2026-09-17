@@ -492,6 +492,14 @@ func LoadSearchConfig(document *config.Document) search.Config {
 	if fallback := strings.TrimSpace(stringArg(source, "mcpFallback")); fallback != "" {
 		configValue.MCPFallback = fallback
 	}
+	configValue.MCPFallbackMaxChars = clampInt(intArg(source, "mcpFallbackMaxChars"), 500, 50000, search.Defaults.MCPFallbackMaxChars)
+	// spice 默认启用（对齐 Node WEB_SEARCH_DEFAULTS.spice.enabled=true）；显式对象缺 enabled 键时仍启用
+	configValue.Spice.Enabled = true
+	configValue.Spice.WeatherDays = search.Defaults.Spice.WeatherDays
+	if spice, ok := source["spice"].(map[string]any); ok {
+		configValue.Spice.Enabled = boolArg(spice, "enabled", true)
+		configValue.Spice.WeatherDays = clampInt(intArg(spice, "weatherDays"), 1, 7, search.Defaults.Spice.WeatherDays)
+	}
 	return configValue
 }
 

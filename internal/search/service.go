@@ -22,7 +22,7 @@ var Defaults = Config{
 	MaxSnippetLength:    800,
 	Fetch:               FetchConfig{Enabled: true, TimeoutMs: 15000, MaxChars: 8000},
 	MCPFallback:         "auto",
-	Spice:               SpiceConfig{WeatherDays: 3},
+	Spice:               SpiceConfig{Enabled: true, WeatherDays: 3}, // 对齐 Node spice.enabled 默认 true
 	MCPFallbackMaxChars: 4000,
 }
 

@@ -150,3 +150,41 @@ func TestToolNamesForPreview(t *testing.T) {
 		t.Fatalf("未启用时不应有工具名: %v", names)
 	}
 }
+
+// TestLoadSearchConfigSpiceDefaults spice/mcpFallbackMaxChars归一（对齐Node normalizeWebSearchConfig）。
+func TestLoadSearchConfigSpiceDefaults(t *testing.T) {
+	// 空配置：spice 默认启用/weatherDays=3/mcpFallbackMaxChars=4000
+	loaded := LoadSearchConfig(newDocument(t, map[string]any{}))
+	if !loaded.Spice.Enabled || loaded.Spice.WeatherDays != 3 {
+		t.Fatalf("spice 默认应启用/3天: %+v", loaded.Spice)
+	}
+	if loaded.MCPFallbackMaxChars != 4000 {
+		t.Fatalf("mcpFallbackMaxChars 默认 4000，实际 %d", loaded.MCPFallbackMaxChars)
+	}
+	// 显式关闭 spice
+	loaded = LoadSearchConfig(newDocument(t, map[string]any{
+		"ai": map[string]any{"tools": map[string]any{"webSearch": map[string]any{
+			"spice":               map[string]any{"enabled": false, "weatherDays": 7},
+			"mcpFallbackMaxChars": 8000,
+		}}},
+	}))
+	if loaded.Spice.Enabled || loaded.Spice.WeatherDays != 7 {
+		t.Fatalf("显式 spice 配置未生效: %+v", loaded.Spice)
+	}
+	if loaded.MCPFallbackMaxChars != 8000 {
+		t.Fatalf("mcpFallbackMaxChars 未生效，实际 %d", loaded.MCPFallbackMaxChars)
+	}
+	// 越界 clamp
+	loaded = LoadSearchConfig(newDocument(t, map[string]any{
+		"ai": map[string]any{"tools": map[string]any{"webSearch": map[string]any{
+			"spice":               map[string]any{"weatherDays": 99},
+			"mcpFallbackMaxChars": 1,
+		}}},
+	}))
+	if loaded.Spice.WeatherDays != 7 {
+		t.Fatalf("weatherDays 应 clamp 到 7，实际 %d", loaded.Spice.WeatherDays)
+	}
+	if loaded.MCPFallbackMaxChars != 500 {
+		t.Fatalf("mcpFallbackMaxChars 应 clamp 到 500，实际 %d", loaded.MCPFallbackMaxChars)
+	}
+}
