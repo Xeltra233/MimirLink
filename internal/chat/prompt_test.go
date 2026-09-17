@@ -157,3 +157,17 @@ func TestRegexStageNormalization(t *testing.T) {
 		t.Fatalf("$& 转换异常")
 	}
 }
+
+// TestResolveWorldBookPositionNumeric 数字 position 仅 1 为 after（对齐 Node ===1?1:0）。
+func TestResolveWorldBookPositionNumeric(t *testing.T) {
+	for _, value := range []any{1, 1.0, "1", "after_char", "post_history"} {
+		if got := resolveWorldBookPosition(value); got != 1 {
+			t.Fatalf("position %v 应为 1，实际 %d", value, got)
+		}
+	}
+	for _, value := range []any{0, 2, -1, 1.5, "0", "before_char", "unknown", nil} {
+		if got := resolveWorldBookPosition(value); got != 0 {
+			t.Fatalf("position %v 应为 0，实际 %d", value, got)
+		}
+	}
+}

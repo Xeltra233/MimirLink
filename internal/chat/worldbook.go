@@ -146,7 +146,7 @@ func worldBookNumber(value any, fallback float64) float64 {
 	return fallback
 }
 
-// resolveWorldBookPosition 对齐 Node normalizePosition（1=after_char，0=before）。
+// resolveWorldBookPosition 对齐 Node normalizePosition（数字仅 1 为 after，其余为 0）。
 func resolveWorldBookPosition(value any) int {
 	if text, ok := value.(string); ok {
 		normalized := strings.ToLower(strings.TrimSpace(text))
@@ -157,7 +157,11 @@ func resolveWorldBookPosition(value any) int {
 			return 0
 		}
 	}
-	return int(worldBookNumber(value, 0))
+	// Node 数字分支：Number.isFinite ? (===1?1:0)；非 1（含 2/-1）一律落 0
+	if worldBookNumber(value, 0) == 1 {
+		return 1
+	}
+	return 0
 }
 
 // matchedWorldBookEntry 是匹配后的条目（对齐 Node matchEntries 输出）。
