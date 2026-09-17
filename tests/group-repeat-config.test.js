@@ -523,3 +523,24 @@ test('real chat path stores group repeat input before direct send and skips LLM'
     assert.ok(source.includes("if (shouldRunLlm && injectionRisk.level === 'high')"));
     assert.ok(source.includes("'group_repeat_watch'"));
 });
+
+test('group repeat detector preserves newlines in multi-line messages without collapsing into one line', () => {
+    const detector = new GroupRepeatDetector();
+    const config = { chat: { groupRepeat: { enabled: true, triggerCount: 2, cooldownMs: 180000 } } };
+    const multilineMsg = '第一行内容\n第二行内容\n第三行内容';
+    const first = detector.observeMessage({
+        config,
+        event: { message_type: 'group', group_id: 10001, user_id: 20001, message: multilineMsg }
+    });
+    assert.equal(first.shouldRepeat, false);
+    assert.equal(first.count, 1);
+    assert.equal(first.repeatText, multilineMsg);
+
+    const second = detector.observeMessage({
+        config,
+        event: { message_type: 'group', group_id: 10001, user_id: 20002, message: multilineMsg }
+    });
+    assert.equal(second.shouldRepeat, true);
+    assert.equal(second.repeatText, multilineMsg);
+    assert.ok(second.repeatText.includes('\n'), '复读文本必须保留换行符，不可合并成一行');
+});

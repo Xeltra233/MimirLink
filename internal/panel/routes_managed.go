@@ -517,13 +517,42 @@ func (s *Server) handleWorldbookTest(writer http.ResponseWriter, request *http.R
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "entries": matched, "matched": matched, "count": len(matched)})
 }
 
+// worldbookFilePath 解析世界书文件的实际磁盘路径，兼容 .json、.json.bak 及无后缀名称。
+func (s *Server) worldbookFilePath(raw string) string {
+	raw = strings.TrimSpace(raw)
+	raw = strings.ReplaceAll(strings.ReplaceAll(raw, "/", ""), "\\", "")
+	// 1. 如果直接以该文件名存在（例如 foo.json 或 foo.json.bak）
+	direct := filepath.Join(s.dataDir, "worlds", raw)
+	if _, err := os.Stat(direct); err == nil {
+		return direct
+	}
+	// 2. 如果加上 .json 存在
+	if !strings.HasSuffix(raw, ".json") {
+		withExt := filepath.Join(s.dataDir, "worlds", raw+".json")
+		if _, err := os.Stat(withExt); err == nil {
+			return withExt
+		}
+	}
+	// 3. 剥离 .json/.bak 后尝试 safeBase
+	safe := safeBase(raw)
+	safeWithExt := filepath.Join(s.dataDir, "worlds", safe+".json")
+	if _, err := os.Stat(safeWithExt); err == nil {
+		return safeWithExt
+	}
+	if strings.HasSuffix(raw, ".json") || strings.HasSuffix(raw, ".bak") {
+		return direct
+	}
+	return safeWithExt
+}
+
 // handleWorldbookManage /api/worldbooks/:filename 的子操作分发。
 func (s *Server) handleWorldbookManage(writer http.ResponseWriter, request *http.Request) {
 	rest := strings.Trim(strings.TrimPrefix(request.URL.Path, "/api/worldbooks/"), "/")
 	switch {
 	case strings.HasSuffix(rest, "/content"):
-		name := safeBase(strings.TrimSuffix(rest, "/content"))
-		raw, err := os.ReadFile(filepath.Join(s.dataDir, "worlds", name+".json"))
+		name := strings.TrimSuffix(rest, "/content")
+		path := s.worldbookFilePath(name)
+		raw, err := os.ReadFile(path)
 		if err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": "世界书不存在"})
 			return
@@ -536,7 +565,8 @@ func (s *Server) handleWorldbookManage(writer http.ResponseWriter, request *http
 		// 对齐 Node GET /api/worldbooks/:filename/content → { success, worldbook }
 		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "worldbook": worldbook})
 	case strings.HasSuffix(rest, "/save"):
-		name := safeBase(strings.TrimSuffix(rest, "/save"))
+		name := strings.TrimSuffix(rest, "/save")
+		path := s.worldbookFilePath(name)
 		body := decodeBody(request)
 		// Node 契约是 { worldbook: {...} }；同时兼容直接提交世界书对象的历史用法
 		worldbook, ok := body["worldbook"].(map[string]any)
@@ -551,25 +581,26 @@ func (s *Server) handleWorldbookManage(writer http.ResponseWriter, request *http
 			return
 		}
 		encoded, _ := json.MarshalIndent(worldbook, "", "  ")
-		if err := os.WriteFile(filepath.Join(s.dataDir, "worlds", name+".json"), encoded, 0o644); err != nil {
+		if err := os.WriteFile(path, encoded, 0o644); err != nil {
 			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 			return
 		}
 		writeJSON(writer, http.StatusOK, map[string]any{"success": true, "message": "世界书已保存"})
 	case strings.HasSuffix(rest, "/download"):
-		name := safeBase(strings.TrimSuffix(rest, "/download"))
-		raw, err := os.ReadFile(filepath.Join(s.dataDir, "worlds", name+".json"))
+		name := strings.TrimSuffix(rest, "/download")
+		path := s.worldbookFilePath(name)
+		raw, err := os.ReadFile(path)
 		if err != nil {
 			writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "世界书不存在"})
 			return
 		}
-		writer.Header().Set("Content-Disposition", "attachment; filename="+name+".json")
+		writer.Header().Set("Content-Disposition", "attachment; filename="+filepath.Base(path))
 		writer.Header().Set("Content-Type", "application/json; charset=utf-8")
 		_, _ = writer.Write(raw)
 	default:
 		if request.Method == http.MethodDelete {
-			name := safeBase(rest)
-			if err := os.Remove(filepath.Join(s.dataDir, "worlds", name+".json")); err != nil {
+			path := s.worldbookFilePath(rest)
+			if err := os.Remove(path); err != nil {
 				writeJSON(writer, http.StatusNotFound, map[string]any{"success": false, "error": "世界书不存在"})
 				return
 			}

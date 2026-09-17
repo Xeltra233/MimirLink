@@ -242,7 +242,7 @@ export class WorldBookManager {
         }
 
         const files = fs.readdirSync(this.worldsDir);
-        return files.filter(f => f.endsWith('.json'));
+        return files.filter(f => f.endsWith('.json') || f.endsWith('.json.bak'));
     }
 
     /**
@@ -276,7 +276,7 @@ export class WorldBookManager {
 
         const worldBook = safeJsonParse(fs.readFileSync(filePath, 'utf8'), 10 * 1024 * 1024);
         this.currentWorldBook = worldBook;
-        this.currentWorldBookName = filename.replace('.json', '');
+        this.currentWorldBookName = filename.replace(/\.json(\.bak)?$/, '');
         this.cache.set(filename, worldBook);
         
         return {

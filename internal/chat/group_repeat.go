@@ -76,8 +76,18 @@ func containsNonTextCQCode(text string) bool {
 	return false
 }
 
-// getRepeatableMessageText 提取可复读文本：纯文本段拼接；含图片/语音等非文本段返回空。
-func getRepeatableMessageText(event map[string]any, fallbackText string) string {
+func cleanRepeatText(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+// getRawRepeatableMessageText 提取未折叠换行的原始复读文本。
+func getRawRepeatableMessageText(event map[string]any, fallbackText string) string {
 	segments := messageSegments(event["message"])
 	if len(segments) > 0 {
 		textParts := []string{}
@@ -94,7 +104,7 @@ func getRepeatableMessageText(event map[string]any, fallbackText string) string 
 				textParts = append(textParts, stringValue(data["text"]))
 			}
 		}
-		return normalizeRepeatText(strings.Join(textParts, ""))
+		return strings.Join(textParts, "")
 	}
 	rawCandidate := stringValue(event["message"])
 	if rawCandidate == "" {
@@ -110,7 +120,12 @@ func getRepeatableMessageText(event map[string]any, fallbackText string) string 
 	if containsNonTextCQCode(candidate) {
 		return ""
 	}
-	return normalizeRepeatText(candidate)
+	return candidate
+}
+
+// getRepeatableMessageText 提取可复读文本（用于比对规整化）。
+func getRepeatableMessageText(event map[string]any, fallbackText string) string {
+	return normalizeRepeatText(getRawRepeatableMessageText(event, fallbackText))
 }
 
 // shouldObserveGroupRepeatMessage 判断消息是否纳入复读观察。
@@ -143,6 +158,7 @@ type groupRepeatResult struct {
 // groupRepeatState 是群内复读计数状态。
 type groupRepeatState struct {
 	NormalizedText string
+	RepeatText     string
 	Count          int
 	UpdatedAt      int64
 }
@@ -179,7 +195,12 @@ func (d *GroupRepeatDetector) ObserveMessage(config GroupRepeatConfig, event map
 	if groupID == "" {
 		return groupRepeatResult{Reason: "missing_group_id"}
 	}
-	normalizedText := getRepeatableMessageText(event, text)
+	rawText := getRawRepeatableMessageText(event, text)
+	normalizedText := normalizeRepeatText(rawText)
+	repeatText := cleanRepeatText(rawText)
+	if repeatText == "" {
+		repeatText = normalizedText
+	}
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -196,7 +217,7 @@ func (d *GroupRepeatDetector) ObserveMessage(config GroupRepeatConfig, event map
 	}
 	if groupCooldowns, ok := d.cooldowns[groupID]; ok {
 		if expiresAt, ok := groupCooldowns[normalizedText]; ok && expiresAt > now.UnixMilli() {
-			return groupRepeatResult{Reason: "cooldown", RepeatText: normalizedText}
+			return groupRepeatResult{Reason: "cooldown", RepeatText: repeatText}
 		}
 	}
 	count := 1
@@ -208,14 +229,14 @@ func (d *GroupRepeatDetector) ObserveMessage(config GroupRepeatConfig, event map
 			d.cooldowns[groupID] = map[string]int64{}
 		}
 		d.cooldowns[groupID][normalizedText] = now.UnixMilli() + int64(config.CooldownMs)
-		d.group[groupID] = &groupRepeatState{NormalizedText: normalizedText, Count: 0, UpdatedAt: now.UnixMilli()}
+		d.group[groupID] = &groupRepeatState{NormalizedText: normalizedText, RepeatText: repeatText, Count: 0, UpdatedAt: now.UnixMilli()}
 		return groupRepeatResult{
-			ShouldRepeat: true, Reason: "matched", RepeatText: normalizedText,
+			ShouldRepeat: true, Reason: "matched", RepeatText: repeatText,
 			Count: count, TriggerCount: config.TriggerCount,
 		}
 	}
-	d.group[groupID] = &groupRepeatState{NormalizedText: normalizedText, Count: count, UpdatedAt: now.UnixMilli()}
-	return groupRepeatResult{Reason: "tracking", RepeatText: normalizedText, Count: count, TriggerCount: config.TriggerCount}
+	d.group[groupID] = &groupRepeatState{NormalizedText: normalizedText, RepeatText: repeatText, Count: count, UpdatedAt: now.UnixMilli()}
+	return groupRepeatResult{Reason: "tracking", RepeatText: repeatText, Count: count, TriggerCount: config.TriggerCount}
 }
 
 // rawMapField 从配置文档读取一个 map 段（document.Get 值转 map）。

@@ -152,6 +152,16 @@ func TestWorldbookContentAndSaveContract(t *testing.T) {
 	if missing.Code != http.StatusBadRequest {
 		t.Fatalf("缺少 worldbook 应返回 400，实际 %d", missing.Code)
 	}
+
+	// 验证 .json.bak 备份文件能正常读取 content，不会错误拼接成 .json.bak.json 报 500
+	bakFile := filepath.Join(dataDir, "worlds", "测试世界书.json.bak")
+	if err := os.WriteFile(bakFile, encoded, 0o644); err != nil {
+		t.Fatalf("写入备份世界书失败: %v", err)
+	}
+	bakContent := doRequest(server, http.MethodGet, "/api/worldbooks/测试世界书.json.bak/content", "")
+	if bakContent.Code != http.StatusOK {
+		t.Fatalf("读取 .json.bak 备份世界书 content 失败 (返回 %d): %s", bakContent.Code, bakContent.Body.String())
+	}
 }
 
 // TestRegexLayerConfigPaths 守护正则规则写在 Node 的绑定层键上（bindings.global.regexRules），

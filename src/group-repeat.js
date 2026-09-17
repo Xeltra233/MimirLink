@@ -83,7 +83,7 @@ function containsNonTextCqCode(text = '') {
     return /\[CQ:(?!text\b)[^\]]+\]/i.test(String(text || ''));
 }
 
-export function getRepeatableMessageText(event = {}, fallbackText = '') {
+export function getRawRepeatableMessageText(event = {}, fallbackText = '') {
     if (Array.isArray(event.message) && event.message.length > 0) {
         const textParts = [];
         for (const segment of event.message) {
@@ -96,7 +96,7 @@ export function getRepeatableMessageText(event = {}, fallbackText = '') {
             }
             textParts.push(getTextSegmentContent(segment));
         }
-        return normalizeRepeatText(textParts.join(''));
+        return textParts.join('');
     }
 
     const rawCandidate = typeof event.message === 'string'
@@ -109,7 +109,21 @@ export function getRepeatableMessageText(event = {}, fallbackText = '') {
     if (containsNonTextCqCode(candidate)) {
         return '';
     }
-    return normalizeRepeatText(candidate);
+    return candidate;
+}
+
+export function cleanRepeatText(text = '') {
+    return String(text || '')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n')
+        .split('\n')
+        .map((line) => line.trimEnd())
+        .join('\n')
+        .trim();
+}
+
+export function getRepeatableMessageText(event = {}, fallbackText = '') {
+    return normalizeRepeatText(getRawRepeatableMessageText(event, fallbackText));
 }
 
 export function shouldObserveGroupRepeatMessage({ config = {}, event = {}, text = '', routingDecision = {}, botSelfId = '', item = null, messageSegments = [] } = {}) {
@@ -180,7 +194,9 @@ export class GroupRepeatDetector {
             return { shouldRepeat: false, reason: 'missing_group_id' };
         }
 
-        const normalizedText = getRepeatableMessageText(event, text);
+        const rawText = getRawRepeatableMessageText(event, text);
+        const normalizedText = normalizeRepeatText(rawText);
+        const repeatText = cleanRepeatText(rawText) || normalizedText;
         this.cleanupCooldowns(now);
         const groupCooldowns = this.getGroupCooldowns(groupId);
         const cooldownExpiresAt = groupCooldowns.get(normalizedText) || 0;
@@ -190,7 +206,7 @@ export class GroupRepeatDetector {
                 reason: 'cooldown',
                 groupId,
                 normalizedText,
-                repeatText: normalizedText,
+                repeatText,
                 cooldownExpiresAt,
                 event,
                 item
@@ -201,7 +217,6 @@ export class GroupRepeatDetector {
         const count = previous?.normalizedText === normalizedText
             ? previous.count + 1
             : 1;
-        const repeatText = normalizedText;
         const nextState = {
             normalizedText,
             repeatText,

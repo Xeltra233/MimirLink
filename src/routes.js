@@ -2804,7 +2804,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     const resolveWorldBookFilePath = (filename) => {
         const normalized = String(filename || '').trim();
-        if (!normalized || path.basename(normalized) !== normalized || !normalized.endsWith('.json')) {
+        if (!normalized || path.basename(normalized) !== normalized || (!normalized.endsWith('.json') && !normalized.endsWith('.json.bak'))) {
             throw new Error('世界书文件名无效');
         }
         const worldsDir = path.resolve(config.chat?.dataDir || './data', 'worlds');
@@ -2820,7 +2820,7 @@ export function setupRoutes(app, config, saveConfig, managers) {
         try {
             const worldbooks = await worldBookManager.listWorldBooks();
             // 过滤掉无效的文件名
-            const validWorldbooks = worldbooks.filter(f => f && f !== 'undefined' && f.endsWith('.json'));
+            const validWorldbooks = worldbooks.filter(f => f && f !== 'undefined' && (f.endsWith('.json') || f.endsWith('.json.bak')));
             res.json(validWorldbooks);
         } catch (error) {
             logger.error('获取世界书列表失败', error);
