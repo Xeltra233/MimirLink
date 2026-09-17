@@ -162,6 +162,26 @@ func TestWorldbookContentAndSaveContract(t *testing.T) {
 	if bakContent.Code != http.StatusOK {
 		t.Fatalf("读取 .json.bak 备份世界书 content 失败 (返回 %d): %s", bakContent.Code, bakContent.Body.String())
 	}
+
+	// 验证带空格与 URL 编码 (%20) 的文件能正常读取，不报 500
+	spaceFile := filepath.Join(dataDir, "worlds", "测试 徐缺's Lorebook.json.bak")
+	if err := os.WriteFile(spaceFile, encoded, 0o644); err != nil {
+		t.Fatalf("写入带空格备份世界书失败: %v", err)
+	}
+	spaceContent := doRequest(server, http.MethodGet, "/api/worldbooks/测试%20徐缺's%20Lorebook.json.bak/content", "")
+	if spaceContent.Code != http.StatusOK {
+		t.Fatalf("读取带 URL 编码的世界书 content 失败 (返回 %d): %s", spaceContent.Code, spaceContent.Body.String())
+	}
+
+	// 验证选择 .bak 世界书与获取当前世界书 (/api/worldbooks/current)
+	selectResp := doRequest(server, http.MethodPost, "/api/worldbooks/select", `{"filename":"测试 徐缺's Lorebook.json.bak"}`)
+	if selectResp.Code != http.StatusOK {
+		t.Fatalf("选择 .bak 世界书失败 (返回 %d): %s", selectResp.Code, selectResp.Body.String())
+	}
+	currentResp := doRequest(server, http.MethodGet, "/api/worldbooks/current", "")
+	if currentResp.Code != http.StatusOK {
+		t.Fatalf("读取当前 .bak 世界书失败 (返回 %d): %s", currentResp.Code, currentResp.Body.String())
+	}
 }
 
 // TestRegexLayerConfigPaths 守护正则规则写在 Node 的绑定层键上（bindings.global.regexRules），

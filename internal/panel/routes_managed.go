@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -408,12 +409,14 @@ func (s *Server) writeCharacterCardByName(name string, card map[string]any) erro
 
 func (s *Server) handleWorldbookSelect(writer http.ResponseWriter, request *http.Request) {
 	body := decodeBody(request)
-	name := strings.TrimSuffix(strings.TrimSpace(textOf(body["filename"])), ".json")
-	if name == "" {
+	raw := strings.TrimSpace(textOf(body["filename"]))
+	if raw == "" {
 		writeJSON(writer, http.StatusBadRequest, map[string]any{"success": false, "error": "缺少世界书名"})
 		return
 	}
-	if err := s.document.Set("bindings.global.worldbook", name+".json"); err != nil {
+	resolvedPath := s.worldbookFilePath(raw)
+	filename := filepath.Base(resolvedPath)
+	if err := s.document.Set("bindings.global.worldbook", filename); err != nil {
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
@@ -421,7 +424,7 @@ func (s *Server) handleWorldbookSelect(writer http.ResponseWriter, request *http
 		writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
 		return
 	}
-	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "worldbook": name})
+	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "worldbook": filename})
 }
 
 func (s *Server) handleWorldbookUpload(writer http.ResponseWriter, request *http.Request) {
@@ -517,32 +520,58 @@ func (s *Server) handleWorldbookTest(writer http.ResponseWriter, request *http.R
 	writeJSON(writer, http.StatusOK, map[string]any{"success": true, "entries": matched, "matched": matched, "count": len(matched)})
 }
 
-// worldbookFilePath 解析世界书文件的实际磁盘路径，兼容 .json、.json.bak 及无后缀名称。
+// worldbookFilePath 解析世界书文件的实际磁盘路径，兼容 URL 编码、.json、.json.bak、弯/直单引号及模糊匹配。
 func (s *Server) worldbookFilePath(raw string) string {
 	raw = strings.TrimSpace(raw)
-	raw = strings.ReplaceAll(strings.ReplaceAll(raw, "/", ""), "\\", "")
-	// 1. 如果直接以该文件名存在（例如 foo.json 或 foo.json.bak）
-	direct := filepath.Join(s.dataDir, "worlds", raw)
-	if _, err := os.Stat(direct); err == nil {
-		return direct
+	if unescaped, err := url.PathUnescape(raw); err == nil {
+		raw = unescaped
 	}
-	// 2. 如果加上 .json 存在
-	if !strings.HasSuffix(raw, ".json") {
-		withExt := filepath.Join(s.dataDir, "worlds", raw+".json")
-		if _, err := os.Stat(withExt); err == nil {
-			return withExt
+	if unescaped, err := url.QueryUnescape(raw); err == nil {
+		raw = unescaped
+	}
+	raw = strings.ReplaceAll(strings.ReplaceAll(raw, "/", ""), "\\", "")
+
+	worldsDir := filepath.Join(s.dataDir, "worlds")
+
+	// 生成候选名称列表
+	candidates := []string{
+		raw,
+		strings.ReplaceAll(raw, "’", "'"),
+		strings.ReplaceAll(raw, "'", "’"),
+	}
+	if !strings.HasSuffix(raw, ".json") && !strings.HasSuffix(raw, ".bak") {
+		candidates = append(candidates, raw+".json")
+	}
+	if strings.HasSuffix(raw, ".bak") && !strings.HasSuffix(raw, ".json.bak") {
+		candidates = append(candidates, strings.TrimSuffix(raw, ".bak")+".json.bak")
+	}
+
+	for _, cand := range candidates {
+		direct := filepath.Join(worldsDir, cand)
+		if _, err := os.Stat(direct); err == nil {
+			return direct
 		}
 	}
-	// 3. 剥离 .json/.bak 后尝试 safeBase
+
+	// 目录遍历模糊容错（防止平台间大小写、编码或引号细微差异）
+	if entries, err := os.ReadDir(worldsDir); err == nil {
+		normRaw := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(raw, "’", "'"), " ", ""))
+		normRawBase := strings.TrimSuffix(strings.TrimSuffix(normRaw, ".bak"), ".json")
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			name := entry.Name()
+			normName := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(name, "’", "'"), " ", ""))
+			if normName == normRaw || normName == normRaw+".json" || strings.TrimSuffix(normName, ".json") == normRawBase {
+				return filepath.Join(worldsDir, name)
+			}
+		}
+	}
+
+	// 默认回退
 	safe := safeBase(raw)
-	safeWithExt := filepath.Join(s.dataDir, "worlds", safe+".json")
-	if _, err := os.Stat(safeWithExt); err == nil {
-		return safeWithExt
-	}
-	if strings.HasSuffix(raw, ".json") || strings.HasSuffix(raw, ".bak") {
-		return direct
-	}
-	return safeWithExt
+	return filepath.Join(worldsDir, safe+".json")
 }
 
 // handleWorldbookManage /api/worldbooks/:filename 的子操作分发。

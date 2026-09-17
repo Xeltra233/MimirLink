@@ -407,40 +407,30 @@ func (s *Server) handleWorldbookCurrent(writer http.ResponseWriter, request *htt
 		writeJSON(writer, http.StatusNotFound, map[string]any{"error": "未加载世界书"})
 		return
 	}
-	candidates := []string{name}
-	if !strings.HasSuffix(strings.ToLower(name), ".json") {
-		candidates = append(candidates, name+".json")
-	}
-	for _, candidate := range candidates {
-		safe, err := safeName(candidate)
-		if err != nil {
-			continue
-		}
-		path := filepath.Join(s.dataDir, "worlds", safe+".json")
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			continue
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(raw, &payload); err != nil {
-			writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "世界书解析失败: " + err.Error()})
-			return
-		}
-		// 对齐 Node getCurrentWorldBook：返回 { name（去 .json 的文件名）, entries（条目数） }
-		entryCount := 0
-		switch entries := payload["entries"].(type) {
-		case []any:
-			entryCount = len(entries)
-		case map[string]any:
-			entryCount = len(entries)
-		}
-		writeJSON(writer, http.StatusOK, map[string]any{
-			"name":    strings.TrimSuffix(filepath.Base(safe), ".json"),
-			"entries": entryCount,
-		})
+	path := s.worldbookFilePath(name)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		writeJSON(writer, http.StatusNotFound, map[string]any{"error": fmt.Sprintf("世界书文件不存在: %s", filepath.Base(path))})
 		return
 	}
-	writeJSON(writer, http.StatusNotFound, map[string]any{"error": "世界书不存在: " + name})
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		writeJSON(writer, http.StatusInternalServerError, map[string]any{"error": "世界书解析失败: " + err.Error()})
+		return
+	}
+	// 对齐 Node getCurrentWorldBook：返回 { name（去 .json/.bak 的文件名）, entries（条目数） }
+	entryCount := 0
+	switch entries := payload["entries"].(type) {
+	case []any:
+		entryCount = len(entries)
+	case map[string]any:
+		entryCount = len(entries)
+	}
+	baseName := strings.TrimSuffix(strings.TrimSuffix(filepath.Base(path), ".bak"), ".json")
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"name":    baseName,
+		"entries": entryCount,
+	})
 }
 
 // ---------- 会话 ----------
