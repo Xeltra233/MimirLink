@@ -19021,38 +19021,51 @@
 
             editor.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <span style="font-size: 1rem; font-weight: bold;">${currentWorldBookFilename.replace('.json', '')} (${entries.length} 条目)</span>
+                    <span style="font-size: 1rem; font-weight: bold;">${escapeHtml(currentWorldBookFilename.replace('.json', ''))} (${entries.length} 条目)</span>
                     <div class="btn-group">
-                        <button onclick="addNewEntry()" style="padding: 5px 10px; background: #1a1a1a; color: white;">新增条目</button>
-                        <button onclick="saveWorldBook()" style="padding: 5px 10px; background: #1a1a1a; color: white;">💾 保存世界</button>
+                        <button type="button" class="secondary" onclick="addNewEntry()" style="padding: 6px 12px; font-size: 0.85rem;">+ 新增条目</button>
+                        <button type="button" onclick="saveWorldBook()" style="padding: 6px 12px; font-size: 0.85rem;">💾 保存世界</button>
                     </div>
                 </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
                     <!-- 条目列表 -->
-                    <div style="max-height: 450px; overflow-y: auto;">
+                    <div style="max-height: 480px; overflow-y: auto; padding-right: 4px;">
                         <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">条目列表</div>
                         ${entries.length === 0 ? '<div class="empty-state" style="padding: 20px;">暂无条目</div>' : 
-                            entries.map((entry, index) => `
-                                <div class="list-item ${currentEditingEntryIndex === index ? 'selected' : ''}"
-                                     style="margin-bottom: 8px;display:flex;align-items:center;gap:8px;">
-                                    <button onclick="event.stopPropagation();toggleWbEntry(${index})" style="flex:0 0 auto;font-size:0.7rem;padding:2px 6px;background:${entry.enabled===false?'var(--bg-inset)':'var(--success)'};color:${entry.enabled===false?'var(--text-muted)':'#fff'};border:none;border-radius:4px;cursor:pointer;" title="${entry.enabled===false?'启用':'禁用'}">${entry.enabled===false?'○':'●'}</button>
-                                    <div style="flex:1;" onclick="editEntry(${index})">
-                                        <div class="name">${escapeHtml(entry.comment || entry.name || '未命名条')}</div>
-                                        <div class="meta">
+                            entries.map((entry, index) => {
+                                const isSelected = currentEditingEntryIndex === index;
+                                const isEnabled = entry.enabled !== false;
+                                const keys = entry.keys || entry.key || [];
+                                const keyList = Array.isArray(keys) ? keys : String(keys || '').split(',').map(k => k.trim()).filter(Boolean);
+                                const keysPreview = keyList.slice(0, 3).join(', ') + (keyList.length > 3 ? '...' : '');
+                                return `
+                                <div class="list-item ${isSelected ? 'selected' : ''}"
+                                     style="margin-bottom: 8px; cursor: pointer;" onclick="editEntry(${index})">
+                                    <div style="min-width: 0; flex: 1 1 auto;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <span class="name" style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(entry.comment || entry.name || '未命名条目')}</span>
+                                            <span style="font-size: 0.7rem; padding: 1px 7px; border-radius: 999px; font-weight: 500; background: ${isEnabled ? 'rgba(45, 138, 94, 0.15)' : 'var(--bg-inset)'}; color: ${isEnabled ? 'var(--success)' : 'var(--text-muted)'}; border: 1px solid ${isEnabled ? 'color-mix(in srgb, var(--success) 35%, transparent)' : 'var(--border)'}; flex-shrink: 0;">
+                                                ${isEnabled ? '已启用' : '已禁用'}
+                                            </span>
+                                        </div>
+                                        <div class="meta" style="margin-top: 3px;">
                                             ${entry.constant ? '🔒 常驻' : '🔑 关键词触发'}
-                                            ${entry.sticky > 0 ? ` | 🧲 粘${entry.sticky}` : ''}
-                                            ${entry.enabled === false ? ' | 已禁用' : ''}
+                                            ${entry.sticky > 0 ? ` | 🧲 粘性 ${entry.sticky}` : ''}
                                         </div>
-                                        <div class="meta" style="font-size: 0.8rem;">
-                                            关键词: ${(Array.isArray(entry.keys || entry.key) ? (entry.keys || entry.key) : String(entry.keys || entry.key || '').split(',')).slice(0, 3).join(', ')}${(Array.isArray(entry.keys || entry.key) ? (entry.keys || entry.key) : String(entry.keys || entry.key || '').split(',')).length > 3 ? '...' : ''}
-                                        </div>
+                                        ${keysPreview ? `<div class="meta" style="font-size: 0.8rem; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">关键词: ${escapeHtml(keysPreview)}</div>` : ''}
                                     </div>
-                                    <button class="danger" onclick="event.stopPropagation(); deleteEntry(${index})" style="padding: 3px 8px; font-size: 0.8rem;">删除</button>
+                                    <div style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; margin-left: 8px;" onclick="event.stopPropagation();">
+                                        <button type="button" class="secondary" onclick="toggleWbEntry(${index})" style="padding: 3px 8px; font-size: 0.78rem;" title="${isEnabled ? '点击禁用' : '点击启用'}">
+                                            ${isEnabled ? '禁用' : '启用'}
+                                        </button>
+                                        <button type="button" class="danger" onclick="deleteEntry(${index})" style="padding: 3px 8px; font-size: 0.78rem;">删除</button>
+                                    </div>
                                 </div>
-                            `).join('')
+                                `;
+                            }).join('')
                         }
                     </div>
-                            <!-- 条目编辑表单 -->
+                    <!-- 条目编辑表单 -->
                     <div id="entry-edit-form">
                         <div class="empty-state" style="padding: 20px;">点击左侧条目进行编辑，或点击"新增条目"</div>
                     </div>
@@ -19072,7 +19085,7 @@
             const entry = entries[index];
             if (!entry) return;
 
-            // 先刷新列表以显示选中状，再渲染编辑表
+            // 先刷新列表以显示选中状态，再渲染编辑表单
             renderWorldBookEditor();
             renderEntryForm(entry, index);
         }
@@ -19085,19 +19098,19 @@
                 <div style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">
                     ${index !== null ? `编辑条目 #${index + 1}` : '新增条目'}
                 </div>
-                    <div class="form-group">
+                <div class="form-group">
                     <label>📝 条目名称/备注</label>
                     <input type="text" id="entry-comment" value="${escapeHtml(entry.comment || entry.name || '')}" placeholder="条目名称">
                 </div>
-                    <div class="form-group">
-                    <label>🔑 关键(逗号分隔)</label>
-                    <input type="text" id="entry-keys" value="${escapeHtml(keysStr)}" placeholder="关键', 关键', ...">
+                <div class="form-group">
+                    <label>🔑 关键词 (逗号分隔)</label>
+                    <input type="text" id="entry-keys" value="${escapeHtml(keysStr)}" placeholder="关键词1, 关键词2, ...">
                 </div>
-                    <div class="form-group">
+                <div class="form-group">
                     <label>📖 内容</label>
                     <textarea id="entry-content" rows="6" placeholder="条目内容...">${escapeHtml(entry.content || '')}</textarea>
                 </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div class="form-group">
                         <label class="checkbox-label">
                             <input type="checkbox" id="entry-constant" ${entry.constant ? 'checked' : ''}>
@@ -19111,20 +19124,20 @@
                         </label>
                     </div>
                 </div>
-                    <div class="form-group">
-                    <label>📊 优先(数字越大越优</label>
+                <div class="form-group">
+                    <label>📊 优先级 (数字越大越优先)</label>
                     <input type="number" id="entry-order" value="${entry.order || entry.insertion_order || 0}" placeholder="0">
                 </div>
-                    <div class="form-group">
-                    <label>🧲 粘(触发后持续轮数，0=不粘</label>
+                <div class="form-group">
+                    <label>🧲 粘性 (触发后持续轮数，0=不粘)</label>
                     <input type="number" id="entry-sticky" value="${entry.sticky || 0}" min="0" placeholder="0">
                     <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 5px;">
                         设置后，条目触发后会在接下来 N 轮对话中持续生效，即使没有再次提到关键词
                     </p>
                 </div>
-                    <div class="btn-group" style="margin-top: 15px;">
-                    <button onclick="saveEntry(${index})" style="background: #1a1a1a; color: white;">💾 保存条目</button>
-                    <button class="secondary" onclick="cancelEdit()">取消</button>
+                <div class="btn-group" style="margin-top: 15px;">
+                    <button type="button" onclick="saveEntry(${index})" style="padding: 7px 16px;">💾 保存条目</button>
+                    <button type="button" class="secondary" onclick="cancelEdit()" style="padding: 7px 16px;">取消</button>
                 </div>
             `;
         }
