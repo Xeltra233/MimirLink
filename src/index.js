@@ -3177,9 +3177,9 @@ async function processBatch(batch) {
             });
             const summaryModel = summaryAIOverrides.model || null;
             if (shouldRunLlm && !hasGroupRepeatObservable) {
-                await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
+                await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId, previousSummaries) => {
                     logger.info(`[摘要] 开始生成 (${messages.length}条消息) 模型:${summaryModel||'默认'}`);
-                    const result = await aiClient.summarize(messages, lockedSessionId, summaryAIOverrides);
+                    const result = await aiClient.summarize(messages, lockedSessionId, summaryAIOverrides, previousSummaries);
                     const summaryText = typeof result === 'string' ? result : (result?.content || '');
                     logger.info(`[摘要] 完成 (${summaryText.length || 0}字)`);
                     return summaryText;
@@ -3370,8 +3370,8 @@ async function processBatch(batch) {
                 return;
             }
 
-            const summaryBeforeReply = await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId) => {
-                return aiClient.summarize(messages, lockedSessionId, summaryAIOverrides);
+            const summaryBeforeReply = await sessionManager.maybeSummarizeSession(sessionId, async (messages, lockedSessionId, previousSummaries) => {
+                return aiClient.summarize(messages, lockedSessionId, summaryAIOverrides, previousSummaries);
             });
             if (summaryBeforeReply) {
                 sessionManager.upsertSummaryIndexFromSummary(runtimeContext.recallNamespace, summaryBeforeReply, sessionId);

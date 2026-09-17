@@ -134,4 +134,57 @@ func TestNormalizeSummaryConfigDefaults(t *testing.T) {
 	if config.TriggerMessages != 80 || config.KeepRecent != 30 || config.MaxSummaries != 8 || config.MaxSourceMessages != 50 {
 		t.Fatalf("默认值异常: %+v", config)
 	}
+	if !config.UseAI() {
+		t.Fatalf("默认 useAI 应为 true")
+	}
+
+	disabledConfig := NormalizeSummaryConfig(map[string]any{"enabled": true, "useAI": false})
+	if disabledConfig.UseAI() {
+		t.Fatalf("useAI: false 应关闭 AI 摘要")
+	}
+}
+
+func TestMaybeSummarizeDisableAI(t *testing.T) {
+	db := openSummaryDB(t)
+	seedMessages(t, db, "s1", 10, "user")
+	called := false
+	summary, err := db.MaybeSummarizeSession("s1", SummaryConfig{
+		Enabled:           true,
+		TriggerMessages:   5,
+		KeepRecent:        2,
+		MaxSummaries:      8,
+		MaxSourceMessages: 50,
+		DisableAI:         true,
+	}, func(source []Message, sessionID string, previous []Summary) (string, error) {
+		called = true
+		return "不应被调用", nil
+	})
+	if err != nil || summary == nil {
+		t.Fatalf("摘要触发异常: %v", err)
+	}
+	if called {
+		t.Fatalf("DisableAI 为 true 时不应调用 AI summarizer 回调")
+	}
+	if !strings.Contains(summary.Content, "历史摘要") {
+		t.Fatalf("应回退为规则摘要，实际内容: %s", summary.Content)
+	}
+}
+
+func TestFallbackSummaryTrivialFilter(t *testing.T) {
+	messages := []Message{
+		{Role: "user", Content: "在吗"},
+		{Role: "user", Content: "我想预定明天下午三点在王城中央广场的会议室"},
+		{Role: "assistant", Content: "好的"},
+		{Role: "assistant", Content: "已为您登记王城中央广场三号会议室，请准时参加。"},
+	}
+	summary := buildFallbackSummary("s_test", messages)
+	if strings.Contains(summary, "在吗") {
+		t.Fatalf("有实质内容时不应保留无意义寒暄: %s", summary)
+	}
+	if strings.Contains(summary, "好的") {
+		t.Fatalf("有实质内容时不应保留纯肯定答复: %s", summary)
+	}
+	if !strings.Contains(summary, "我想预定明天下午三点") || !strings.Contains(summary, "已为您登记王城中央广场") {
+		t.Fatalf("应保留关键事实内容: %s", summary)
+	}
 }

@@ -43,16 +43,24 @@ type SummaryConfig struct {
 	KeepRecent        int
 	MaxSummaries      int
 	MaxSourceMessages int
+	DisableAI         bool
 }
 
-// NormalizeSummaryConfig 应用 Node 默认值（trigger 80 / keepRecent 30 / maxSummaries 8 / maxSource 50）。
+// UseAI 返回是否启用 AI 摘要（对齐 Node summaryConfig.useAI !== false 语义，默认 true）。
+func (c SummaryConfig) UseAI() bool {
+	return !c.DisableAI
+}
+
+// NormalizeSummaryConfig 应用 Node 默认值（trigger 80 / keepRecent 30 / maxSummaries 8 / maxSource 50 / useAI true）。
 func NormalizeSummaryConfig(raw map[string]any) SummaryConfig {
+	useAI := boolOrAny(raw["useAI"], true)
 	config := SummaryConfig{
 		Enabled:           boolOrAny(raw["enabled"], false),
 		TriggerMessages:   intOrAny(raw["triggerMessages"], 80),
 		KeepRecent:        intOrAny(raw["keepRecent"], 30),
 		MaxSummaries:      intOrAny(raw["maxSummaries"], 8),
 		MaxSourceMessages: intOrAny(raw["maxSourceMessages"], 50),
+		DisableAI:         !useAI,
 	}
 	if config.TriggerMessages <= 0 {
 		config.TriggerMessages = 80
@@ -150,7 +158,7 @@ func (d *DB) MaybeSummarizeSession(sessionID string, config SummaryConfig, summa
 	}
 
 	summaryText := buildFallbackSummary(sessionID, sourceMessages)
-	if summarizer != nil {
+	if config.UseAI() && summarizer != nil {
 		previous, err := d.ListSummaries(sessionID)
 		if err != nil {
 			return nil, err
@@ -214,17 +222,48 @@ func (d *DB) MaybeSummarizeSession(sessionID string, config SummaryConfig, summa
 	}, nil
 }
 
-// buildFallbackSummary 对齐 Node buildFallbackSummary：用户/助手各取最后 4 条 160 字截断高亮。
+// isTrivialSummaryLine 判断是否为无信息量的简短寒暄。
+func isTrivialSummaryLine(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	if len([]rune(trimmed)) <= 1 {
+		return true
+	}
+	lower := strings.ToLower(trimmed)
+	switch lower {
+	case "好的", "好", "ok", "yes", "收到", "在吗", "在", "嗯", "啊", "哦", "行", "1", "666":
+		return true
+	}
+	return false
+}
+
+// buildFallbackSummary 对齐 Node buildFallbackSummary：用户/助手各取最后 4 条 160 字截断高亮，优先保留实质内容。
 func buildFallbackSummary(sessionID string, messages []Message) string {
 	userHighlights := []string{}
 	assistantHighlights := []string{}
+	userMeaningful := []string{}
+	assistantMeaningful := []string{}
 	for _, message := range messages {
 		line := truncateRunes(message.Content, 160)
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
 		if message.Role == "assistant" {
 			assistantHighlights = append(assistantHighlights, line)
+			if !isTrivialSummaryLine(line) {
+				assistantMeaningful = append(assistantMeaningful, line)
+			}
 		} else {
 			userHighlights = append(userHighlights, line)
+			if !isTrivialSummaryLine(line) {
+				userMeaningful = append(userMeaningful, line)
+			}
 		}
+	}
+	if len(userMeaningful) > 0 {
+		userHighlights = userMeaningful
+	}
+	if len(assistantMeaningful) > 0 {
+		assistantHighlights = assistantMeaningful
 	}
 	parts := []string{fmt.Sprintf("会话 %s 的历史摘要：", sessionID)}
 	if len(userHighlights) > 0 {

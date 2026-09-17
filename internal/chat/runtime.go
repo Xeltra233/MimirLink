@@ -412,13 +412,13 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		}
 	}
 
-	// 回复前摘要检查（对齐 Node summaryBeforeReply）
-	r.maybeSummarize(sessionKey)
-
-	// 群复读检测（对齐 Node group-repeat：命中直发复读文本并跳过 LLM）
+	// 群复读检测（对齐 Node group-repeat：命中直发复读文本并跳过 LLM 与摘要生成）
 	if r.maybeSendGroupRepeat(item) {
 		return true
 	}
+
+	// 回复前摘要检查（对齐 Node summaryBeforeReply）
+	r.maybeSummarize(sessionKey)
 	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
 	r.focusSegment = r.currentMessageFocusSegment(event, text, messageType, isAtBotSelf, replyInfo)
 	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk, groupID, userID)
@@ -588,6 +588,16 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 	if r.focusSegment != "" {
 		messages = append(messages, ai.Message{Role: "system", Content: r.focusSegment})
 		r.focusSegment = ""
+	}
+	// 2.5) 历史摘要注入（对齐 Node src/prompt.js:710 系统段）
+	if r.memory != nil {
+		if summaries, err := r.memory.ListSummaries(sessionKey); err == nil {
+			for _, summary := range summaries {
+				if trimmed := strings.TrimSpace(summary.Content); trimmed != "" {
+					messages = append(messages, ai.Message{Role: "system", Content: "【历史摘要】\n" + trimmed})
+				}
+			}
+		}
 	}
 	// 3) 世界书匹配（常驻 + 关键词 + 粘性），position=0 进 system
 	worldBookEntries := r.matchWorldbook(sessionKey, history, currentContent)
@@ -1457,7 +1467,8 @@ func (r *Runtime) summaryConfig() store.SummaryConfig {
 }
 
 // summarySummarizer 构造 AI 摘要回调（对齐 Node aiClient.summarize +
-// buildAIOverridesFromProviderSelection 的 memory.summary 供应商选择）。
+// buildAIOverridesFromProviderSelection 的 memory.summary 供应商选择，
+// 参考 shujuku@spv9.2.5.1 引入高密度结构化总结与增量多轮摘要融合）。
 func (r *Runtime) summarySummarizer() store.SummarizerFunc {
 	return func(source []store.Message, sessionID string, previous []store.Summary) (string, error) {
 		provider := r.resolveSummaryProvider()
@@ -1469,9 +1480,34 @@ func (r *Runtime) summarySummarizer() store.SummarizerFunc {
 		for _, message := range source {
 			lines = append(lines, "["+message.Role+"] "+message.Content)
 		}
+
+		systemPrompt := "你负责将较早的对话纪要整理为可供长期召回的高密度长期记忆总结。\n" +
+			"目标：生成一条信息密度高、准确可靠的长期记忆正文，用于后续会话召回与理解。\n" +
+			"硬性长度约束：输出在 500 字以内；信息较多时优先精炼压缩，禁止扩写。\n" +
+			"内容优先级：\n" +
+			"1. 人物关系、称呼与态度变化\n" +
+			"2. 核心事实、关键决策与事件转折\n" +
+			"3. 重要约定、承诺与未完成事项\n" +
+			"4. 关键设定、地点、时间线与未决伏笔\n" +
+			"禁止内容：排除日常寒暄客套、重复拉扯、纯语气词；严禁编造未发生的情节；严禁进行空洞的主观总结或升华收尾。\n" +
+			"输出要求：只输出最终长期记忆总结正文，不要写前言、解释、Markdown 标题或列表说明。"
+
+		var userContent string
+		if len(previous) > 0 {
+			prevTexts := make([]string, 0, len(previous))
+			for idx, p := range previous {
+				prevTexts = append(prevTexts, fmt.Sprintf("[前序摘要 %d] %s", idx+1, p.Content))
+			}
+			userContent = fmt.Sprintf("会话ID: %s\n\n【已有历史摘要】\n%s\n\n【需要压缩的新增对话批次】\n%s\n\n请结合已有历史摘要与新增对话批次，在 500 字以内输出一条信息密度高、保持连贯的长期记忆大总结正文。只输出正文。",
+				sessionID, strings.Join(prevTexts, "\n"), strings.Join(lines, "\n"))
+		} else {
+			userContent = fmt.Sprintf("会话ID: %s\n\n【需要压缩的对话内容】\n%s\n\n请在 500 字以内输出一条信息密度高、保留关键事实与关系的长期记忆大总结正文。只输出正文。",
+				sessionID, strings.Join(lines, "\n"))
+		}
+
 		messages := []ai.Message{
-			{Role: "system", Content: "请将以下对话压缩成简洁的长期记忆摘要。保留人物关系、关键事实、未完成事项、情绪变化和设定，不要编造。输出简体中文纯文本。"},
-			{Role: "user", Content: fmt.Sprintf("会话ID: %s\n\n对话内容:\n%s", sessionID, strings.Join(lines, "\n"))},
+			{Role: "system", Content: systemPrompt},
+			{Role: "user", Content: userContent},
 		}
 		result, err := client.Chat(context.Background(), messages, nil)
 		if err != nil {

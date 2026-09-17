@@ -1118,15 +1118,35 @@ export class AIClient {
         throw new Error(`AI API 错误: ${primaryResult.status} - ${primaryResult.errorText}`);
     }
 
-    async summarize(messages, sessionId = 'default', modelOverride = null) {
+    async summarize(messages, sessionId = 'default', modelOverride = null, previousSummaries = []) {
+        const lines = messages.map((message) => `[${message.role}] ${message.content}`).join('\n');
+        const systemPrompt = '你负责将较早的对话纪要整理为可供长期召回的高密度长期记忆总结。\n'
+            + '目标：生成一条信息密度高、准确可靠的长期记忆正文，用于后续会话召回与理解。\n'
+            + '硬性长度约束：输出在 500 字以内；信息较多时优先精炼压缩，禁止扩写。\n'
+            + '内容优先级：\n'
+            + '1. 人物关系、称呼与态度变化\n'
+            + '2. 核心事实、关键决策与事件转折\n'
+            + '3. 重要约定、承诺与未完成事项\n'
+            + '4. 关键设定、地点、时间线与未决伏笔\n'
+            + '禁止内容：排除日常寒暄客套、重复拉扯、纯语气词；严禁编造未发生的情节；严禁进行空洞的主观总结或升华收尾。\n'
+            + '输出要求：只输出最终长期记忆总结正文，不要写前言、解释、Markdown 标题或列表说明。';
+
+        let userContent = '';
+        if (Array.isArray(previousSummaries) && previousSummaries.length > 0) {
+            const prevTexts = previousSummaries.map((s, idx) => `[前序摘要 ${idx + 1}] ${s.content || s}`).join('\n');
+            userContent = `会话ID: ${sessionId}\n\n【已有历史摘要】\n${prevTexts}\n\n【需要压缩的新增对话批次】\n${lines}\n\n请结合已有历史摘要与新增对话批次，在 500 字以内输出一条信息密度高、保持连贯的长期记忆大总结正文。只输出正文。`;
+        } else {
+            userContent = `会话ID: ${sessionId}\n\n【需要压缩的对话内容】\n${lines}\n\n请在 500 字以内输出一条信息密度高、保留关键事实与关系的长期记忆大总结正文。只输出正文。`;
+        }
+
         const summaryPrompt = [
             {
                 role: 'system',
-                content: '请将以下对话压缩成简洁的长期记忆摘要。保留人物关系、关键事实、未完成事项、情绪变化和设定，不要编造。输出简体中文纯文本。'
+                content: systemPrompt
             },
             {
                 role: 'user',
-                content: `会话ID: ${sessionId}\n\n对话内容:\n${messages.map((message) => `[${message.role}] ${message.content}`).join('\n')}`
+                content: userContent
             }
         ];
         const overrides = modelOverride && typeof modelOverride === 'object'

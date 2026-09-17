@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"mimirlink/internal/ai"
 	"mimirlink/internal/config"
@@ -401,5 +402,66 @@ func TestPromptIncludesRecallAndCharacterSegments(t *testing.T) {
 	}
 	if !strings.Contains(joined, "[fixed_knowledge]") {
 		t.Fatalf("召回段缺少召回原因标记:\n%s", joined)
+	}
+}
+
+// 历史摘要需注入系统提示与靶场分段（对齐 Node src/prompt.js:710，修复记忆丢失缺陷）。
+func TestPromptIncludesHistorySummaries(t *testing.T) {
+	model := &fakeModel{replies: []string{"收到"}}
+	runtime, _, memory := newRuntime(t, nil, model)
+
+	sessionKey := runtime.sessionKey("group", "99001", "2001")
+	_ = memory.EnsureSession(sessionKey)
+	// 模拟已生成的历史摘要（对齐 Node 摘要持久化格式）
+	now := time.Now().UnixMilli()
+	_, err := memory.Exec(
+		`INSERT INTO summaries (id, session_id, content, source_count, created_at, date_iso) VALUES (?, ?, ?, ?, ?, ?)`,
+		"summary_test_1", sessionKey, "炸天帮在火国都城建立分部，帮主徐缺击败了姬无道", 10, now, "2026-09-17T12:00:00.000Z")
+	if err != nil {
+		t.Fatalf("写入测试摘要失败: %v", err)
+	}
+
+	runtime.HandleEvent(buildGroupEvent("今天接下来做什么？", true, "99001", "2001"))
+	if len(model.requests) == 0 {
+		t.Fatalf("未触发模型调用")
+	}
+
+	foundSummary := false
+	for _, msg := range model.requests[0] {
+		if text, ok := msg.Content.(string); ok {
+			if strings.Contains(text, "【历史摘要】") && strings.Contains(text, "炸天帮在火国都城建立分部") {
+				foundSummary = true
+				if msg.Role != "system" {
+					t.Fatalf("历史摘要段角色应为 system，实际: %s", msg.Role)
+				}
+			}
+		}
+	}
+	if !foundSummary {
+		t.Fatalf("提示词未包含【历史摘要】段")
+	}
+
+	// 靶场组装对齐验证
+	_, segments, _, err := BuildRangePrompt(RangeInput{
+		Document:      runtime.document,
+		CharacterName: runtime.characterName(),
+		Memory:        memory,
+		SessionKey:    sessionKey,
+		Message:       "靶场测试输入",
+	})
+	if err != nil {
+		t.Fatalf("靶场组装失败: %v", err)
+	}
+	foundRangeSummary := false
+	for _, seg := range segments {
+		if seg.Kind == "summary" && strings.Contains(seg.Content, "【历史摘要】") {
+			foundRangeSummary = true
+			if seg.Stage != "memory" || seg.Order != 40 {
+				t.Fatalf("靶场摘要段 stage/order 异常: %+v", seg)
+			}
+		}
+	}
+	if !foundRangeSummary {
+		t.Fatalf("靶场分段未包含 summary 摘要段")
 	}
 }

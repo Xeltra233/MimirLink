@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -110,6 +111,25 @@ func BuildRangePrompt(in RangeInput) ([]ai.Message, []RangeSegment, string, erro
 			Content: item.Content, Order: 20, Stage: "preset",
 			Meta: map[string]any{"identifier": item.Identifier, "role": item.Role, "injectionPosition": item.InjectionPosition, "injectionDepth": item.InjectionDepth},
 		})
+	}
+
+	// 2.5) 历史摘要段（对齐 Node src/prompt.js:710 系统段）
+	if in.Memory != nil && in.SessionKey != "" {
+		if summaries, err := in.Memory.ListSummaries(in.SessionKey); err == nil {
+			for index, summary := range summaries {
+				if content := strings.TrimSpace(summary.Content); content != "" {
+					emit(RangeSegment{
+						ID:      fmt.Sprintf("summary-%d", index),
+						Kind:    "summary",
+						Label:   fmt.Sprintf("摘要 %d", index+1),
+						Content: "【历史摘要】\n" + content,
+						Order:   40 + index,
+						Stage:   "memory",
+						Meta:    map[string]any{"placement": "system"},
+					})
+				}
+			}
+		}
 	}
 
 	// 3) 世界书匹配

@@ -1157,7 +1157,34 @@ func (s *Server) handleMemoryExport(writer http.ResponseWriter, request *http.Re
 		return
 	}
 	defer database.Close()
-	sessions, _ := database.ListSessions(500)
+	sessionList, _ := database.ListSessions(500)
+	sessionsMap := map[string]any{}
+	for _, session := range sessionList {
+		messages, _ := database.RecentMessagesThread(session.ID, 100000)
+		summaries, _ := database.ListSummaries(session.ID)
+		sticky, _ := database.ListStickyEntries(session.ID)
+		summaryPayload := make([]map[string]any, 0, len(summaries))
+		for _, sm := range summaries {
+			summaryPayload = append(summaryPayload, map[string]any{
+				"id":          sm.ID,
+				"sessionId":   sm.SessionID,
+				"content":     sm.Content,
+				"sourceCount": sm.SourceCount,
+				"createdAt":   sm.CreatedAt,
+				"date":        sm.DateISO,
+			})
+		}
+		sessionsMap[session.ID] = map[string]any{
+			"id":            session.ID,
+			"createdAt":     session.CreatedAt,
+			"lastActive":    session.LastActive,
+			"messageCount":  session.MessageCount,
+			"summaryCount":  session.SummaryCount,
+			"messages":      messages,
+			"summaries":     summaryPayload,
+			"stickyEntries": sticky,
+		}
+	}
 	counts := store.Counts{}
 	if c, err := database.Counts(); err == nil {
 		counts = c
@@ -1165,7 +1192,7 @@ func (s *Server) handleMemoryExport(writer http.ResponseWriter, request *http.Re
 	knowledge, _ := database.ListKnowledgeEntriesFiltered(store.VariableFilters{Limit: 500})
 	writer.Header().Set("Content-Disposition", "attachment; filename=memory-export-"+fmt_Sprint(time.Now().UnixMilli())+".json")
 	writeJSON(writer, http.StatusOK, map[string]any{
-		"sessions":       sessions,
+		"sessions":       sessionsMap,
 		"knowledge":      knowledge,
 		"globalTimeline": []any{},
 		"stats": map[string]any{
