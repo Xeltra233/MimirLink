@@ -171,3 +171,25 @@ func TestResolveWorldBookPositionNumeric(t *testing.T) {
 		}
 	}
 }
+
+// TestIntOrIntegerSemantics intOr 仅整数通过（对齐 Node Number.isInteger）。
+func TestIntOrIntegerSemantics(t *testing.T) {
+	if got := intOr(float64(3), 0); got != 3 {
+		t.Fatalf("float64(3) 应为 3，实际 %d", got)
+	}
+	if got := intOr(float64(3.5), 7); got != 7 {
+		t.Fatalf("float64(3.5) 应回 fallback 7，实际 %d", got)
+	}
+	if got := intOr(float32(2), 0); got != 2 {
+		t.Fatalf("float32(2) 应为 2，实际 %d", got)
+	}
+	if got := intOr(float32(2.5), 7); got != 7 {
+		t.Fatalf("float32(2.5) 应回 fallback 7，实际 %d", got)
+	}
+	if got := intOr("4", 0); got != 4 {
+		t.Fatalf("字符串 4 应为 4，实际 %d", got)
+	}
+	if got := intOr("4.5", 7); got != 7 {
+		t.Fatalf("字符串 4.5 应回 fallback 7，实际 %d", got)
+	}
+}

@@ -400,7 +400,11 @@ func intOr(value any, fallback int) int {
 		}
 		return fallback
 	case float32:
-		return int(typed)
+		// 对齐 Node Number.isInteger：非整数回 fallback
+		if float64(typed) == float64(int(typed)) {
+			return int(typed)
+		}
+		return fallback
 	case int:
 		return typed
 	case int64:
