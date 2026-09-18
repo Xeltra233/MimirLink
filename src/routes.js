@@ -3234,6 +3234,25 @@ export function setupRoutes(app, config, saveConfig, managers) {
         res.json({ success: true, message: '会话已删除' });
     });
 
+    // 批量清理非活跃会话（删除没有消息的空会话）
+    app.delete('/api/sessions', requireAuth, (req, res) => {
+        try {
+            const sessions = sessionManager.listSessions();
+            let deletedCount = 0;
+            for (const s of sessions) {
+                const count = s.messageCount ?? s.messages?.length ?? 0;
+                if (count === 0) {
+                    sessionManager.deleteSession(s.id);
+                    deletedCount++;
+                }
+            }
+            res.json({ success: true, message: `已清理 ${deletedCount} 个非活跃会话`, deletedCount });
+        } catch (e) {
+            logger.error('清理非活跃会话失败', e);
+            res.status(500).json({ success: false, error: e.message });
+        }
+    });
+
     // ==================== 全局记忆管理 ====================
 
     // 获取全局记忆统计（需要认证）
@@ -4479,6 +4498,42 @@ export function setupRoutes(app, config, saveConfig, managers) {
         } catch (error) {
             logger.error('测试主动 @ 发送失败', error);
             res.status(500).json({ success: false, error: error.message === 'AI_TIMEOUT' ? getAITimeoutErrorMessage(config) : error.message });
+        }
+    });
+
+    app.post('/api/ai/probe', requireAuth, async (req, res) => {
+        const startedAt = Date.now();
+        const providerId = String(req.body?.providerId || '').trim();
+        const model = String(req.body?.model || '').trim();
+        try {
+            const { baseUrl: resolvedBaseUrl, apiKey: resolvedApiKey } = resolveAIProviderRequestConfig(req.body || {});
+            if (!resolvedBaseUrl) {
+                return res.status(400).json({ success: false, error: '请先填写供应商 URL' });
+            }
+            const replyResult = await aiClient.chat([{ role: 'user', content: 'hi' }], {
+                baseUrl: resolvedBaseUrl,
+                apiKey: resolvedApiKey,
+                model: model || config.ai?.model || 'gpt-3.5-turbo'
+            });
+            const elapsedMs = Date.now() - startedAt;
+            const reply = aiClient.getVisibleResponseContent(replyResult);
+            res.json({
+                success: true,
+                reply,
+                provider: providerId,
+                model,
+                elapsedMs
+            });
+        } catch (error) {
+            const elapsedMs = Date.now() - startedAt;
+            logger.warn?.('AI 供应商测试连接失败:', error);
+            res.json({
+                success: false,
+                error: error.message || '连接失败',
+                provider: providerId,
+                model,
+                elapsedMs
+            });
         }
     });
 

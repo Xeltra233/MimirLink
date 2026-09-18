@@ -2,7 +2,9 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -162,9 +164,9 @@ func TestChainLeakRetryDisabled(t *testing.T) {
 			"replyDelayMs":      0,
 		},
 	}, model)
-	got, didRetry := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
-	if didRetry {
-		t.Fatal("关闭时不应重试")
+	got, err := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
+	if err != nil {
+		t.Fatalf("关闭时不应返回错误: %v", err)
 	}
 	if got != leakReply {
 		t.Fatalf("关闭时应保留原回复: %q", got)
@@ -185,11 +187,38 @@ func TestChainLeakRetryEnabled(t *testing.T) {
 			"replyDelayMs":   0,
 		},
 	}, model)
-	got, didRetry := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
-	if !didRetry {
-		t.Fatal("启用时泄露应重试")
+	got, err := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
+	if err != nil {
+		t.Fatalf("重试成功时不应返回错误: %v", err)
 	}
 	if got != "干净的中文回复" {
 		t.Fatalf("应采用重试后的干净回复: %q", got)
+	}
+}
+
+// TestChainLeakRetryExhausted 启用时重试后仍泄露，应返回 errChainLeakAfterRetry 拦截。
+func TestChainLeakRetryExhausted(t *testing.T) {
+	leakReply := "I'm currently analyzing the user's intent and formulating a response strategy. 你好"
+	model := &fakeModel{replies: []string{leakReply}}
+	runtime, _, _ := newRuntime(t, map[string]any{
+		"chat": map[string]any{
+			"chainLeakRetry": map[string]any{"enabled": true, "maxRetries": 1, "delayMs": 0},
+			"bufferWindowMs": 0,
+			"replyDelayMs":   0,
+		},
+	}, model)
+	got, err := runtime.retryOnChainLeak(ctxForChainLeak(), nil, leakReply, "你好", newScopeForChainLeak())
+	if !errors.Is(err, errChainLeakAfterRetry) {
+		t.Fatalf("重试耗尽应返回 errChainLeakAfterRetry，实际得到: %v, 回复: %q", err, got)
+	}
+}
+
+// TestAudioDirParityWithPanel 守护音频目录与面板服务路径一致（<rootDir>/audio）。
+func TestAudioDirParityWithPanel(t *testing.T) {
+	runtime, _, _ := newRuntime(t, nil, nil)
+	runtime.rootDir = filepath.Join(t.TempDir(), "app")
+	expected := filepath.Join(runtime.rootDir, "audio")
+	if got := runtime.AudioDir(); got != expected {
+		t.Fatalf("AudioDir 异常，预期 %q，实际 %q", expected, got)
 	}
 }

@@ -486,3 +486,66 @@ func TestPromptIncludesHistorySummaries(t *testing.T) {
 		t.Fatalf("靶场分段未包含 summary 摘要段")
 	}
 }
+
+// TestCurrentMessageFocusPlacement 守护决策段注入位置（对齐 Node：postHistory < currentMessageFocus < userInput）。
+func TestCurrentMessageFocusPlacement(t *testing.T) {
+	model := &fakeModel{replies: []string{"回复"}}
+	runtime, _, memory := newRuntime(t, map[string]any{
+		"chat": map[string]any{
+			"bufferWindowMs": 0,
+			"replyDelayMs":   0,
+		},
+		"preset": map[string]any{
+			"enabled": true,
+			"prompts": []any{
+				map[string]any{
+					"identifier":         "post-inst",
+					"name":               "Post-History",
+					"role":               "system",
+					"content":            "后置提示词说明",
+					"injection_position": 1,
+					"enabled":            true,
+				},
+			},
+		},
+	}, model)
+	sessionKey := runtime.sessionKey("group", "10001", "20002")
+	_ = memory.EnsureSession(sessionKey)
+	_ = memory.AppendMessage(store.Message{SessionID: sessionKey, Role: "user", Content: "历史前文"})
+	_ = memory.AppendMessage(store.Message{SessionID: sessionKey, Role: "assistant", Content: "历史回复"})
+
+	focusText := "<current-message-focus>\n意图: normal\n</current-message-focus>"
+	messages, _, err := runtime.buildMessages(sessionKey, "当前用户消息", "group", InjectionRisk{}, "10001", "20002", focusText)
+	if err != nil {
+		t.Fatalf("buildMessages 失败: %v", err)
+	}
+
+	postHistoryIndex := -1
+	focusIndex := -1
+	userInputIndex := -1
+	for i, m := range messages {
+		content := stringValue(m.Content)
+		if strings.Contains(content, "后置提示词说明") {
+			postHistoryIndex = i
+		}
+		if strings.Contains(content, "<current-message-focus>") {
+			focusIndex = i
+		}
+		if m.Role == "user" && content == "当前用户消息" {
+			userInputIndex = i
+		}
+	}
+
+	if postHistoryIndex == -1 {
+		t.Fatal("未找到 postHistory 消息")
+	}
+	if focusIndex == -1 {
+		t.Fatal("未找到 current-message-focus 消息")
+	}
+	if userInputIndex == -1 {
+		t.Fatal("未找到 userInput 消息")
+	}
+	if !(postHistoryIndex < focusIndex && focusIndex < userInputIndex) {
+		t.Fatalf("顺序错误: postHistory(%d) < focus(%d) < userInput(%d)", postHistoryIndex, focusIndex, userInputIndex)
+	}
+}

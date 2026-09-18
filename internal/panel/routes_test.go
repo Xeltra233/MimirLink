@@ -562,3 +562,33 @@ func TestMCPDisabledReturns404(t *testing.T) {
 		t.Fatalf("禁用后应 404，实际 %d", recorder.Code)
 	}
 }
+
+// TestClearInactiveSessions 验证 DELETE /api/sessions 批量清理空会话。
+func TestClearInactiveSessions(t *testing.T) {
+	server, _ := newTestServer(t)
+	db, _, err := server.openActiveMemory()
+	if err != nil {
+		t.Fatalf("打开记忆库失败: %v", err)
+	}
+	defer db.Close()
+
+	// 创建一个空会话（无消息）和一个活跃会话（有消息）
+	_ = db.EnsureSession("empty-session")
+	_ = db.EnsureSession("active-session")
+	_ = db.AppendMessage(store.Message{SessionID: "active-session", Role: "user", Content: "你好"})
+
+	recorder := doRequest(server, http.MethodDelete, "/api/sessions", "")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("DELETE /api/sessions 返回 %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var res map[string]any
+	_ = json.Unmarshal(recorder.Body.Bytes(), &res)
+	if res["success"] != true || intOr(res["deletedCount"], 0) != 1 {
+		t.Fatalf("清理结果异常: %+v", res)
+	}
+
+	sessions, _ := db.ListSessions(100)
+	if len(sessions) != 1 || sessions[0].ID != "active-session" {
+		t.Fatalf("应仅保留 active-session，实际: %+v", sessions)
+	}
+}

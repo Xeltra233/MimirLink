@@ -174,3 +174,37 @@ func TestChatAllPathsEmpty(t *testing.T) {
 		t.Fatalf("应返回空回复组合错误: %v", err)
 	}
 }
+
+// TestChatPrefillFallbackToStreamingWithoutPrefill 预填重试仍空时，流式兜底不带尾部预填。
+func TestChatPrefillFallbackToStreamingWithoutPrefill(t *testing.T) {
+	requestCount := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount += 1
+		if requestCount <= 2 {
+			// 1: 首次（带 prefill）空回复；2: 重试（去 prefill）仍空回复
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}`)
+			return
+		}
+		// 3: 流式兜底
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"content\":\"流式兜底成功\"}}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer server.Close()
+
+	client := newTestClient(t, server)
+	messages := []Message{
+		{Role: "user", Content: "你好"},
+		{Role: "assistant", Content: "预填内容"},
+	}
+	result, err := client.Chat(context.Background(), messages, nil)
+	if err != nil {
+		t.Fatalf("流式兜底失败: %v", err)
+	}
+	if result.Content != "流式兜底成功" {
+		t.Fatalf("流式兜底内容异常: %q", result.Content)
+	}
+	if requestCount != 3 {
+		t.Fatalf("应依次进行3次请求（首次、非流式重试、流式兜底），实际: %d", requestCount)
+	}
+}

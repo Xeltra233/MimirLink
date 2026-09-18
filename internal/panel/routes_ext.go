@@ -436,6 +436,33 @@ func (s *Server) handleWorldbookCurrent(writer http.ResponseWriter, request *htt
 // ---------- 会话 ----------
 
 func (s *Server) handleSessions(writer http.ResponseWriter, request *http.Request) {
+	if request.Method == http.MethodDelete {
+		database, _, err := s.openActiveMemory()
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		defer database.Close()
+		sessions, err := database.ListSessions(5000)
+		if err != nil {
+			writeJSON(writer, http.StatusInternalServerError, map[string]any{"success": false, "error": err.Error()})
+			return
+		}
+		deletedCount := 0
+		for _, session := range sessions {
+			if session.MessageCount == 0 {
+				if err := database.DeleteSession(session.ID); err == nil {
+					deletedCount++
+				}
+			}
+		}
+		writeJSON(writer, http.StatusOK, map[string]any{
+			"success":      true,
+			"message":      fmt.Sprintf("已清理 %d 个非活跃会话", deletedCount),
+			"deletedCount": deletedCount,
+		})
+		return
+	}
 	database, _, err := s.openActiveMemory()
 	if err != nil {
 		writeJSON(writer, http.StatusOK, []any{})

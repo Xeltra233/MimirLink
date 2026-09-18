@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -231,9 +232,12 @@ func (r *Runtime) ttsManagerIfAvailable() ttsSynthesizer {
 	return manager
 }
 
-// AudioDir 返回音频目录。
+// AudioDir 返回音频目录（对齐 Node 项目根 audio/ 与面板静态挂载路径）。
 func (r *Runtime) AudioDir() string {
-	return r.dataDir() + "/audio"
+	if r.rootDir != "" {
+		return filepath.Join(r.rootDir, "audio")
+	}
+	return filepath.Join(r.dataDir(), "audio")
 }
 
 // buildMediaPrefixSegments 构造首条消息前缀段（reply / at，对齐 Node buildMediaPrefixSegments）。
@@ -445,33 +449,41 @@ func (r *Runtime) chainLeakRetryMaxRetries() int {
 }
 
 // retryOnChainLeak 泄露检测与重试：泄露时把重试指令并入上下文再调一次模型。
-func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, reply string, userInput string, scope tools.CallScope) (string, bool) {
-	if r.chainLeakRetryMaxRetries() <= 0 {
-		return reply, false
+// 若检测到思维链泄露且重试耗尽（或未开启重试），返回 errChainLeakAfterRetry 错误予以拦截（对齐 Node CHAIN_LEAK_AFTER_RETRY）。
+func (r *Runtime) retryOnChainLeak(ctx context.Context, messages []ai.Message, reply string, userInput string, scope tools.CallScope) (string, error) {
+	settings := r.chainLeakRetryConfig()
+	if !settings.Enabled {
+		return reply, nil
 	}
 	leak := DetectChainLeak(reply, "", reply, userInput)
 	if !leak.Leaked {
-		return reply, false
+		return reply, nil
 	}
-	r.logger.Printf("[泄露检测] 疑似泄露（%s），触发重试", leak.Reason)
-	if delayMs := r.chainLeakRetryConfig().DelayMs; delayMs > 0 {
-		time.Sleep(time.Duration(delayMs) * time.Millisecond)
+	maxRetries := settings.MaxRetries
+	currentReply := reply
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		r.logger.Printf("[泄露检测] 疑似泄露（%s），准备重试 %d/%d", leak.Reason, attempt, maxRetries)
+		if settings.DelayMs > 0 {
+			time.Sleep(time.Duration(settings.DelayMs) * time.Millisecond)
+		}
+		retryMessages := append(append([]ai.Message{}, messages...),
+			ai.Message{Role: "assistant", Content: currentReply},
+			ai.Message{Role: "user", Content: BuildChainLeakRetryMessage(leak.Reason)})
+		retried, _, err := r.chatWithTools(ctx, retryMessages, scope)
+		if err != nil {
+			r.logger.Printf("[泄露检测] 重试调用失败: %v", err)
+			return "", errChainLeakAfterRetry
+		}
+		retried = strings.TrimSpace(retried)
+		if retried == "" {
+			continue
+		}
+		currentReply = retried
+		leak = DetectChainLeak(currentReply, "", currentReply, userInput)
+		if !leak.Leaked {
+			return currentReply, nil
+		}
 	}
-	retryMessages := append(append([]ai.Message{}, messages...),
-		ai.Message{Role: "assistant", Content: reply},
-		ai.Message{Role: "user", Content: BuildChainLeakRetryMessage(leak.Reason)})
-	retried, _, err := r.chatWithTools(ctx, retryMessages, scope)
-	if err != nil {
-		r.logger.Printf("[泄露检测] 重试失败: %v", err)
-		return reply, false
-	}
-	retried = strings.TrimSpace(retried)
-	if retried == "" {
-		return reply, false
-	}
-	if retryLeak := DetectChainLeak(retried, "", retried, userInput); retryLeak.Leaked {
-		r.logger.Printf("[泄露检测] 重试后仍疑似泄露（%s），保留首次回复", retryLeak.Reason)
-		return reply, false
-	}
-	return retried, true
+	r.logger.Printf("[泄露检测] 重试 %d 次后仍疑似泄露（%s），触发拦截", maxRetries, leak.Reason)
+	return "", errChainLeakAfterRetry
 }

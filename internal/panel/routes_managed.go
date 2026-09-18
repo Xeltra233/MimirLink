@@ -1473,7 +1473,19 @@ func (s *Server) handleWebSearchTest(writer http.ResponseWriter, request *http.R
 		topic = "news"
 	}
 	limit := intOr(body["limit"], 0)
-	config := tools.LoadSearchConfig(s.document)
+	var config search.Config
+	if draft, ok := body["draft"].(map[string]any); ok && draft != nil {
+		config = tools.LoadSearchConfigFromMap(draft)
+		// 若草稿中的 Key 缺失或为脱敏占位符，回退到已保存配置，方便面板免重复输入测试
+		saved := tools.LoadSearchConfig(s.document)
+		for k, v := range saved.APIKeys {
+			if cur, exists := config.APIKeys[k]; !exists || cur == "" || cur == "******" {
+				config.APIKeys[k] = v
+			}
+		}
+	} else {
+		config = tools.LoadSearchConfig(s.document)
+	}
 	service := search.New(config, s.logger)
 	requestOptions := search.Request{
 		Topic:     topic,

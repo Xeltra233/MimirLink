@@ -418,18 +418,24 @@ func buildFetchToolDefinition() ai.ToolDefinition {
 
 // LoadSearchConfig 从配置读取 ai.tools.webSearch 并归一化（兼容旧字段）。
 func LoadSearchConfig(document *config.Document) search.Config {
-	configValue := search.Defaults
-	configValue.APIKeys = map[string]string{"tavily": "", "brave": "", "serpapi": ""}
-
-	if !document.Exists("ai.tools.webSearch") {
-		return configValue
+	if document == nil || !document.Exists("ai.tools.webSearch") {
+		return search.Defaults
 	}
 	raw := document.Get("ai.tools.webSearch").Raw
 	var source map[string]any
 	if err := json.Unmarshal([]byte(raw), &source); err != nil || source == nil {
+		return search.Defaults
+	}
+	return LoadSearchConfigFromMap(source)
+}
+
+// LoadSearchConfigFromMap 从原始 map 归一化搜索配置（支持草稿即时测试）。
+func LoadSearchConfigFromMap(source map[string]any) search.Config {
+	configValue := search.Defaults
+	configValue.APIKeys = map[string]string{"tavily": "", "brave": "", "serpapi": ""}
+	if source == nil {
 		return configValue
 	}
-
 	configValue.Enabled = boolArg(source, "enabled", false)
 	configValue.Provider = normalizeProvider(stringArg(source, "provider"))
 	configValue.SearxngBaseURL = strings.TrimSpace(stringArg(source, "searxngBaseUrl"))

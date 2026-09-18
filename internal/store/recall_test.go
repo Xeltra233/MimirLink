@@ -172,3 +172,72 @@ func TestNamespaceIDMatchesNode(t *testing.T) {
 		t.Fatalf("命名空间 ID 与 Node 不一致:\n实际: %s\n期望: %s", id, expected)
 	}
 }
+
+// TestRecallParticipantProfileIsolation 验证画像召回隔离：只召回当前用户画像，且尊重 injectEnabled 与黑名单。
+func TestRecallParticipantProfileIsolation(t *testing.T) {
+	directory := t.TempDir()
+	db, err := Open(filepath.Join(directory, "memory.sqlite"))
+	if err != nil {
+		t.Fatalf("打开记忆库失败: %v", err)
+	}
+	defer db.Close()
+	if err := db.EnsureSchema(); err != nil {
+		t.Fatalf("建表失败: %v", err)
+	}
+
+	namespace := NamespaceOptions{ScopeType: "global_shared", ScopeKey: "global_shared_memory", CharacterName: "测试角色"}
+
+	// 用户 A 的画像
+	_, _ = db.AddMemoryEntry(namespace, MemoryEntry{
+		ID: "p_user_a", EntryType: "participant_profile", Title: "用户A画像", Content: "用户A是活跃成员",
+		Metadata: map[string]any{"participantId": "user_a"},
+	})
+	// 用户 B 的画像
+	_, _ = db.AddMemoryEntry(namespace, MemoryEntry{
+		ID: "p_user_b", EntryType: "participant_profile", Title: "用户B画像", Content: "用户B是潜水成员",
+		Metadata: map[string]any{"participantId": "user_b"},
+	})
+
+	// 1. 指定当前发言人为 user_a，只应召回 user_a 画像，排除 user_b
+	optsA := DefaultRecallOptions
+	optsA.CurrentParticipantID = "user_a"
+	resultsA, err := db.RecallMemory(namespace, "用户", optsA)
+	if err != nil {
+		t.Fatalf("召回失败: %v", err)
+	}
+	hasA, hasB := false, false
+	for _, entry := range resultsA {
+		if entry.ID == "p_user_a" {
+			hasA = true
+		}
+		if entry.ID == "p_user_b" {
+			hasB = true
+		}
+	}
+	if !hasA || hasB {
+		t.Fatalf("画像隔离异常: 期望只包含 user_a，实际 hasA=%v hasB=%v", hasA, hasB)
+	}
+
+	// 2. injectEnabled 为 false 时，不召回任何画像
+	disabled := false
+	optsDisabled := DefaultRecallOptions
+	optsDisabled.CurrentParticipantID = "user_a"
+	optsDisabled.InjectEnabled = &disabled
+	resultsDisabled, _ := db.RecallMemory(namespace, "用户", optsDisabled)
+	for _, entry := range resultsDisabled {
+		if entry.EntryType == "participant_profile" {
+			t.Fatalf("injectEnabled=false 时不应召回画像: %+v", entry)
+		}
+	}
+
+	// 3. 黑名单中的用户画像不被召回
+	optsBlacklist := DefaultRecallOptions
+	optsBlacklist.CurrentParticipantID = "user_a"
+	optsBlacklist.Blacklist = map[string]bool{"user_a": true}
+	resultsBlacklist, _ := db.RecallMemory(namespace, "用户", optsBlacklist)
+	for _, entry := range resultsBlacklist {
+		if entry.ID == "p_user_a" {
+			t.Fatalf("黑名单中的用户画像不应被召回")
+		}
+	}
+}

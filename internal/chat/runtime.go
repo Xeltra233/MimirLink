@@ -70,7 +70,6 @@ type Runtime struct {
 	historySize    int
 	rootDir        string
 	regexProc      *regexProcessor
-	focusSegment   string
 	repeatDetector *GroupRepeatDetector
 	seenMu         sync.Mutex
 	seenMessageIDs map[string]time.Time
@@ -430,9 +429,9 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 
 	// 回复前摘要检查（对齐 Node summaryBeforeReply）
 	r.maybeSummarize(sessionKey)
-	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
-	r.focusSegment = r.currentMessageFocusSegment(event, text, messageType, isAtBotSelf, replyInfo)
-	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk, groupID, userID)
+	// 当前消息决策段（对齐 Node current-message-focus，order 129：postHistory 之后、userInput 之前）
+	focusSegment := r.currentMessageFocusSegment(event, text, messageType, isAtBotSelf, replyInfo)
+	messages, worldBookEntries, err := r.buildMessages(sessionKey, content, messageType, injectionRisk, groupID, userID, focusSegment)
 	if err != nil {
 		r.logger.Printf("[聊天] 构建上下文失败: %v", err)
 		return false
@@ -534,10 +533,14 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 	}
 
 	// 链式泄露检测与重试（对齐 Node detectChainLeak + chat.chainLeakRetry）
-	if retried, didRetry := r.retryOnChainLeak(context.Background(), messages, reply, content, scope); didRetry {
-		reply = retried
+	cleanedReply, leakErr := r.retryOnChainLeak(context.Background(), messages, reply, content, scope)
+	if leakErr != nil {
+		r.logger.Printf("[聊天] 模型回复疑似泄露思维链且重试耗尽: %v", leakErr)
+		r.sendQuotedStatus(event, messageType, groupID, userID, r.buildAIServiceFailureMessage(leakErr, r.chainLeakRetryConfig().MaxRetries+1))
+		r.scheduleParticipantProfileUpdate(sessionKey, userID, speakerNameFromEvent(event), messageType, groupID)
+		return true
 	}
-
+	reply = cleanedReply
 	if err := r.appendMessage(sessionKey, "assistant", reply, map[string]any{
 		"messageType": messageType, "groupId": groupID, "userId": userID,
 	}); err != nil {
@@ -588,7 +591,7 @@ func (r *Runtime) maybeSendGroupRepeat(item pendingMessage) bool {
 
 // ---------------- 提示词与历史 ----------------
 
-func (r *Runtime) buildMessages(sessionKey string, currentContent string, messageType string, injectionRisk InjectionRisk, groupID string, userID string) ([]ai.Message, []matchedWorldBookEntry, error) {
+func (r *Runtime) buildMessages(sessionKey string, currentContent string, messageType string, injectionRisk InjectionRisk, groupID string, userID string, focusSegment ...string) ([]ai.Message, []matchedWorldBookEntry, error) {
 	// 聊天范围过滤：共享会话下只取当前群聊/私聊的最近消息（对齐 Node getContext 的 scopeKey）
 	scopeKey := ChatScopeKey(messageType, groupID, userID)
 	raw, err := r.memory.RecentMessagesThread(sessionKey, ChatScopePullLimit(r.historySize))
@@ -623,11 +626,6 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 	for _, item := range partition.PreSystem {
 		messages = append(messages, ai.Message{Role: "system", Content: item.Content})
 	}
-	// 当前消息决策段（对齐 Node current-message-focus，order 129：preSystem 之后）
-	if r.focusSegment != "" {
-		messages = append(messages, ai.Message{Role: "system", Content: r.focusSegment})
-		r.focusSegment = ""
-	}
 	// 2.5) 历史摘要注入（对齐 Node src/prompt.js:710 系统段）
 	if r.memory != nil {
 		if summaries, err := r.memory.ListSummaries(sessionKey); err == nil {
@@ -650,7 +648,7 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 		messages = append(messages, ai.Message{Role: "system", Content: segment})
 	}
 	// 5) 数据库召回（固定知识 / 动态知识 / 其他召回）
-	if recalled := r.recallSectionWithEntries(sessionKey, currentContent); recalled != "" {
+	if recalled := r.recallSectionWithEntries(sessionKey, currentContent, userID); recalled != "" {
 		messages = append(messages, ai.Message{Role: "system", Content: recalled})
 	}
 
@@ -672,6 +670,13 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 		}
 	}
 	appendInjections(0)
+	// 5.5) 历史为空且存在角色首条消息时，注入首条问候（对齐 Node src/prompt.js:1033）
+	if len(history) == 0 {
+		if firstMes := r.characterFirstMessage(); firstMes != "" {
+			messages = append(messages, ai.Message{Role: "assistant", Content: firstMes})
+		}
+	}
+	// 6) 历史 + historyInjection（injection_depth = 从历史末尾插入的位置）
 	for index, item := range history {
 		role := item.Role
 		if role != "user" && role != "assistant" {
@@ -688,6 +693,10 @@ func (r *Runtime) buildMessages(sessionKey string, currentContent string, messag
 	}
 	for _, item := range partition.PostHistory {
 		messages = append(messages, ai.Message{Role: "system", Content: item.Content})
+	}
+	// 7.5) 当前消息决策段（对齐 Node current-message-focus，order 129：postHistory 之后、userInput 之前）
+	if len(focusSegment) > 0 && strings.TrimSpace(focusSegment[0]) != "" {
+		messages = append(messages, ai.Message{Role: "system", Content: strings.TrimSpace(focusSegment[0])})
 	}
 	// 8) 当前用户消息
 	messages = append(messages, ai.Message{Role: "user", Content: currentContent})
@@ -915,8 +924,11 @@ func (r *Runtime) chatWithTools(ctx context.Context, messages []ai.Message, scop
 func (r *Runtime) recallOptions() store.RecallOptions { return recallOptionsFor(r.document) }
 
 // recallOptionsFor 读取召回参数（运行时与靶场/预览共用）。
-func recallOptionsFor(document *config.Document) store.RecallOptions {
+func recallOptionsFor(document *config.Document, currentUserID ...string) store.RecallOptions {
 	options := store.DefaultRecallOptions
+	if document == nil {
+		return options
+	}
 	if value := document.Int("memory.recall.limit", 0); value > 0 {
 		options.Limit = int(value)
 	}
@@ -929,6 +941,23 @@ func recallOptionsFor(document *config.Document) store.RecallOptions {
 	if value := document.Int("memory.recall.summaryLimit", 0); value > 0 {
 		options.SummaryLimit = int(value)
 	}
+	if len(currentUserID) > 0 {
+		options.CurrentParticipantID = currentUserID[0]
+	}
+	injectEnabled := true
+	if document.Exists("memory.participantProfile.injectEnabled") {
+		injectEnabled = document.Bool("memory.participantProfile.injectEnabled")
+	}
+	options.InjectEnabled = &injectEnabled
+	blacklist := stringListField(document, "memory.participantProfile.blacklistParticipantIds")
+	if len(blacklist) > 0 {
+		options.Blacklist = map[string]bool{}
+		for _, id := range blacklist {
+			if trimmed := strings.TrimSpace(id); trimmed != "" {
+				options.Blacklist[trimmed] = true
+			}
+		}
+	}
 	return options
 }
 
@@ -939,24 +968,24 @@ func (r *Runtime) recallSection(sessionKey string, query string) string {
 
 // recallSectionWithEntries 与 recallSection 相同，但把召回条目暂存到运行时
 // （供 processIncoming 生成 lastRecall / injection observation 快照，对齐 Node 记录点）。
-func (r *Runtime) recallSectionWithEntries(sessionKey string, query string) string {
-	entries := recallEntriesFor(r.memory, r.document, r.characterName(), sessionKey, query, r.logger)
+func (r *Runtime) recallSectionWithEntries(sessionKey string, query string, userID ...string) string {
+	entries := recallEntriesFor(r.memory, r.document, r.characterName(), sessionKey, query, r.logger, userID...)
 	r.recalledEntries = entries
 	return renderRecallEntries(entries, r.logger)
 }
 
 // recallSectionFor 数据库召回段落（运行时与靶场/预览共用）。
-func recallSectionFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger) string {
-	return renderRecallEntries(recallEntriesFor(memory, document, character, sessionKey, query, logger), logger)
+func recallSectionFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger, userID ...string) string {
+	return renderRecallEntries(recallEntriesFor(memory, document, character, sessionKey, query, logger, userID...), logger)
 }
 
 // recallEntriesFor 拉取召回条目（对齐 Node recallMemory 调用参数）。
-func recallEntriesFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger) []store.MemoryEntry {
+func recallEntriesFor(memory *store.DB, document *config.Document, character string, sessionKey string, query string, logger *log.Logger, userID ...string) []store.MemoryEntry {
 	if memory == nil {
 		return nil
 	}
 	namespace := namespaceOptionsFor(document, character, sessionKey)
-	entries, err := memory.RecallMemory(namespace, query, recallOptionsFor(document))
+	entries, err := memory.RecallMemory(namespace, query, recallOptionsFor(document, userID...))
 	if err != nil {
 		if logger != nil {
 			logger.Printf("[记忆] 召回失败: %v", err)
@@ -1074,7 +1103,23 @@ func (r *Runtime) characterSegments() []string {
 	if scenario := strings.TrimSpace(stringValue(data["scenario"])); scenario != "" {
 		segments = append(segments, "【场景】\n"+scenario)
 	}
+	if systemPrompt := strings.TrimSpace(stringValue(data["system_prompt"])); systemPrompt != "" {
+		segments = append(segments, systemPrompt)
+	}
 	return segments
+}
+
+// characterFirstMessage 读取角色卡首条消息（开场白），用于历史为空时注入。
+func (r *Runtime) characterFirstMessage() string {
+	name := r.characterName()
+	if name == "" {
+		return ""
+	}
+	data, err := characters.Read(r.dataDir(), name)
+	if err != nil || data == nil {
+		return ""
+	}
+	return strings.TrimSpace(stringValue(data["first_mes"]))
 }
 
 // dataDir 解析数据目录（chat.dataDir 优先，默认 <root>/data）。

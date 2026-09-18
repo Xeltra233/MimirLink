@@ -49,11 +49,14 @@ type SummaryEntry struct {
 
 // RecallOptions 控制召回规模（对齐 Node recallMemory 默认值）。
 type RecallOptions struct {
-	RecentLimit  int
-	SearchLimit  int
-	SummaryLimit int
-	FixedLimit   int
-	Limit        int
+	RecentLimit          int
+	SearchLimit          int
+	SummaryLimit         int
+	FixedLimit           int
+	Limit                int
+	CurrentParticipantID string
+	InjectEnabled        *bool
+	Blacklist            map[string]bool
 }
 
 // DefaultRecallOptions 与 Node 默认值一致。
@@ -296,7 +299,35 @@ func (d *DB) RecallMemory(options NamespaceOptions, query string, recall RecallO
 	}
 	collected := map[string]scored{}
 
+	shouldInclude := func(entry MemoryEntry) bool {
+		if entry.EntryType == "knowledge_fixed" || entry.EntryType == "knowledge_dynamic" {
+			return true
+		}
+		if entry.EntryType != "participant_profile" {
+			return true
+		}
+		if recall.InjectEnabled != nil && !*recall.InjectEnabled {
+			return false
+		}
+		profileParticipantID := ""
+		if entry.Metadata != nil {
+			if id, ok := entry.Metadata["participantId"].(string); ok {
+				profileParticipantID = strings.TrimSpace(id)
+			}
+		}
+		if profileParticipantID != "" && recall.Blacklist != nil && recall.Blacklist[profileParticipantID] {
+			return false
+		}
+		if recall.CurrentParticipantID != "" && profileParticipantID != "" && recall.CurrentParticipantID != profileParticipantID {
+			return false
+		}
+		return true
+	}
+
 	add := func(entry MemoryEntry, isMatched bool) {
+		if !shouldInclude(entry) {
+			return
+		}
 		if _, exists := collected[entry.ID]; exists {
 			return
 		}

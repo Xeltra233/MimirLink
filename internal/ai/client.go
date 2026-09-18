@@ -298,6 +298,7 @@ func (c *Client) Chat(ctx context.Context, messages []Message, overrides map[str
 	if result.Content == "" && result.ReasoningContent == "" && len(result.ToolCalls) == 0 {
 		// 对齐 Node extractChatContentWithPrefillFallback：
 		// 空回复且尾部是 assistant prefill → 去掉后重试；仍空 → 流式兜底
+		effectiveMessages := messages
 		if hasTrailingAssistantPrefill(messages) {
 			fallbackMessages := messages[:len(messages)-1]
 			result, retryErr := c.doChatRequest(ctx, fallbackMessages, overrides)
@@ -307,8 +308,9 @@ func (c *Client) Chat(ctx context.Context, messages []Message, overrides map[str
 				}
 				return result, nil
 			}
+			effectiveMessages = fallbackMessages
 		}
-		streamResult, streamErr := c.chatStreaming(ctx, messages, overrides)
+		streamResult, streamErr := c.chatStreaming(ctx, effectiveMessages, overrides)
 		if streamErr != nil {
 			return nil, fmt.Errorf("AI 返回了空回复（非流式与流式兜底均失败: %v）", streamErr)
 		}

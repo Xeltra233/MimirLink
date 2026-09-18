@@ -188,3 +188,19 @@ func TestLoadSearchConfigSpiceDefaults(t *testing.T) {
 		t.Fatalf("mcpFallbackMaxChars 应 clamp 到 500，实际 %d", loaded.MCPFallbackMaxChars)
 	}
 }
+
+// TestLoadSearchConfigFromMap 支持从 map 草稿解析搜索配置。
+func TestLoadSearchConfigFromMap(t *testing.T) {
+	draft := map[string]any{
+		"enabled":  true,
+		"provider": "tavily",
+		"apiKeys": map[string]any{
+			"tavily": "tvly-test-123",
+		},
+		"maxResults": 8,
+	}
+	cfg := LoadSearchConfigFromMap(draft)
+	if !cfg.Enabled || cfg.Provider != "tavily" || cfg.APIKeys["tavily"] != "tvly-test-123" || cfg.MaxResults != 8 {
+		t.Fatalf("从 map 草稿解析搜索配置异常: %+v", cfg)
+	}
+}

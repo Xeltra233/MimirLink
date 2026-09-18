@@ -9,6 +9,9 @@ import (
 // errEmptyReply 标记空回复耗尽（供失败提示文案分支识别）。
 var errEmptyReply = errors.New("空回复")
 
+// errChainLeakAfterRetry 标记思维链泄露重试耗尽（对齐 Node CHAIN_LEAK_AFTER_RETRY 拦截）。
+var errChainLeakAfterRetry = errors.New("CHAIN_LEAK_AFTER_RETRY")
+
 // 本文件对齐 Node generateReplyWithRetry + buildAIServiceFailureMessage + isEmptyLikeReply：
 //   - 空回复（空/上游错误内容/纯标点）按 chat.emptyReplyRetry 重试（默认启用/2次/800ms）
 //   - 耗尽后给用户回一条引用失败提示（对齐 Node catch 后 sendQuotedStatusMessage）
@@ -71,6 +74,12 @@ func (r *Runtime) buildAIServiceFailureMessage(err error, emptyAttempts int) str
 	}
 	lowered := strings.ToLower(message)
 	switch {
+	case errors.Is(err, errChainLeakAfterRetry) || strings.Contains(message, "CHAIN_LEAK_AFTER_RETRY") || strings.Contains(message, "思维链"):
+		attempts := emptyAttempts
+		if attempts <= 0 {
+			attempts = r.chainLeakRetryConfig().MaxRetries + 1
+		}
+		return "AI 回复疑似泄露思维链，已自动重试 " + itoa(attempts) + " 次仍失败，本轮已拦截"
 	case strings.Contains(message, "空回复"):
 		attempts := emptyAttempts
 		if attempts <= 0 {

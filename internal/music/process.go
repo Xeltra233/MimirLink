@@ -1,17 +1,18 @@
 package music
 
 import (
+	"context"
 	"os/exec"
 	"time"
 )
 
 // runProcess 对齐 Node defaultRunCommand：超时强杀、stderr 截断保留尾部 4000 字节。
 func runProcess(command string, args []string, timeout time.Duration) error {
-	cmd := exec.Command(command, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, command, args...)
 	stderr := &limitedBuffer{max: 4000}
 	cmd.Stderr = stderr
-	timer := time.AfterFunc(timeout, func() { _ = cmd.Process.Kill() })
-	defer timer.Stop()
 	if err := cmd.Run(); err != nil {
 		return err
 	}

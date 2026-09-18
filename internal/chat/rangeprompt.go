@@ -418,5 +418,8 @@ func rangeCharacterSegments(dataDir string, characterName string) []string {
 	if scenario := strings.TrimSpace(stringValue(data["scenario"])); scenario != "" {
 		segments = append(segments, "【场景】\n"+scenario)
 	}
+	if systemPrompt := strings.TrimSpace(stringValue(data["system_prompt"])); systemPrompt != "" {
+		segments = append(segments, systemPrompt)
+	}
 	return segments
 }
