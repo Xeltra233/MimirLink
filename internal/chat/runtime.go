@@ -397,6 +397,9 @@ func (r *Runtime) processIncoming(item pendingMessage, aggregated bool) bool {
 		}
 	}
 	imageDataList = append(imageDataList, r.collectForwardImageData(event["message"], forwardSeen)...)
+	// 引用消息内图片并入识图输入：被引用消息若是合并转发，
+	// 其内嵌图片随 QuotedPayload 一并收集（对齐 Node 引用+转发场景的识图语义）。
+	imageDataList = append(imageDataList, r.collectQuotedImageData(replyInfo, forwardSeen)...)
 	if len(imageDataList) > 0 {
 		imageInput, imageErr := r.prepareImageInput(imageDataList)
 		if imageErr != nil {
@@ -1323,6 +1326,46 @@ func (r *Runtime) renderForwardAt(forwardID string, depth int, visited map[strin
 		imageNote = fmt.Sprintf("|含图片%d张", imageCount)
 	}
 	return fmt.Sprintf("[合并转发聊天记录|共%d条%s]\n%s\n[/合并转发]", len(nodes), imageNote, strings.Join(lines, "\n"))
+}
+
+// collectQuotedImageData 抽取被引用消息内的图片 data：
+// 被引用消息可能是普通图消息，也可能本身是一条合并转发；
+// 后者通过 collectForwardImageData 下钻展开，嵌套子转发一并覆盖。
+// seenSources 与直发图/本条消息转发图共用去重，避免同一张图重复进识图。
+func (r *Runtime) collectQuotedImageData(info replyInfo, seenSources map[string]bool) []map[string]any {
+	if info.QuotedPayload == nil {
+		return nil
+	}
+	// 传原始 message 值（[]any），collectForwardImageData 内部依赖 messageSegments 解析，
+	// 传已转换的 []map[string]any 会因类型不匹配被静默忽略。
+	rawMessage := info.QuotedPayload["message"]
+	result := extractImageSegments(rawMessage)
+	forwardSeen := map[string]bool{}
+	for _, data := range result {
+		source := strings.TrimSpace(stringValue(data["url"]))
+		if source == "" {
+			source = strings.TrimSpace(stringValue(data["file"]))
+		}
+		if source != "" {
+			forwardSeen[source] = true
+		}
+	}
+	result = append(result, r.collectForwardImageData(rawMessage, forwardSeen)...)
+	deduped := make([]map[string]any, 0, len(result))
+	for _, data := range result {
+		source := strings.TrimSpace(stringValue(data["url"]))
+		if source == "" {
+			source = strings.TrimSpace(stringValue(data["file"]))
+		}
+		if source != "" {
+			if seenSources[source] {
+				continue
+			}
+			seenSources[source] = true
+		}
+		deduped = append(deduped, data)
+	}
+	return deduped
 }
 
 // collectForwardImageData 抽取本条消息内合并转发里的图片 data（对齐 Node forwardImageSegments +

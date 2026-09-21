@@ -137,3 +137,75 @@ func TestForwardImagesEnterImagePipeline(t *testing.T) {
 		t.Fatalf("转发内图片应直传模型，实际 %d 张", imageParts)
 	}
 }
+
+// TestQuotedForwardImagesEnterImagePipeline：引用一条本身是合并转发的消息时，
+// 被引用合并转发内的图片应进入识图输入（回归：此前只扫当前消息，
+// 引用目标里的 forward 图片只被渲染成"含图片N张"文本，模型收不到图）。
+func TestQuotedForwardImagesEnterImagePipeline(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString(testPNG)
+	imageURL := "base64://" + encoded
+	model := &fakeModel{replies: []string{"看到了"}}
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, model)
+	bot.forwards["fw-quote"] = map[string]any{"messages": []any{
+		map[string]any{"sender": map[string]any{"nickname": "小明", "user_id": "3001"}, "message": []any{map[string]any{"type": "image", "data": map[string]any{"file": imageURL}}}},
+	}}
+	bot.messagesByID["m-quoted"] = map[string]any{
+		"message_id": "m-quoted",
+		"sender":     map[string]any{"nickname": "小明", "user_id": "3001"},
+		"message":    []any{map[string]any{"type": "forward", "data": map[string]any{"id": "fw-quote"}}},
+	}
+	// 用户 @bot 并引用那条含图合并转发
+	event := buildGroupEvent("看看这个", true, "99001", "2001")
+	segments, _ := event["message"].([]any)
+	event["message"] = append(segments, map[string]any{"type": "reply", "data": map[string]any{"id": "m-quoted"}})
+	runtime.HandleEvent(event)
+	if len(model.requests) == 0 {
+		t.Fatalf("未触发模型调用")
+	}
+	imageParts := 0
+	for _, message := range model.requests[0] {
+		if parts, ok := message.Content.([]any); ok {
+			for _, part := range parts {
+				if entry, ok := part.(map[string]any); ok && entry["type"] == "image_url" {
+					imageParts++
+				}
+			}
+		}
+	}
+	if imageParts != 1 {
+		t.Fatalf("引用的合并转发内图片应直传模型，实际 %d 张", imageParts)
+	}
+}
+
+// TestQuotedDirectImageEntersImagePipeline：引用普通含图消息时图片进入识图输入。
+func TestQuotedDirectImageEntersImagePipeline(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString(testPNG)
+	imageURL := "base64://" + encoded
+	model := &fakeModel{replies: []string{"看到了"}}
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, model)
+	bot.messagesByID["m-img"] = map[string]any{
+		"message_id": "m-img",
+		"sender":     map[string]any{"nickname": "小红", "user_id": "3002"},
+		"message":    []any{map[string]any{"type": "image", "data": map[string]any{"file": imageURL}}},
+	}
+	event := buildGroupEvent("看看", true, "99001", "2001")
+	segments, _ := event["message"].([]any)
+	event["message"] = append(segments, map[string]any{"type": "reply", "data": map[string]any{"id": "m-img"}})
+	runtime.HandleEvent(event)
+	if len(model.requests) == 0 {
+		t.Fatalf("未触发模型调用")
+	}
+	imageParts := 0
+	for _, message := range model.requests[0] {
+		if parts, ok := message.Content.([]any); ok {
+			for _, part := range parts {
+				if entry, ok := part.(map[string]any); ok && entry["type"] == "image_url" {
+					imageParts++
+				}
+			}
+		}
+	}
+	if imageParts != 1 {
+		t.Fatalf("引用消息内的直发图片应直传模型，实际 %d 张", imageParts)
+	}
+}

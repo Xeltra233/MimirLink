@@ -21,6 +21,9 @@ type replyInfo struct {
 	QuotedText  string
 	FetchStatus string
 	FetchReason string
+	// QuotedPayload 保存拉取到的被引用消息原始 payload，
+	// 供识图链路收集引用消息（含合并转发）内的图片，避免二次 GetMsg。
+	QuotedPayload map[string]any
 }
 
 // extractReplyTarget 从消息段中取 reply 段的 message_id。
@@ -90,6 +93,7 @@ func (r *Runtime) buildReplyInfo(event map[string]any, segments []map[string]any
 		return replyInfo{FetchStatus: "failed", FetchReason: err.Error()}
 	}
 	sender, _ := payload["sender"].(map[string]any)
+	info.QuotedPayload = payload
 	if sender != nil {
 		info.SenderID = idField(sender, "user_id")
 		info.SenderName = stringValue(sender["card"])
