@@ -41,6 +41,20 @@ func TestSameOriginWriteParity(t *testing.T) {
 			t.Fatalf("同源 %s 应放行", origin)
 		}
 	}
+
+	// IPv6 与反向代理放行
+	if !isAllowedPanelOrigin(makeRequest(http.MethodPost, "/api/config", "[::1]:8080", "http://[::1]:8080", ""), "http://[::1]:8080") {
+		t.Fatal("IPv6 [::1]:8080 应放行")
+	}
+	fwdReq := makeRequest(http.MethodPost, "/api/config", "127.0.0.1:8080", "https://panel.example.com", "")
+	fwdReq.Header.Set("X-Forwarded-Host", "panel.example.com")
+	fwdReq.Header.Set("X-Forwarded-Proto", "https")
+	if !isAllowedPanelOrigin(fwdReq, "https://panel.example.com") {
+		t.Fatal("反代 X-Forwarded-Host 应放行")
+	}
+	if !isAllowedPanelOrigin(makeRequest(http.MethodPost, "/api/config", "MY-PC:8080", "http://my-pc:8080", ""), "http://my-pc:8080") {
+		t.Fatal("大小写机器名应放行")
+	}
 	// 跨主机/跨端口/非法来源拒绝（Node 只要求 origin 协议 http/https 且端口相等）。
 	for _, origin := range []string{"http://evil.com", "http://panel:9999", "https://panel:9999", "not-a-url"} {
 		if isAllowedPanelOrigin(makeRequest(http.MethodPost, "/api/config", "panel:8080", origin, ""), origin) {

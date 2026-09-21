@@ -224,20 +224,101 @@ export function setupRoutes(app, config, saveConfig, managers) {
 
     const isWriteMethod = (method) => ['POST', 'PUT', 'PATCH', 'DELETE'].includes(String(method || '').toUpperCase());
 
+    const normalizeOriginHost = (host) => String(host || '').toLowerCase().replace(/^\[|\]$/g, '');
+
+    const parseHostAndPort = (rawHost, fallbackProto, fallbackPort) => {
+        if (!rawHost) return null;
+        const clean = String(rawHost).split(',')[0].trim();
+        if (!clean) return null;
+        try {
+            const proto = fallbackProto || 'http';
+            const parsed = new URL(clean.includes('://') ? clean : `${proto}://${clean}`);
+            const hostname = normalizeOriginHost(parsed.hostname);
+            const port = parsed.port || (fallbackPort ? String(fallbackPort).split(',')[0].trim() : (parsed.protocol === 'https:' ? '443' : '80'));
+            return { hostname, port };
+        } catch {
+            const colon = clean.lastIndexOf(':');
+            if (colon > -1 && !clean.endsWith(']')) {
+                return {
+                    hostname: normalizeOriginHost(clean.slice(0, colon)),
+                    port: clean.slice(colon + 1)
+                };
+            }
+            return {
+                hostname: normalizeOriginHost(clean),
+                port: fallbackPort ? String(fallbackPort).split(',')[0].trim() : (fallbackProto === 'https' ? '443' : '80')
+            };
+        }
+    };
+
     const isAllowedPanelOrigin = (req, originValue) => {
         if (!originValue) {
             return true;
         }
+        // 允许通过配置文件放行自定义来源（如反代域名、公网域名、外部面板）
+        const configuredAllowed = Array.isArray(config.server?.allowedOrigins)
+            ? config.server.allowedOrigins
+            : (typeof config.server?.allowedOrigins === 'string' ? [config.server.allowedOrigins] : []);
+        if (configuredAllowed.includes('*') || configuredAllowed.some((entry) => {
+            if (!entry) return false;
+            const normEntry = String(entry).trim().toLowerCase().replace(/\/+$/, '');
+            const normOrigin = String(originValue).trim().toLowerCase().replace(/\/+$/, '');
+            return normEntry === normOrigin || normEntry === `http://${normOrigin}` || normEntry === `https://${normOrigin}`;
+        })) {
+            return true;
+        }
+
         try {
             const origin = new URL(originValue);
-            const host = req.headers.host || '';
-            const [hostname, port = ''] = host.split(':');
+            if (!['http:', 'https:'].includes(origin.protocol)) {
+                return false;
+            }
+
+            const originHost = normalizeOriginHost(origin.hostname);
             const originPort = origin.port || (origin.protocol === 'https:' ? '443' : '80');
-            const hostPort = port || (req.protocol === 'https' ? '443' : '80');
-            const allowedHostnames = new Set([hostname, '127.0.0.1', 'localhost', '::1']);
-            return ['http:', 'https:'].includes(origin.protocol)
-                && allowedHostnames.has(origin.hostname)
-                && originPort === hostPort;
+
+            // 提取协议与备选端口（支持反向代理标准头 X-Forwarded-Proto / X-Forwarded-Port）
+            const forwardedProto = req.headers['x-forwarded-proto']
+                ? String(req.headers['x-forwarded-proto']).split(',')[0].trim().toLowerCase()
+                : '';
+            const effectiveProto = forwardedProto || (req.protocol === 'https' ? 'https' : 'http');
+            const forwardedPort = req.headers['x-forwarded-port']
+                ? String(req.headers['x-forwarded-port']).split(',')[0].trim()
+                : '';
+
+            // 收集候选 Host（优先支持 X-Forwarded-Host 与标准 Host 头）
+            const hostCandidates = [
+                req.headers['x-forwarded-host'],
+                req.headers.host
+            ].filter(Boolean);
+
+            const parsedCandidates = hostCandidates
+                .map((h) => parseHostAndPort(h, effectiveProto, forwardedPort))
+                .filter(Boolean);
+
+            const allowedHostnames = new Set(['127.0.0.1', 'localhost', '::1']);
+            for (const candidate of parsedCandidates) {
+                if (candidate.hostname) {
+                    allowedHostnames.add(candidate.hostname);
+                }
+            }
+
+            // 来源主机名必须在允许集合中
+            if (!allowedHostnames.has(originHost)) {
+                return false;
+            }
+
+            // 端口一致性校验：只要有候选 Host 的端口与 originPort 一致即放行
+            if (parsedCandidates.some((c) => c.port === originPort)) {
+                return true;
+            }
+
+            // 反向代理场景兜底：X-Forwarded-Host 匹配主机名且来源为标准端口 80/443
+            if (req.headers['x-forwarded-host'] && allowedHostnames.has(originHost) && ['443', '80'].includes(originPort)) {
+                return true;
+            }
+
+            return false;
         } catch {
             return false;
         }
@@ -263,7 +344,9 @@ export function setupRoutes(app, config, saveConfig, managers) {
                 method: req.method,
                 originalUrl: req.originalUrl,
                 origin: origin || '',
-                referer: referer || ''
+                referer: referer || '',
+                host: req.headers.host || '',
+                forwardedHost: req.headers['x-forwarded-host'] || ''
             });
             return res.status(403).json({ success: false, error: '跨源写入请求已被拒绝' });
         }

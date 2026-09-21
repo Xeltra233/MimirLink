@@ -87,14 +87,8 @@ func isAllowedPanelOrigin(request *http.Request, originValue string) bool {
 	if err != nil {
 		return false
 	}
-	host := request.Host
-	hostname, port := splitHostPort(host)
-	if port == "" {
-		if request.TLS != nil {
-			port = "443"
-		} else {
-			port = "80"
-		}
+	if origin.scheme != "http" && origin.scheme != "https" {
+		return false
 	}
 	originPort := origin.port
 	if originPort == "" {
@@ -104,14 +98,61 @@ func isAllowedPanelOrigin(request *http.Request, originValue string) bool {
 			originPort = "80"
 		}
 	}
-	if origin.scheme != "http" && origin.scheme != "https" {
+
+	// 协议与备选端口推断（支持 X-Forwarded-Proto / X-Forwarded-Port）
+	forwardedProto := strings.ToLower(strings.TrimSpace(request.Header.Get("X-Forwarded-Proto")))
+	forwardedPort := strings.TrimSpace(request.Header.Get("X-Forwarded-Port"))
+
+	defaultPort := "80"
+	if forwardedProto == "https" || request.TLS != nil {
+		defaultPort = "443"
+	}
+
+	// 收集候选 Host（优先支持反代 X-Forwarded-Host 与标准 Host 头）
+	candidateHosts := make([]string, 0, 2)
+	if fHost := strings.TrimSpace(request.Header.Get("X-Forwarded-Host")); fHost != "" {
+		if idx := strings.Index(fHost, ","); idx != -1 {
+			fHost = strings.TrimSpace(fHost[:idx])
+		}
+		candidateHosts = append(candidateHosts, fHost)
+	}
+	if host := strings.TrimSpace(request.Host); host != "" {
+		candidateHosts = append(candidateHosts, host)
+	}
+
+	originHostname := strings.Trim(strings.ToLower(origin.hostname), "[]")
+	allowedHostnames := map[string]bool{
+		"127.0.0.1": true,
+		"localhost": true,
+		"::1":       true,
+	}
+
+	portMatched := false
+	for _, rawHost := range candidateHosts {
+		h, p := splitHostPort(rawHost)
+		h = strings.Trim(strings.ToLower(h), "[]")
+		if h != "" {
+			allowedHostnames[h] = true
+		}
+		if p == "" {
+			if forwardedPort != "" {
+				p = forwardedPort
+			} else {
+				p = defaultPort
+			}
+		}
+		if p == originPort {
+			portMatched = true
+		}
+	}
+
+	if !allowedHostnames[originHostname] {
 		return false
 	}
-	if originPort != port {
-		return false
+	if portMatched {
+		return true
 	}
-	switch origin.hostname {
-	case hostname, "127.0.0.1", "localhost", "::1":
+	if request.Header.Get("X-Forwarded-Host") != "" && (originPort == "443" || originPort == "80") {
 		return true
 	}
 	return false
