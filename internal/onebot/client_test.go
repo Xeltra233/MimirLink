@@ -23,6 +23,8 @@ type fakeServer struct {
 	received chan map[string]any
 	authSeen chan string
 	active   chan *websocket.Conn
+	// forwardResponder 自定义 get_forward_msg 响应（nil 时用默认响应）；返回 (data, 是否成功)。
+	forwardResponder func(params map[string]any) (any, bool)
 }
 
 func newFakeServer(t *testing.T) *fakeServer {
@@ -79,9 +81,19 @@ func newFakeServer(t *testing.T) *fakeServer {
 				case "send_group_msg":
 					data = map[string]any{"message_id": 42}
 				case "get_forward_msg":
-					data = map[string]any{"messages": []any{
-						map[string]any{"sender": map[string]any{"nickname": "甲", "user_id": "1"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "转发内容"}}}},
-					}}
+					if fake.forwardResponder != nil {
+						params, _ := envelope["params"].(map[string]any)
+						if payload, ok := fake.forwardResponder(params); ok {
+							data = payload
+						} else {
+							_ = writeJSON(map[string]any{"status": "failed", "retcode": 1200, "msg": "无法获取合并转发消息", "echo": echo})
+							continue
+						}
+					} else {
+						data = map[string]any{"messages": []any{
+							map[string]any{"sender": map[string]any{"nickname": "甲", "user_id": "1"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "转发内容"}}}},
+						}}
+					}
 				case "fail_action":
 					_ = writeJSON(map[string]any{"status": "failed", "retcode": 1, "msg": "模拟失败", "echo": echo})
 					continue
@@ -271,5 +283,47 @@ func TestReconnectAfterServerRestart(t *testing.T) {
 
 	if _, err := client.GetLoginInfo(); err != nil {
 		t.Fatalf("重连后调用失败: %v", err)
+	}
+}
+
+// TestGetForwardMsgParamVariants：对齐 AstrBot _call_action_compat —— 字符串参数
+// （message_id/id）失败后，纯数字 id 应追加 int 变体重试（部分实现要求整型参数）。
+func TestGetForwardMsgParamVariants(t *testing.T) {
+	fake := newFakeServer(t)
+	var mu sync.Mutex
+	attempts := []map[string]any{}
+	fake.forwardResponder = func(params map[string]any) (any, bool) {
+		mu.Lock()
+		attempts = append(attempts, params)
+		mu.Unlock()
+		// 模拟仅接受 int message_id 的实现（如对 message_id 做整型反序列化的适配器）
+		if v, ok := params["message_id"].(float64); ok && v == 777 {
+			return map[string]any{"messages": []any{
+				map[string]any{"sender": map[string]any{"nickname": "甲", "user_id": "1"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "内层内容"}}}},
+			}}, true
+		}
+		return nil, false
+	}
+	client := newTestClient(t, fake.wsURL(), "", "")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = client.Run(ctx) }()
+	if !waitFor(t, 5*time.Second, client.Connected) {
+		t.Fatalf("客户端未连接")
+	}
+	payload, err := client.GetForwardMsg("777")
+	if err != nil {
+		t.Fatalf("数字 id 应通过 int 变体获取成功: %v", err)
+	}
+	if payload == nil {
+		t.Fatalf("合并转发返回为空")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(attempts) < 3 {
+		t.Fatalf("字符串参数失败后应尝试 int 变体，实际尝试次数 %d: %+v", len(attempts), attempts)
+	}
+	if _, ok := attempts[len(attempts)-1]["message_id"].(float64); !ok {
+		t.Fatalf("最后一次尝试应为 int 型 message_id: %+v", attempts[len(attempts)-1])
 	}
 }

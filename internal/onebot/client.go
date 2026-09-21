@@ -551,10 +551,15 @@ func (c *Client) GetMsg(messageID string) (map[string]any, error) {
 	return payload, nil
 }
 
-// GetForwardMsg 获取合并转发内容（对齐 Node fetchForwardTranscript：{id} 失败回退 {message_id}）。
+// GetForwardMsg 获取合并转发内容。参数兼容对齐 AstrBot quoted_message OneBotClient._call_action_compat：
+// message_id(str) → id(str)；纯数字 id 追加 message_id(int)/id(int) 变体（部分实现要求整型参数）。
 func (c *Client) GetForwardMsg(id string) (any, error) {
+	paramsList := []map[string]any{{"message_id": id}, {"id": id}}
+	if numeric, ok := toNumericIfPossible(id).(int64); ok {
+		paramsList = append(paramsList, map[string]any{"message_id": numeric}, map[string]any{"id": numeric})
+	}
 	var lastErr error
-	for _, params := range []map[string]any{{"id": id}, {"message_id": id}} {
+	for _, params := range paramsList {
 		data, err := c.Call("get_forward_msg", params)
 		if err != nil {
 			lastErr = err

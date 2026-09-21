@@ -54,14 +54,16 @@ func (r *Runtime) renderQuotedMessage(payload map[string]any) string {
 	text := ""
 	if len(segments) > 0 {
 		builder := strings.Builder{}
+		// 同一条引用消息内的多个转发共享 visited，跨转发循环引用也能拦截
+		visited := map[string]bool{}
 		for _, segment := range segments {
 			segmentType := stringValue(segment["type"])
 			if segmentType == "reply" {
 				continue
 			}
-			if segmentType == "forward" {
+			if isForwardSegmentType(segmentType) {
 				data, _ := segment["data"].(map[string]any)
-				builder.WriteString(r.renderForward(forwardSegmentID(data)))
+				builder.WriteString(r.renderForwardSegment(data, 0, visited))
 				continue
 			}
 			builder.WriteString(renderSingleSegment(r, segment))

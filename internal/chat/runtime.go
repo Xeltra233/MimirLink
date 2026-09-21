@@ -1241,8 +1241,8 @@ func (r *Runtime) renderSegmentsAt(segments []map[string]any, depth int, visited
 			builder.WriteString("[QQ表情]")
 		case "reply":
 			builder.WriteString("[引用消息]")
-		case "forward":
-			builder.WriteString(r.renderForwardAt(forwardSegmentID(data), depth, visited))
+		case "forward", "forward_msg", "nodes":
+			builder.WriteString(r.renderForwardSegment(data, depth, visited))
 			builder.WriteString("[" + segmentType + "]")
 		}
 	}
@@ -1265,6 +1265,60 @@ func (r *Runtime) renderForward(forwardID string) string {
 	return r.renderForwardAt(forwardID, 0, map[string]bool{})
 }
 
+// forwardFetchFailureMarker 标记拉取失败的降级锚点（供段级渲染回退内联节点时识别）。
+const forwardFetchFailureMarker = "|读取失败:"
+
+// isForwardSegmentType 判断是否 forward 类段（对齐 AstrBot chain_parser：forward/forward_msg/nodes）。
+func isForwardSegmentType(segmentType string) bool {
+	return segmentType == "forward" || segmentType == "forward_msg" || segmentType == "nodes"
+}
+
+// forwardInlinePayload 提取 forward 段内联嵌套节点（data.content），
+// 包装成 normalizeForwardNodes 可解析的 payload（对齐 AstrBot 嵌套段无 id 时读 content 的分支）。
+// content 形状探测：条目带 message/content 键视为节点列表；带 type 键视为段数组（包成单节点）。
+func forwardInlinePayload(data map[string]any) any {
+	if data == nil {
+		return nil
+	}
+	content, ok := data["content"]
+	if !ok || content == nil {
+		return nil
+	}
+	if list, isList := content.([]any); isList && len(list) > 0 {
+		first, _ := list[0].(map[string]any)
+		if first != nil {
+			if _, hasMessage := first["message"]; hasMessage {
+				return map[string]any{"messages": content}
+			}
+			if _, hasContent := first["content"]; hasContent {
+				return map[string]any{"messages": content}
+			}
+			if _, hasType := first["type"]; hasType {
+				return map[string]any{"messages": []any{map[string]any{"message": content}}}
+			}
+		}
+	}
+	return map[string]any{"messages": content}
+}
+
+// renderForwardSegment 渲染 forward 类段：有 id 优先拉取；拉取失败或无 id 时，
+// 若段内带内联嵌套节点则直接展开（部分适配器对嵌套转发不可二次拉取，只在段里内联返回内容）。
+func (r *Runtime) renderForwardSegment(data map[string]any, depth int, visited map[string]bool) string {
+	id := forwardSegmentID(data)
+	inlineNodes := normalizeForwardNodes(forwardInlinePayload(data))
+	if id != "" {
+		rendered := r.renderForwardAt(id, depth, visited)
+		if len(inlineNodes) == 0 || !strings.Contains(rendered, forwardFetchFailureMarker) {
+			return rendered
+		}
+		return r.renderForwardNodes(inlineNodes, depth, visited)
+	}
+	if len(inlineNodes) > 0 {
+		return r.renderForwardNodes(inlineNodes, depth, visited)
+	}
+	return "[合并转发聊天记录|缺少 id]"
+}
+
 // renderForwardAt 展开合并转发：depth 超过上限或循环引用时退化为占位符，
 // 嵌套子转发继续递归拉取（chat.forwardMaxDepth 控制层数，默认 3）。
 func (r *Runtime) renderForwardAt(forwardID string, depth int, visited map[string]bool) string {
@@ -1282,12 +1336,17 @@ func (r *Runtime) renderForwardAt(forwardID string, depth int, visited map[strin
 	defer delete(visited, forwardID)
 	payload, err := r.bot.GetForwardMsg(forwardID)
 	if err != nil {
-		return "[合并转发聊天记录|读取失败:" + err.Error() + "]"
+		return "[合并转发聊天记录" + forwardFetchFailureMarker + err.Error() + "]"
 	}
 	nodes := normalizeForwardNodes(payload)
 	if len(nodes) == 0 {
 		return "[合并转发聊天记录|内容为空]"
 	}
+	return r.renderForwardNodes(nodes, depth, visited)
+}
+
+// renderForwardNodes 渲染转发节点列表为 transcript 文本（每层预算对齐 Node forward-message.js）。
+func (r *Runtime) renderForwardNodes(nodes []forwardNode, depth int, visited map[string]bool) string {
 	shown := nodes
 	truncated := false
 	if len(shown) > forwardMaxNodes {
@@ -1378,56 +1437,71 @@ func (r *Runtime) collectForwardImageData(message any, seenSources map[string]bo
 	}
 	forwardSeen := map[string]bool{}
 	var walkSegments func(segments []map[string]any, depth int)
+	var walkNodes func(nodes []forwardNode, id string, depth int)
+	walkNodes = func(nodes []forwardNode, id string, depth int) {
+		for _, node := range nodes {
+			for _, nodeSegment := range node.segments {
+				if stringValue(nodeSegment["type"]) != "image" {
+					// 嵌套转发继续下钻。
+					if isForwardSegmentType(stringValue(nodeSegment["type"])) {
+						walkSegments([]map[string]any{nodeSegment}, depth+1)
+					}
+					continue
+				}
+				if data, ok := nodeSegment["data"].(map[string]any); ok {
+					source := strings.TrimSpace(stringValue(data["url"]))
+					if source == "" {
+						source = strings.TrimSpace(stringValue(data["file"]))
+					}
+					if source != "" && seenSources[source] {
+						continue
+					}
+					identity := "forward|" + id + "|" + source
+					if forwardSeen[identity] {
+						continue
+					}
+					forwardSeen[identity] = true
+					if source != "" {
+						seenSources[source] = true
+					}
+					if len(result) >= imageMaxImages {
+						continue
+					}
+					result = append(result, data)
+				}
+			}
+		}
+	}
 	walkSegments = func(segments []map[string]any, depth int) {
 		if depth > r.forwardMaxDepth() {
 			return
 		}
 		for _, segment := range segments {
-			if stringValue(segment["type"]) != "forward" {
+			if !isForwardSegmentType(stringValue(segment["type"])) {
 				continue
 			}
 			data, _ := segment["data"].(map[string]any)
 			id := forwardSegmentID(data)
-			if id == "" || visited[id] {
+			if id == "" {
+				// 无 id 的内联嵌套节点直接下钻（对齐 AstrBot chain_parser content 分支）。
+				if inline := normalizeForwardNodes(forwardInlinePayload(data)); len(inline) > 0 {
+					walkNodes(inline, "", depth)
+				}
+				continue
+			}
+			if visited[id] {
 				continue
 			}
 			visited[id] = true
 			payload, err := r.bot.GetForwardMsg(id)
 			if err != nil {
+				// 拉取失败时降级读段内内联节点（部分适配器对嵌套转发不可二次拉取）。
+				if inline := normalizeForwardNodes(forwardInlinePayload(data)); len(inline) > 0 {
+					walkNodes(inline, "", depth)
+				}
 				continue
 			}
-			for _, node := range normalizeForwardNodes(payload) {
-				for _, nodeSegment := range node.segments {
-					if stringValue(nodeSegment["type"]) != "image" {
-						// 嵌套转发继续下钻。
-						if stringValue(nodeSegment["type"]) == "forward" {
-							walkSegments([]map[string]any{nodeSegment}, depth+1)
-						}
-						continue
-					}
-					if data, ok := nodeSegment["data"].(map[string]any); ok {
-						source := strings.TrimSpace(stringValue(data["url"]))
-						if source == "" {
-							source = strings.TrimSpace(stringValue(data["file"]))
-						}
-						if source != "" && seenSources[source] {
-							continue
-						}
-						identity := "forward|" + id + "|" + source
-						if forwardSeen[identity] {
-							continue
-						}
-						forwardSeen[identity] = true
-						if source != "" {
-							seenSources[source] = true
-						}
-						if len(result) >= imageMaxImages {
-							continue
-						}
-						result = append(result, data)
-					}
-				}
-			}
+			walkNodes(normalizeForwardNodes(payload), id, depth)
 		}
 	}
 	walkSegments(messageSegments(message), 0)
@@ -1460,14 +1534,14 @@ func normalizeForwardNodes(payload any) []forwardNode {
 	case []any:
 		candidates = typed
 	case map[string]any:
-		for _, key := range []string{"messages", "message", "nodes", "data"} {
+		for _, key := range []string{"messages", "message", "nodes", "nodeList", "data"} {
 			value := typed[key]
 			if list, ok := value.([]any); ok {
 				candidates = list
 				break
 			}
 			if inner, ok := value.(map[string]any); ok {
-				for _, innerKey := range []string{"messages", "message", "nodes"} {
+				for _, innerKey := range []string{"messages", "message", "nodes", "nodeList"} {
 					if list, ok := inner[innerKey].([]any); ok {
 						candidates = list
 						break

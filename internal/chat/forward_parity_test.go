@@ -209,3 +209,105 @@ func TestQuotedDirectImageEntersImagePipeline(t *testing.T) {
 		t.Fatalf("引用消息内的直发图片应直传模型，实际 %d 张", imageParts)
 	}
 }
+
+// nestedForwardFixture 构造两层嵌套合并转发的 fakeBot 数据（外层节点引用内层 forward 段）。
+func nestedForwardFixture(bot *fakeBot, outerNodeMessage []any) {
+	bot.forwards["fw-inner"] = map[string]any{"messages": []any{
+		map[string]any{"sender": map[string]any{"nickname": "内层甲", "user_id": "4001"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "内层消息"}}}},
+	}}
+	bot.forwards["fw-outer"] = map[string]any{"messages": []any{
+		map[string]any{"sender": map[string]any{"nickname": "外层乙", "user_id": "4002"}, "message": outerNodeMessage},
+	}}
+}
+
+// TestNestedForwardWithIDRendersInnerTranscript：嵌套转发段带 id 时递归拉取展开内层。
+func TestNestedForwardWithIDRendersInnerTranscript(t *testing.T) {
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, &fakeModel{replies: []string{"x"}})
+	nestedForwardFixture(bot, []any{map[string]any{"type": "forward", "data": map[string]any{"id": "fw-inner"}}})
+	rendered := runtime.renderForward("fw-outer")
+	if !strings.Contains(rendered, "内层消息") {
+		t.Fatalf("带 id 的嵌套转发内层应递归展开:\n%s", rendered)
+	}
+}
+
+// TestNestedForwardInlineContentRendersWithoutID：嵌套转发段无 id 但内联 content 时直接展开
+// （对齐 AstrBot chain_parser：seg_data.content 内联分支；此前渲染为"缺少 id"）。
+func TestNestedForwardInlineContentRendersWithoutID(t *testing.T) {
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, &fakeModel{replies: []string{"x"}})
+	nestedForwardFixture(bot, []any{map[string]any{"type": "forward", "data": map[string]any{
+		"content": []any{map[string]any{"type": "text", "data": map[string]any{"text": "内联内容"}}},
+	}}})
+	rendered := runtime.renderForward("fw-outer")
+	if !strings.Contains(rendered, "内联内容") || strings.Contains(rendered, "缺少 id") {
+		t.Fatalf("无 id 的内联嵌套转发应直接展开:\n%s", rendered)
+	}
+}
+
+// TestNestedForwardFallsBackToInlineOnFetchFailure：嵌套段带 id 但拉取失败时，
+// 降级展开段内内联节点（部分适配器对嵌套转发不可二次拉取）。
+func TestNestedForwardFallsBackToInlineOnFetchFailure(t *testing.T) {
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, &fakeModel{replies: []string{"x"}})
+	nestedForwardFixture(bot, []any{map[string]any{"type": "forward", "data": map[string]any{
+		"id":      "fw-missing",
+		"content": []any{map[string]any{"type": "text", "data": map[string]any{"text": "降级内容"}}},
+	}}})
+	rendered := runtime.renderForward("fw-outer")
+	if !strings.Contains(rendered, "降级内容") || strings.Contains(rendered, "读取失败") {
+		t.Fatalf("拉取失败应降级展开内联节点:\n%s", rendered)
+	}
+}
+
+// TestNormalizeForwardNodesNodeList：Lagrange 风格 nodeList 键兼容。
+func TestNormalizeForwardNodesNodeList(t *testing.T) {
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, &fakeModel{replies: []string{"x"}})
+	bot.forwards["fw-nl"] = map[string]any{"nodeList": []any{
+		map[string]any{"sender": map[string]any{"nickname": "节点甲", "user_id": "4003"}, "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "nodeList内容"}}}},
+	}}
+	rendered := runtime.renderForward("fw-nl")
+	if !strings.Contains(rendered, "nodeList内容") {
+		t.Fatalf("nodeList 键应被解析:\n%s", rendered)
+	}
+}
+
+// TestForwardMsgAliasSegmentRenders：forward_msg 段类型别名兼容（对齐 AstrBot）。
+func TestForwardMsgAliasSegmentRenders(t *testing.T) {
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, &fakeModel{replies: []string{"x"}})
+	nestedForwardFixture(bot, nil)
+	rendered := runtime.renderSegments([]map[string]any{{"type": "forward_msg", "data": map[string]any{"id": "fw-inner"}}})
+	if !strings.Contains(rendered, "内层消息") {
+		t.Fatalf("forward_msg 段类型应等价 forward 渲染:\n%s", rendered)
+	}
+}
+
+// TestNestedForwardInlineImagesEnterImagePipeline：内联嵌套节点里的图片进入识图输入。
+func TestNestedForwardInlineImagesEnterImagePipeline(t *testing.T) {
+	encoded := base64.StdEncoding.EncodeToString(testPNG)
+	imageURL := "base64://" + encoded
+	model := &fakeModel{replies: []string{"看到了"}}
+	runtime, bot, _ := newRuntime(t, map[string]any{"chat": map[string]any{"bufferWindowMs": 0}}, model)
+	bot.forwards["fw-outer"] = map[string]any{"messages": []any{
+		map[string]any{"sender": map[string]any{"nickname": "外层乙", "user_id": "4002"}, "message": []any{map[string]any{"type": "forward", "data": map[string]any{
+			"content": []any{map[string]any{"type": "image", "data": map[string]any{"file": imageURL}}},
+		}}}},
+	}}
+	event := buildGroupEvent("看看", true, "99001", "2001")
+	segments, _ := event["message"].([]any)
+	event["message"] = append(segments, map[string]any{"type": "forward", "data": map[string]any{"id": "fw-outer"}})
+	runtime.HandleEvent(event)
+	if len(model.requests) == 0 {
+		t.Fatalf("未触发模型调用")
+	}
+	imageParts := 0
+	for _, message := range model.requests[0] {
+		if parts, ok := message.Content.([]any); ok {
+			for _, part := range parts {
+				if entry, ok := part.(map[string]any); ok && entry["type"] == "image_url" {
+					imageParts++
+				}
+			}
+		}
+	}
+	if imageParts != 1 {
+		t.Fatalf("内联嵌套转发里的图片应进入识图输入，实际 %d 张", imageParts)
+	}
+}
