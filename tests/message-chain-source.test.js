@@ -81,3 +81,12 @@ test('real chat path preserves mention-only and other-user mentions for AI conte
     assert.ok(source.includes('只@了bot，没有附加文字'));
     assert.ok(source.includes('请结合附近群聊上下文判断'));
 });
+
+test('merged forward transcript does not feed keyword/prefix trigger matching', () => {
+    assert.ok(source.includes("let triggerSeed = '';"));
+    assert.ok(source.includes("segmentSummary.type !== 'forward'"));
+    assert.ok(source.includes('const triggerText = sanitizeForInjection(sanitizeContent(triggerSeed), config, event.user_id);'));
+    assert.ok(source.includes('triggerText,'));
+    assert.ok(source.includes("typeof messageInfo.triggerText === 'string' ? messageInfo.triggerText : plainText"));
+    assert.ok(source.includes('const hasKeyword = matchesKeywords(routingText, triggerKeywords);'));
+});

@@ -246,6 +246,9 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	if text == "" {
 		return false
 	}
+	// 触发判定文本剔除合并转发展开内容：他人转发的记录只供模型阅读,
+	// 不应命中关键词/前缀让 bot 误搭话
+	triggerText := strings.TrimSpace(r.renderTriggerText(segments))
 
 	// /llm：管理员切换 LLM 总开关（对齐 Node handleMessage 的首个命令分支）
 	if r.handleLLMCommand(event, messageType, groupID, userID, text) {
@@ -279,7 +282,7 @@ func (r *Runtime) HandleEvent(event map[string]any) bool {
 	isAtBotSelf := containsAtSelf(event["message"], selfID)
 	info := r.buildReplyInfo(event, segments)
 	sessionKey := r.sessionKey(messageType, groupID, userID)
-	decision := r.buildRoutingDecision(event, text, isAtBotSelf, info)
+	decision := r.buildRoutingDecision(event, text, triggerText, isAtBotSelf, info)
 	repeatWatch := r.shouldObserveGroupRepeat(event, text)
 	if !decision.ShouldRespond && !repeatWatch {
 		r.recordRoutingSnapshot(event, sessionKey, decision, info, info.ToBotSet && info.ToBot)
@@ -1196,6 +1199,19 @@ func parseCQString(raw string) []map[string]any {
 // renderSegments 把消息段渲染成可读文本（forward 会拉取合并转发内容）。
 func (r *Runtime) renderSegments(segments []map[string]any) string {
 	return r.renderSegmentsAt(segments, 0, map[string]bool{})
+}
+
+// renderTriggerText 渲染触发判定用文本：forward 类段（合并转发）整个跳过,
+// 不展开也不留占位符，避免转发正文里的关键词/前缀误触发 bot。
+func (r *Runtime) renderTriggerText(segments []map[string]any) string {
+	builder := strings.Builder{}
+	for _, segment := range segments {
+		if isForwardSegmentType(stringValue(segment["type"])) {
+			continue
+		}
+		builder.WriteString(r.renderSegments([]map[string]any{segment}))
+	}
+	return builder.String()
 }
 
 // forwardMaxNodes/forwardMaxChars 对齐 Node forward-message.js 的默认预算（每层）。

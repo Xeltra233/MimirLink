@@ -94,7 +94,10 @@ func (r *Runtime) requireAtInGroupEnabled() bool {
 }
 
 // buildRoutingDecision 对齐 Node buildRoutingDecision 的群聊/私聊触发判定。
-func (r *Runtime) buildRoutingDecision(event map[string]any, plainText string, isAtMe bool, info replyInfo) routingDecision {
+// plainText 是消息正文（含合并转发展开内容，用于空文本判定）；
+// triggerText 剔除了合并转发展开内容，关键词/前缀只对它匹配——
+// 他人转发的记录不应让 bot 被关键词误触发。
+func (r *Runtime) buildRoutingDecision(event map[string]any, plainText string, triggerText string, isAtMe bool, info replyInfo) routingDecision {
 	triggerMode := strings.TrimSpace(r.document.String("chat.triggerMode"))
 	if triggerMode == "" {
 		triggerMode = "auto"
@@ -102,8 +105,8 @@ func (r *Runtime) buildRoutingDecision(event map[string]any, plainText string, i
 	requireAtInGroup := r.requireAtInGroupEnabled()
 	triggerPrefix := r.document.String("chat.triggerPrefix")
 	triggerKeywords := stringListField(r.document, "chat.triggerKeywords")
-	hasPrefix := triggerPrefix != "" && strings.HasPrefix(plainText, triggerPrefix)
-	hasKeyword := matchesKeywords(plainText, triggerKeywords)
+	hasPrefix := triggerPrefix != "" && strings.HasPrefix(triggerText, triggerPrefix)
+	hasKeyword := matchesKeywords(triggerText, triggerKeywords)
 	allowed := r.isAllowed(event)
 	replyToBot := info.ToBotSet && info.ToBot
 	messageType := stringField(event, "message_type")

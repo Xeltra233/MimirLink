@@ -1166,6 +1166,9 @@ async function buildReplyInfo(event, bot, replyToMessageId) {
 async function extractMessageInfo(config, event, bot) {
     const segments = Array.isArray(event.message) ? event.message : [];
     let plainText = '';
+    // 触发判定用文本：与 plainText 同步累加，但剔除 forward 段——
+    // 合并转发展开的记录只供模型阅读，不应命中关键词/前缀让 bot 误搭话
+    let triggerSeed = '';
     let isAtMe = false;
     let replyToMessageId = null;
     const messageSegments = [];
@@ -1175,6 +1178,9 @@ async function extractMessageInfo(config, event, bot) {
         messageSegments.push(sanitizeSegmentSummaryForPrompt(segmentSummary, config, event.user_id));
         if (segmentSummary.promptText && segmentSummary.type !== 'reply') {
             plainText += segmentSummary.promptText;
+            if (segmentSummary.type !== 'forward') {
+                triggerSeed += segmentSummary.promptText;
+            }
         }
         if (segment.type === 'at' && String(segment.data?.qq) === String(bot.selfId)) {
             isAtMe = true;
@@ -1219,6 +1225,8 @@ async function extractMessageInfo(config, event, bot) {
         plainText = '[@bot]（只@了bot，没有附加文字；请结合附近群聊上下文判断对方是在叫你接话、催你回应还是让你看上文）';
     }
     plainText = sanitizeForInjection(plainText, config, event.user_id);
+    // 触发判定文本与 plainText 走同样的净化，但不包含合并转发展开内容
+    const triggerText = sanitizeForInjection(sanitizeContent(triggerSeed), config, event.user_id);
     const replyInfo = await buildReplyInfo(event, bot, replyToMessageId);
     const replySnippet = sanitizeForInjection(replyInfo.snippet, config, event.user_id);
     const promptText = sanitizeContent(replySnippet ? `${replySnippet}
@@ -1245,6 +1253,8 @@ ${plainText}` : plainText);
         : '';
     return {
         plainText,
+        // 触发判定用文本（不含合并转发展开内容），buildRoutingDecision 优先使用
+        triggerText,
         isAtMe,
         replyToMessageId,
         replyToBot: replyInfo.toBot === true,
@@ -1586,8 +1596,10 @@ function buildRoutingDecision(config, event, plainText, isAtMe, messageInfo = {}
     const requireAtInGroup = config.chat.requireAtInGroup !== false;
     const triggerPrefix = config.chat.triggerPrefix || '';
     const triggerKeywords = config.chat.triggerKeywords || [];
-    const hasPrefix = triggerPrefix ? plainText.startsWith(triggerPrefix) : false;
-    const hasKeyword = matchesKeywords(plainText, triggerKeywords);
+    // 合并转发展开内容不参与关键词/前缀命中（extractMessageInfo 提供剔除转发正文后的 triggerText）
+    const routingText = typeof messageInfo.triggerText === 'string' ? messageInfo.triggerText : plainText;
+    const hasPrefix = triggerPrefix ? routingText.startsWith(triggerPrefix) : false;
+    const hasKeyword = matchesKeywords(routingText, triggerKeywords);
     const allowed = isAllowed(config, event);
     const checks = {
         hasText: Boolean(plainText),

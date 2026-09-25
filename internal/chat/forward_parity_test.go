@@ -74,8 +74,9 @@ func TestForwardSkipsEmptyNodes(t *testing.T) {
 	}
 }
 
-// TestForwardKeywordTrigger：转发展开内容（含用户名）参与关键词触发（对齐 Node plainText 并入 transcript）。
-func TestForwardKeywordTrigger(t *testing.T) {
+// TestForwardContentExcludedFromKeywordTrigger：合并转发展开内容不参与关键词触发
+// （回归：他人转发的记录里出现 triggerKeywords 不应让 bot 搭话）。
+func TestForwardContentExcludedFromKeywordTrigger(t *testing.T) {
 	model := &fakeModel{replies: []string{"收到"}}
 	runtime, bot, _ := newRuntime(t, map[string]any{
 		"chat": map[string]any{"triggerMode": "keyword", "triggerKeywords": []string{"火锅"}, "bufferWindowMs": 0},
@@ -83,11 +84,33 @@ func TestForwardKeywordTrigger(t *testing.T) {
 	bot.forwards["fw-kw"] = map[string]any{"messages": []any{
 		map[string]any{"nickname": "小红", "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "今晚吃火锅"}}}},
 	}}
-	event := buildGroupEvent("", true, "99001", "2001")
+	// 不 @、无正文，仅一条内容命中关键词的合并转发
+	event := buildGroupEvent("", false, "99001", "2001")
 	segments, _ := event["message"].([]any)
 	event["message"] = append(segments, map[string]any{"type": "forward", "data": map[string]any{"id": "fw-kw"}})
+	if handled := runtime.HandleEvent(event); handled {
+		t.Fatalf("转发内容命中关键词不应触发")
+	}
+	if len(model.requests) != 0 {
+		t.Fatalf("转发内容命中关键词不应调用模型")
+	}
+}
+
+// TestKeywordInOwnTextTriggersWithForwardAttached：本消息正文里的关键词仍正常触发，
+// 且触发后转发展开内容（含用户名）照旧提供给模型阅读。
+func TestKeywordInOwnTextTriggersWithForwardAttached(t *testing.T) {
+	model := &fakeModel{replies: []string{"收到"}}
+	runtime, bot, _ := newRuntime(t, map[string]any{
+		"chat": map[string]any{"triggerMode": "keyword", "triggerKeywords": []string{"火锅"}, "bufferWindowMs": 0},
+	}, model)
+	bot.forwards["fw-kw2"] = map[string]any{"messages": []any{
+		map[string]any{"nickname": "小红", "message": []any{map[string]any{"type": "text", "data": map[string]any{"text": "今晚吃火锅"}}}},
+	}}
+	event := buildGroupEvent("今晚去吃火锅吧", false, "99001", "2001")
+	segments, _ := event["message"].([]any)
+	event["message"] = append(segments, map[string]any{"type": "forward", "data": map[string]any{"id": "fw-kw2"}})
 	if handled := runtime.HandleEvent(event); !handled {
-		t.Fatalf("转发内容命中关键词应触发")
+		t.Fatalf("正文关键词命中应触发")
 	}
 	if len(model.requests) == 0 {
 		t.Fatalf("关键词触发后应调用模型")
